@@ -26,7 +26,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.1.0" // Added rate limiting, panic recovery, external links, broken link checker
+	ServerVersion = "1.1.1" // Fixed null links bug - empty arrays instead of null for JSON schema validation
 )
 
 func main() {

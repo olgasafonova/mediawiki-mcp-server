@@ -778,7 +778,7 @@ func (c *Client) GetExternalLinks(ctx context.Context, args GetExternalLinksArgs
 		return ExternalLinksResult{}, fmt.Errorf("no pages in response")
 	}
 
-	var links []ExternalLink
+	links := make([]ExternalLink, 0) // Initialize as empty slice, not nil, to avoid JSON null
 	var pageTitle string
 
 	for _, pageData := range pages {
@@ -842,6 +842,7 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 		if err != nil {
 			result.Pages = append(result.Pages, PageExternalLinks{
 				Title: title,
+				Links: make([]ExternalLink, 0), // Initialize as empty slice to avoid JSON null
 				Error: err.Error(),
 			})
 			continue
