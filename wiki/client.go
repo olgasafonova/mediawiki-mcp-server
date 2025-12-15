@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -281,4 +282,57 @@ func normalizeCategoryName(name string) string {
 		name = "Category:" + name
 	}
 	return name
+}
+
+// HTML sanitization patterns for XSS prevention
+var (
+	// Remove dangerous tags entirely (including content)
+	scriptTagRegex  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	styleTagRegex   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	iframeTagRegex  = regexp.MustCompile(`(?is)<iframe[^>]*>.*?</iframe>`)
+	objectTagRegex  = regexp.MustCompile(`(?is)<object[^>]*>.*?</object>`)
+	embedTagRegex   = regexp.MustCompile(`(?is)<embed[^>]*>.*?</embed>`)
+	appletTagRegex  = regexp.MustCompile(`(?is)<applet[^>]*>.*?</applet>`)
+	formTagRegex    = regexp.MustCompile(`(?is)<form[^>]*>.*?</form>`)
+	metaTagRegex    = regexp.MustCompile(`(?is)<meta[^>]*>`)
+	linkTagRegex    = regexp.MustCompile(`(?is)<link[^>]*>`)
+	baseTagRegex    = regexp.MustCompile(`(?is)<base[^>]*>`)
+
+	// Remove event handler attributes (onclick, onerror, onload, etc.)
+	eventHandlerRegex = regexp.MustCompile(`(?i)\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)`)
+
+	// Remove javascript: and data: URLs in href/src attributes
+	jsURLRegex   = regexp.MustCompile(`(?i)(href|src|action)\s*=\s*["']?\s*javascript:[^"'>\s]*["']?`)
+	dataURLRegex = regexp.MustCompile(`(?i)(href|src)\s*=\s*["']?\s*data:[^"'>\s]*["']?`)
+
+	// Remove style attributes that could contain expressions
+	styleAttrRegex = regexp.MustCompile(`(?i)\s+style\s*=\s*("[^"]*"|'[^']*')`)
+)
+
+// sanitizeHTML removes potentially dangerous HTML elements and attributes
+// to prevent XSS attacks when HTML content is displayed by clients
+func sanitizeHTML(html string) string {
+	// Remove dangerous tags (with their content)
+	html = scriptTagRegex.ReplaceAllString(html, "")
+	html = styleTagRegex.ReplaceAllString(html, "")
+	html = iframeTagRegex.ReplaceAllString(html, "")
+	html = objectTagRegex.ReplaceAllString(html, "")
+	html = embedTagRegex.ReplaceAllString(html, "")
+	html = appletTagRegex.ReplaceAllString(html, "")
+	html = formTagRegex.ReplaceAllString(html, "")
+	html = metaTagRegex.ReplaceAllString(html, "")
+	html = linkTagRegex.ReplaceAllString(html, "")
+	html = baseTagRegex.ReplaceAllString(html, "")
+
+	// Remove event handlers
+	html = eventHandlerRegex.ReplaceAllString(html, "")
+
+	// Remove dangerous URL schemes
+	html = jsURLRegex.ReplaceAllString(html, "$1=\"\"")
+	html = dataURLRegex.ReplaceAllString(html, "$1=\"\"")
+
+	// Remove style attributes (can contain CSS expressions)
+	html = styleAttrRegex.ReplaceAllString(html, "")
+
+	return html
 }

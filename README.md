@@ -86,6 +86,20 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
   -e MEDIAWIKI_URL="https://your-wiki.example.com/api.php"
 ```
 
+## Resources
+
+MCP Resources provide direct access to wiki content as context for AI models.
+
+| Resource URI | Description |
+|--------------|-------------|
+| `wiki://page/{title}` | Access wiki page content (wikitext format) |
+| `wiki://category/{name}` | List pages in a category |
+
+**Examples:**
+- `wiki://page/Main_Page` - Get the Main Page content
+- `wiki://page/Help%3AEditing` - Get a page with special characters (URL-encoded)
+- `wiki://category/Documentation` - List pages in the Documentation category
+
 ## Available Tools
 
 ### Read Operations
@@ -119,6 +133,14 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 | `mediawiki_find_broken_internal_links` | Find internal wiki links pointing to non-existent pages |
 | `mediawiki_find_orphaned_pages` | Find pages with no incoming links ("lonely pages") |
 | `mediawiki_get_backlinks` | Get pages linking to a specific page ("What links here") |
+
+### History & Revision Tools
+
+| Tool | Description |
+|------|-------------|
+| `mediawiki_get_revisions` | Get revision history (edit log) for a page |
+| `mediawiki_compare_revisions` | Compare two revisions and get the diff |
+| `mediawiki_get_user_contributions` | Get edit history for a specific user |
 
 ### Write Operations
 

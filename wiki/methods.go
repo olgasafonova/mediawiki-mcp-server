@@ -177,6 +177,9 @@ func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, er
 	text := parse["text"].(map[string]interface{})
 	content := text["*"].(string)
 
+	// Sanitize HTML to prevent XSS
+	content = sanitizeHTML(content)
+
 	truncated := false
 	if len(content) > CharacterLimit {
 		content, truncated = truncateContent(content, CharacterLimit)
@@ -635,6 +638,9 @@ func (c *Client) Parse(ctx context.Context, args ParseArgs) (ParseResult, error)
 	parse := resp["parse"].(map[string]interface{})
 	text := parse["text"].(map[string]interface{})
 	htmlContent := text["*"].(string)
+
+	// Sanitize HTML to prevent XSS
+	htmlContent = sanitizeHTML(htmlContent)
 
 	truncated := false
 	if len(htmlContent) > CharacterLimit {
@@ -1524,6 +1530,251 @@ func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBa
 	}
 
 	result.Count = len(result.Backlinks)
+
+	// Check for continuation
+	if _, ok := resp["continue"]; ok {
+		result.HasMore = true
+	}
+
+	return result, nil
+}
+
+// GetRevisions returns the revision history for a page
+func (c *Client) GetRevisions(ctx context.Context, args GetRevisionsArgs) (GetRevisionsResult, error) {
+	if args.Title == "" {
+		return GetRevisionsResult{}, fmt.Errorf("title is required")
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return GetRevisionsResult{}, err
+	}
+
+	limit := normalizeLimit(args.Limit, 20, 100)
+
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("titles", args.Title)
+	params.Set("prop", "revisions")
+	params.Set("rvprop", "ids|timestamp|user|size|comment|flags")
+	params.Set("rvlimit", strconv.Itoa(limit))
+
+	if args.Start != "" {
+		params.Set("rvstart", args.Start)
+	}
+	if args.End != "" {
+		params.Set("rvend", args.End)
+	}
+	if args.User != "" {
+		params.Set("rvuser", args.User)
+	}
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return GetRevisionsResult{}, err
+	}
+
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return GetRevisionsResult{}, fmt.Errorf("unexpected response format")
+	}
+
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return GetRevisionsResult{}, fmt.Errorf("pages not found in response")
+	}
+
+	result := GetRevisionsResult{
+		Title:     args.Title,
+		Revisions: make([]RevisionInfo, 0),
+	}
+
+	for pageIDStr, pageData := range pages {
+		pageID, _ := strconv.Atoi(pageIDStr)
+		if pageID < 0 {
+			return GetRevisionsResult{}, fmt.Errorf("page '%s' not found", args.Title)
+		}
+
+		page := pageData.(map[string]interface{})
+		result.PageID = pageID
+		result.Title = getString(page, "title")
+
+		revisions, ok := page["revisions"].([]interface{})
+		if !ok {
+			return result, nil
+		}
+
+		var prevSize int
+		for i, rev := range revisions {
+			r := rev.(map[string]interface{})
+			info := RevisionInfo{
+				RevID:     getInt(r, "revid"),
+				ParentID:  getInt(r, "parentid"),
+				User:      getString(r, "user"),
+				Timestamp: getString(r, "timestamp"),
+				Size:      getInt(r, "size"),
+				Comment:   getString(r, "comment"),
+			}
+
+			if _, isMinor := r["minor"]; isMinor {
+				info.Minor = true
+			}
+
+			// Calculate size diff
+			if i == 0 {
+				prevSize = info.Size
+			} else {
+				info.SizeDiff = info.Size - prevSize
+				prevSize = info.Size
+			}
+
+			result.Revisions = append(result.Revisions, info)
+		}
+
+		break // Only process first page
+	}
+
+	result.Count = len(result.Revisions)
+
+	// Check for continuation
+	if _, ok := resp["continue"]; ok {
+		result.HasMore = true
+	}
+
+	return result, nil
+}
+
+// CompareRevisions compares two revisions and returns the diff
+func (c *Client) CompareRevisions(ctx context.Context, args CompareRevisionsArgs) (CompareRevisionsResult, error) {
+	if args.FromRev == 0 && args.FromTitle == "" {
+		return CompareRevisionsResult{}, fmt.Errorf("either from_rev or from_title is required")
+	}
+	if args.ToRev == 0 && args.ToTitle == "" {
+		return CompareRevisionsResult{}, fmt.Errorf("either to_rev or to_title is required")
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return CompareRevisionsResult{}, err
+	}
+
+	params := url.Values{}
+	params.Set("action", "compare")
+
+	if args.FromRev > 0 {
+		params.Set("fromrev", strconv.Itoa(args.FromRev))
+	} else {
+		params.Set("fromtitle", args.FromTitle)
+	}
+
+	if args.ToRev > 0 {
+		params.Set("torev", strconv.Itoa(args.ToRev))
+	} else {
+		params.Set("totitle", args.ToTitle)
+	}
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return CompareRevisionsResult{}, err
+	}
+
+	compare, ok := resp["compare"].(map[string]interface{})
+	if !ok {
+		return CompareRevisionsResult{}, fmt.Errorf("compare not found in response")
+	}
+
+	result := CompareRevisionsResult{
+		FromTitle:     getString(compare, "fromtitle"),
+		FromRevID:     getInt(compare, "fromrevid"),
+		ToTitle:       getString(compare, "totitle"),
+		ToRevID:       getInt(compare, "torevid"),
+		Diff:          getString(compare, "*"),
+		FromUser:      getString(compare, "fromuser"),
+		ToUser:        getString(compare, "touser"),
+		FromTimestamp: getString(compare, "fromtimestamp"),
+		ToTimestamp:   getString(compare, "totimestamp"),
+	}
+
+	// Clean up the diff HTML for readability
+	if result.Diff != "" {
+		result.Diff = sanitizeHTML(result.Diff)
+	}
+
+	return result, nil
+}
+
+// GetUserContributions returns the contributions (edits) made by a user
+func (c *Client) GetUserContributions(ctx context.Context, args GetUserContributionsArgs) (GetUserContributionsResult, error) {
+	if args.User == "" {
+		return GetUserContributionsResult{}, fmt.Errorf("user is required")
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return GetUserContributionsResult{}, err
+	}
+
+	limit := normalizeLimit(args.Limit, 50, MaxLimit)
+
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("list", "usercontribs")
+	params.Set("ucuser", args.User)
+	params.Set("ucprop", "ids|title|timestamp|comment|size|sizediff|flags")
+	params.Set("uclimit", strconv.Itoa(limit))
+
+	if args.Namespace >= 0 {
+		params.Set("ucnamespace", strconv.Itoa(args.Namespace))
+	}
+	if args.Start != "" {
+		params.Set("ucstart", args.Start)
+	}
+	if args.End != "" {
+		params.Set("ucend", args.End)
+	}
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return GetUserContributionsResult{}, err
+	}
+
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return GetUserContributionsResult{}, fmt.Errorf("unexpected response format")
+	}
+
+	contribs, ok := query["usercontribs"].([]interface{})
+	if !ok {
+		return GetUserContributionsResult{User: args.User, Contributions: make([]UserContribution, 0)}, nil
+	}
+
+	result := GetUserContributionsResult{
+		User:          args.User,
+		Contributions: make([]UserContribution, 0, len(contribs)),
+	}
+
+	for _, c := range contribs {
+		contrib := c.(map[string]interface{})
+		uc := UserContribution{
+			PageID:    getInt(contrib, "pageid"),
+			Title:     getString(contrib, "title"),
+			Namespace: getInt(contrib, "ns"),
+			RevID:     getInt(contrib, "revid"),
+			ParentID:  getInt(contrib, "parentid"),
+			Timestamp: getString(contrib, "timestamp"),
+			Comment:   getString(contrib, "comment"),
+			Size:      getInt(contrib, "size"),
+			SizeDiff:  getInt(contrib, "sizediff"),
+		}
+
+		if _, isMinor := contrib["minor"]; isMinor {
+			uc.Minor = true
+		}
+		if _, isNew := contrib["new"]; isNew {
+			uc.New = true
+		}
+
+		result.Contributions = append(result.Contributions, uc)
+	}
+
+	result.Count = len(result.Contributions)
 
 	// Check for continuation
 	if _, ok := resp["continue"]; ok {
