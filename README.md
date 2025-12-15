@@ -13,6 +13,7 @@ Works with Wikipedia, Fandom wikis, corporate wikis, and any MediaWiki installat
 - **Parse** - Preview wikitext rendering before saving
 - **External Links** - Extract all external URLs from pages
 - **Link Checker** - Detect broken links across your wiki
+- **Terminology Checker** - Ensure consistent brand/product naming using a wiki-hosted glossary
 
 ### Production-Ready
 
@@ -105,6 +106,12 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 | `mediawiki_get_external_links_batch` | Get external links from multiple pages (max 10) |
 | `mediawiki_check_links` | Check if URLs are accessible (max 20 URLs) |
 
+### Content Quality Tools
+
+| Tool | Description |
+|------|-------------|
+| `mediawiki_check_terminology` | Check pages for terminology inconsistencies using a wiki glossary |
+
 ### Write Operations
 
 | Tool | Description |
@@ -177,6 +184,55 @@ Once configured, ask your AI assistant:
 
 ### Find Broken Links
 > "Get all external links from the Installation Guide page and check if any are broken"
+
+### Check Terminology
+> "Check the Cloud Documentation category for terminology issues"
+
+## Terminology Glossary Setup
+
+The `mediawiki_check_terminology` tool reads term definitions from a wiki page containing a table. By default, it looks for a page called **"Brand Terminology Glossary"**.
+
+### Glossary Page Format
+
+Create a wiki page with one or more tables using this structure:
+
+```wikitext
+= Brand Terminology Glossary =
+
+{| class="wikitable sortable mcp-glossary"
+! Incorrect !! Correct !! Pattern !! Notes
+|-
+| 360 || 360° || \b360\b(?!°) || Always use degree symbol
+|-
+| P360 || Public 360° || \bP360\b || Use full product name
+|-
+| Public 360 || Public 360° || Public 360(?!°) || Needs degree symbol
+|-
+| on-premise || on-premises || on-premise\b || Always plural
+|}
+```
+
+### Column Reference
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| Incorrect | Yes | The term to flag (what to find) |
+| Correct | Yes | The replacement suggestion |
+| Pattern | No | Regex pattern for precise matching (otherwise literal match) |
+| Notes | No | Explanation shown in the report |
+
+### Usage Examples
+
+```
+# Check specific pages
+mediawiki_check_terminology(pages=["Installation Guide", "Release Notes"])
+
+# Check an entire category
+mediawiki_check_terminology(category="Cloud Documentation", limit=20)
+
+# Use a custom glossary page
+mediawiki_check_terminology(pages=["My Page"], glossary_page="Technical Writing Style Guide")
+```
 
 ## Response Handling
 

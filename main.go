@@ -26,7 +26,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.1.1" // Fixed null links bug - empty arrays instead of null for JSON schema validation
+	ServerVersion = "1.2.0" // Added terminology checking tool
 )
 
 func main() {
@@ -61,6 +61,10 @@ Available tools:
 - mediawiki_get_page_info: Get metadata about a page
 - mediawiki_edit_page: Create or edit a page (requires authentication)
 - mediawiki_get_recent_changes: Get recent wiki changes
+- mediawiki_get_external_links: Get external URLs from a page
+- mediawiki_get_external_links_batch: Get external URLs from multiple pages
+- mediawiki_check_links: Check if URLs are accessible (broken link detection)
+- mediawiki_check_terminology: Check pages for terminology inconsistencies using a wiki glossary
 
 Configure via environment variables:
 - MEDIAWIKI_URL: Wiki API URL (e.g., https://wiki.example.com/api.php)
@@ -317,6 +321,24 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 		result, err := client.CheckLinks(ctx, args)
 		if err != nil {
 			return nil, wiki.CheckLinksResult{}, fmt.Errorf("failed to check links: %w", err)
+		}
+		return nil, result, nil
+	})
+
+	// Check terminology consistency
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_check_terminology",
+		Description: "Check wiki pages for terminology inconsistencies. Uses a glossary wiki page (default: 'Brand Terminology Glossary') with a table of incorrect/correct terms. Specify pages directly or scan an entire category.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:        "Check Terminology",
+			ReadOnlyHint: true,
+			OpenWorldHint: ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.CheckTerminologyArgs) (*mcp.CallToolResult, wiki.CheckTerminologyResult, error) {
+		defer recoverPanic(logger, "check_terminology")
+		result, err := client.CheckTerminology(ctx, args)
+		if err != nil {
+			return nil, wiki.CheckTerminologyResult{}, fmt.Errorf("failed to check terminology: %w", err)
 		}
 		return nil, result, nil
 	})

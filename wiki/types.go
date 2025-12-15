@@ -279,3 +279,42 @@ type PageExternalLinks struct {
 	Count int            `json:"count"`
 	Error string         `json:"error,omitempty"`
 }
+
+// ========== Terminology Check Types ==========
+
+type CheckTerminologyArgs struct {
+	Pages        []string `json:"pages,omitempty" jsonschema_description:"Page titles to check. If empty, uses pages from category."`
+	Category     string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages list)"`
+	GlossaryPage string   `json:"glossary_page,omitempty" jsonschema_description:"Wiki page containing the glossary table (default: 'Brand Terminology Glossary')"`
+	Limit        int      `json:"limit,omitempty" jsonschema_description:"Max pages to check (default 10, max 50)"`
+}
+
+type CheckTerminologyResult struct {
+	PagesChecked  int                   `json:"pages_checked"`
+	IssuesFound   int                   `json:"issues_found"`
+	GlossaryPage  string                `json:"glossary_page"`
+	TermsLoaded   int                   `json:"terms_loaded"`
+	Pages         []PageTerminologyResult `json:"pages"`
+}
+
+type PageTerminologyResult struct {
+	Title       string             `json:"title"`
+	IssueCount  int                `json:"issue_count"`
+	Issues      []TerminologyIssue `json:"issues"`
+	Error       string             `json:"error,omitempty"`
+}
+
+type TerminologyIssue struct {
+	Incorrect   string `json:"incorrect"`
+	Correct     string `json:"correct"`
+	Line        int    `json:"line"`
+	Context     string `json:"context"`
+	Notes       string `json:"notes,omitempty"`
+}
+
+type GlossaryTerm struct {
+	Incorrect string `json:"incorrect"`
+	Correct   string `json:"correct"`
+	Pattern   string `json:"pattern,omitempty"`
+	Notes     string `json:"notes,omitempty"`
+}
