@@ -318,3 +318,106 @@ type GlossaryTerm struct {
 	Pattern   string `json:"pattern,omitempty"`
 	Notes     string `json:"notes,omitempty"`
 }
+
+// ========== Translation Check Types ==========
+
+type CheckTranslationsArgs struct {
+	BasePages  []string `json:"base_pages,omitempty" jsonschema_description:"Base page names to check for translations (without language suffix)"`
+	Category   string   `json:"category,omitempty" jsonschema_description:"Category to get base pages from (alternative to base_pages)"`
+	Languages  []string `json:"languages" jsonschema:"required" jsonschema_description:"Language codes to check (e.g., ['en', 'no', 'sv'])"`
+	Pattern    string   `json:"pattern,omitempty" jsonschema_description:"Pattern for language pages: 'subpage' (Page/lang), 'suffix' (Page (lang)), or 'prefix' (lang:Page). Default: 'subpage'"`
+	Limit      int      `json:"limit,omitempty" jsonschema_description:"Max base pages to check (default 20, max 100)"`
+}
+
+type CheckTranslationsResult struct {
+	PagesChecked    int                        `json:"pages_checked"`
+	LanguagesChecked []string                  `json:"languages_checked"`
+	MissingCount    int                        `json:"missing_count"`
+	Pattern         string                     `json:"pattern"`
+	Pages           []PageTranslationResult    `json:"pages"`
+}
+
+type PageTranslationResult struct {
+	BasePage    string              `json:"base_page"`
+	Translations map[string]TranslationStatus `json:"translations"`
+	MissingLangs []string           `json:"missing_languages,omitempty"`
+	Complete    bool                `json:"complete"`
+}
+
+type TranslationStatus struct {
+	Exists   bool   `json:"exists"`
+	PageTitle string `json:"page_title"`
+	PageID   int    `json:"page_id,omitempty"`
+	Length   int    `json:"length,omitempty"`
+}
+
+// ========== Broken Internal Links Types ==========
+
+type FindBrokenInternalLinksArgs struct {
+	Pages    []string `json:"pages,omitempty" jsonschema_description:"Page titles to check for broken internal links"`
+	Category string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages)"`
+	Limit    int      `json:"limit,omitempty" jsonschema_description:"Max pages to check (default 20, max 100)"`
+}
+
+type FindBrokenInternalLinksResult struct {
+	PagesChecked   int                    `json:"pages_checked"`
+	BrokenCount    int                    `json:"broken_count"`
+	Pages          []PageBrokenLinksResult `json:"pages"`
+}
+
+type PageBrokenLinksResult struct {
+	Title         string        `json:"title"`
+	BrokenLinks   []BrokenLink  `json:"broken_links"`
+	BrokenCount   int           `json:"broken_count"`
+	Error         string        `json:"error,omitempty"`
+}
+
+type BrokenLink struct {
+	Target    string `json:"target"`
+	Context   string `json:"context,omitempty"`
+	Line      int    `json:"line,omitempty"`
+}
+
+// ========== Orphaned Pages Types ==========
+
+type FindOrphanedPagesArgs struct {
+	Namespace int    `json:"namespace,omitempty" jsonschema_description:"Namespace to check (0=main, default). Use -1 for all namespaces."`
+	Limit     int    `json:"limit,omitempty" jsonschema_description:"Max pages to return (default 50, max 200)"`
+	Prefix    string `json:"prefix,omitempty" jsonschema_description:"Only check pages starting with this prefix"`
+}
+
+type FindOrphanedPagesResult struct {
+	OrphanedPages []OrphanedPage `json:"orphaned_pages"`
+	TotalChecked  int            `json:"total_checked"`
+	OrphanedCount int            `json:"orphaned_count"`
+}
+
+type OrphanedPage struct {
+	Title      string `json:"title"`
+	PageID     int    `json:"page_id"`
+	Length     int    `json:"length"`
+	LastEdited string `json:"last_edited,omitempty"`
+}
+
+// ========== Backlinks Types ==========
+
+type GetBacklinksArgs struct {
+	Title     string `json:"title" jsonschema:"required" jsonschema_description:"Page title to find backlinks for"`
+	Namespace int    `json:"namespace,omitempty" jsonschema_description:"Filter by namespace (-1 for all, 0 for main)"`
+	Limit     int    `json:"limit,omitempty" jsonschema_description:"Max backlinks to return (default 50, max 500)"`
+	Redirect  bool   `json:"include_redirects,omitempty" jsonschema_description:"Include redirect pages in results"`
+}
+
+type GetBacklinksResult struct {
+	Title       string        `json:"title"`
+	Backlinks   []BacklinkInfo `json:"backlinks"`
+	Count       int           `json:"count"`
+	HasMore     bool          `json:"has_more"`
+}
+
+type BacklinkInfo struct {
+	PageID     int    `json:"page_id"`
+	Title      string `json:"title"`
+	Namespace  int    `json:"namespace"`
+	IsRedirect bool   `json:"is_redirect,omitempty"`
+}

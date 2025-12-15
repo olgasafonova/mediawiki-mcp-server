@@ -26,7 +26,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.2.0" // Added terminology checking tool
+	ServerVersion = "1.3.0" // Added content quality tools: translations, broken internal links, orphaned pages, backlinks
 )
 
 func main() {
@@ -65,6 +65,10 @@ Available tools:
 - mediawiki_get_external_links_batch: Get external URLs from multiple pages
 - mediawiki_check_links: Check if URLs are accessible (broken link detection)
 - mediawiki_check_terminology: Check pages for terminology inconsistencies using a wiki glossary
+- mediawiki_check_translations: Find pages missing in specific languages (localization gaps)
+- mediawiki_find_broken_internal_links: Find internal wiki links pointing to non-existent pages
+- mediawiki_find_orphaned_pages: Find pages with no incoming links
+- mediawiki_get_backlinks: Get pages linking to a specific page ("What links here")
 
 Configure via environment variables:
 - MEDIAWIKI_URL: Wiki API URL (e.g., https://wiki.example.com/api.php)
@@ -339,6 +343,78 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 		result, err := client.CheckTerminology(ctx, args)
 		if err != nil {
 			return nil, wiki.CheckTerminologyResult{}, fmt.Errorf("failed to check terminology: %w", err)
+		}
+		return nil, result, nil
+	})
+
+	// Check translations (find missing localized pages)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_check_translations",
+		Description: "Find pages missing in specific languages. Check if base pages have translations in all required languages. Supports different naming patterns: subpages (Page/lang), suffixes (Page (lang)), or prefixes (lang:Page).",
+		Annotations: &mcp.ToolAnnotations{
+			Title:        "Check Translations",
+			ReadOnlyHint: true,
+			OpenWorldHint: ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.CheckTranslationsArgs) (*mcp.CallToolResult, wiki.CheckTranslationsResult, error) {
+		defer recoverPanic(logger, "check_translations")
+		result, err := client.CheckTranslations(ctx, args)
+		if err != nil {
+			return nil, wiki.CheckTranslationsResult{}, fmt.Errorf("failed to check translations: %w", err)
+		}
+		return nil, result, nil
+	})
+
+	// Find broken internal links
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_find_broken_internal_links",
+		Description: "Find internal wiki links that point to non-existent pages. Scans page content for [[links]] and verifies each target exists. Returns broken links with line numbers and context.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:        "Find Broken Internal Links",
+			ReadOnlyHint: true,
+			OpenWorldHint: ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.FindBrokenInternalLinksArgs) (*mcp.CallToolResult, wiki.FindBrokenInternalLinksResult, error) {
+		defer recoverPanic(logger, "find_broken_internal_links")
+		result, err := client.FindBrokenInternalLinks(ctx, args)
+		if err != nil {
+			return nil, wiki.FindBrokenInternalLinksResult{}, fmt.Errorf("failed to find broken internal links: %w", err)
+		}
+		return nil, result, nil
+	})
+
+	// Find orphaned pages
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_find_orphaned_pages",
+		Description: "Find pages with no incoming links from other pages. These 'lonely pages' may be hard to discover through normal wiki navigation.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:        "Find Orphaned Pages",
+			ReadOnlyHint: true,
+			OpenWorldHint: ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.FindOrphanedPagesArgs) (*mcp.CallToolResult, wiki.FindOrphanedPagesResult, error) {
+		defer recoverPanic(logger, "find_orphaned_pages")
+		result, err := client.FindOrphanedPages(ctx, args)
+		if err != nil {
+			return nil, wiki.FindOrphanedPagesResult{}, fmt.Errorf("failed to find orphaned pages: %w", err)
+		}
+		return nil, result, nil
+	})
+
+	// Get backlinks ("What links here")
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_get_backlinks",
+		Description: "Get pages that link to a specific page ('What links here'). Useful for understanding page relationships and impact of changes.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:        "Get Backlinks",
+			ReadOnlyHint: true,
+			OpenWorldHint: ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.GetBacklinksArgs) (*mcp.CallToolResult, wiki.GetBacklinksResult, error) {
+		defer recoverPanic(logger, "get_backlinks")
+		result, err := client.GetBacklinks(ctx, args)
+		if err != nil {
+			return nil, wiki.GetBacklinksResult{}, fmt.Errorf("failed to get backlinks: %w", err)
 		}
 		return nil, result, nil
 	})

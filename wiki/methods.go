@@ -1200,3 +1200,335 @@ func extractContext(line string, start, end, contextLen int) string {
 
 	return context
 }
+
+// CheckTranslations checks if pages exist in all specified languages
+func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsArgs) (CheckTranslationsResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return CheckTranslationsResult{}, err
+	}
+
+	if len(args.Languages) == 0 {
+		return CheckTranslationsResult{}, fmt.Errorf("at least one language is required")
+	}
+
+	// Default pattern
+	pattern := args.Pattern
+	if pattern == "" {
+		pattern = "subpage"
+	}
+	if pattern != "subpage" && pattern != "suffix" && pattern != "prefix" {
+		return CheckTranslationsResult{}, fmt.Errorf("invalid pattern: %s (use 'subpage', 'suffix', or 'prefix')", pattern)
+	}
+
+	// Get base pages to check
+	var basePages []string
+	limit := normalizeLimit(args.Limit, 20, 100)
+
+	if len(args.BasePages) > 0 {
+		basePages = args.BasePages
+		if len(basePages) > limit {
+			basePages = basePages[:limit]
+		}
+	} else if args.Category != "" {
+		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+			Category: args.Category,
+			Limit:    limit,
+		})
+		if err != nil {
+			return CheckTranslationsResult{}, fmt.Errorf("failed to get category members: %w", err)
+		}
+		for _, p := range catResult.Members {
+			basePages = append(basePages, p.Title)
+		}
+	} else {
+		return CheckTranslationsResult{}, fmt.Errorf("either 'base_pages' or 'category' must be specified")
+	}
+
+	result := CheckTranslationsResult{
+		LanguagesChecked: args.Languages,
+		Pattern:          pattern,
+		Pages:            make([]PageTranslationResult, 0, len(basePages)),
+	}
+
+	// Check each base page for all languages
+	for _, basePage := range basePages {
+		pageResult := PageTranslationResult{
+			BasePage:     basePage,
+			Translations: make(map[string]TranslationStatus),
+			Complete:     true,
+		}
+
+		for _, lang := range args.Languages {
+			// Build page title based on pattern
+			var langPage string
+			switch pattern {
+			case "subpage":
+				langPage = fmt.Sprintf("%s/%s", basePage, lang)
+			case "suffix":
+				langPage = fmt.Sprintf("%s (%s)", basePage, lang)
+			case "prefix":
+				langPage = fmt.Sprintf("%s:%s", lang, basePage)
+			}
+
+			// Check if page exists
+			info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: langPage})
+			status := TranslationStatus{
+				PageTitle: langPage,
+			}
+
+			if err == nil && info.Exists {
+				status.Exists = true
+				status.PageID = info.PageID
+				status.Length = info.Length
+			} else {
+				status.Exists = false
+				pageResult.MissingLangs = append(pageResult.MissingLangs, lang)
+				pageResult.Complete = false
+				result.MissingCount++
+			}
+
+			pageResult.Translations[lang] = status
+		}
+
+		result.Pages = append(result.Pages, pageResult)
+	}
+
+	result.PagesChecked = len(result.Pages)
+	return result, nil
+}
+
+// FindBrokenInternalLinks finds internal wiki links that point to non-existent pages
+func (c *Client) FindBrokenInternalLinks(ctx context.Context, args FindBrokenInternalLinksArgs) (FindBrokenInternalLinksResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return FindBrokenInternalLinksResult{}, err
+	}
+
+	// Get pages to check
+	var pagesToCheck []string
+	limit := normalizeLimit(args.Limit, 20, 100)
+
+	if len(args.Pages) > 0 {
+		pagesToCheck = args.Pages
+		if len(pagesToCheck) > limit {
+			pagesToCheck = pagesToCheck[:limit]
+		}
+	} else if args.Category != "" {
+		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+			Category: args.Category,
+			Limit:    limit,
+		})
+		if err != nil {
+			return FindBrokenInternalLinksResult{}, fmt.Errorf("failed to get category members: %w", err)
+		}
+		for _, p := range catResult.Members {
+			pagesToCheck = append(pagesToCheck, p.Title)
+		}
+	} else {
+		return FindBrokenInternalLinksResult{}, fmt.Errorf("either 'pages' or 'category' must be specified")
+	}
+
+	result := FindBrokenInternalLinksResult{
+		Pages: make([]PageBrokenLinksResult, 0, len(pagesToCheck)),
+	}
+
+	// Regex to match internal wiki links: [[Target]] or [[Target|Display]]
+	linkRegex := regexp.MustCompile(`\[\[([^\]|#]+)(?:[|#][^\]]*)?]]`)
+
+	for _, pageTitle := range pagesToCheck {
+		pageResult := PageBrokenLinksResult{
+			Title:       pageTitle,
+			BrokenLinks: make([]BrokenLink, 0),
+		}
+
+		// Get page content
+		page, err := c.GetPage(ctx, GetPageArgs{Title: pageTitle, Format: "wikitext"})
+		if err != nil {
+			pageResult.Error = err.Error()
+			result.Pages = append(result.Pages, pageResult)
+			continue
+		}
+
+		// Find all internal links
+		lines := strings.Split(page.Content, "\n")
+		checkedTargets := make(map[string]bool) // Avoid duplicate checks
+
+		for lineNum, line := range lines {
+			matches := linkRegex.FindAllStringSubmatch(line, -1)
+			for _, match := range matches {
+				if len(match) < 2 {
+					continue
+				}
+
+				target := strings.TrimSpace(match[1])
+
+				// Skip special prefixes (categories, files, interwiki)
+				lowerTarget := strings.ToLower(target)
+				if strings.HasPrefix(lowerTarget, "category:") ||
+					strings.HasPrefix(lowerTarget, "file:") ||
+					strings.HasPrefix(lowerTarget, "image:") ||
+					strings.HasPrefix(lowerTarget, ":") ||
+					strings.HasPrefix(lowerTarget, "http") {
+					continue
+				}
+
+				// Skip if already checked
+				if checkedTargets[target] {
+					continue
+				}
+				checkedTargets[target] = true
+
+				// Check if target page exists
+				info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: target})
+				if err != nil || !info.Exists {
+					brokenLink := BrokenLink{
+						Target:  target,
+						Line:    lineNum + 1,
+						Context: extractContext(line, strings.Index(line, match[0]), strings.Index(line, match[0])+len(match[0]), 30),
+					}
+					pageResult.BrokenLinks = append(pageResult.BrokenLinks, brokenLink)
+				}
+			}
+		}
+
+		pageResult.BrokenCount = len(pageResult.BrokenLinks)
+		result.BrokenCount += pageResult.BrokenCount
+		result.Pages = append(result.Pages, pageResult)
+	}
+
+	result.PagesChecked = len(result.Pages)
+	return result, nil
+}
+
+// FindOrphanedPages finds pages that have no incoming links from other pages
+func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesArgs) (FindOrphanedPagesResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return FindOrphanedPagesResult{}, err
+	}
+
+	limit := normalizeLimit(args.Limit, 50, 200)
+
+	// Use the API's lonelypages query (pages with no links to them)
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("list", "querypage")
+	params.Set("qppage", "Lonelypages")
+	params.Set("qplimit", strconv.Itoa(limit))
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return FindOrphanedPagesResult{}, err
+	}
+
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return FindOrphanedPagesResult{}, fmt.Errorf("unexpected response format")
+	}
+
+	querypage, ok := query["querypage"].(map[string]interface{})
+	if !ok {
+		return FindOrphanedPagesResult{}, fmt.Errorf("querypage not found in response")
+	}
+
+	results, ok := querypage["results"].([]interface{})
+	if !ok {
+		return FindOrphanedPagesResult{}, fmt.Errorf("results not found in querypage")
+	}
+
+	orphaned := make([]OrphanedPage, 0)
+	for _, r := range results {
+		page := r.(map[string]interface{})
+
+		// Filter by namespace if specified
+		ns := getInt(page, "ns")
+		if args.Namespace >= 0 && ns != args.Namespace {
+			continue
+		}
+
+		title := getString(page, "title")
+
+		// Filter by prefix if specified
+		if args.Prefix != "" && !strings.HasPrefix(title, args.Prefix) {
+			continue
+		}
+
+		orphaned = append(orphaned, OrphanedPage{
+			Title:  title,
+			PageID: getInt(page, "value"),
+		})
+	}
+
+	return FindOrphanedPagesResult{
+		OrphanedPages: orphaned,
+		TotalChecked:  len(results),
+		OrphanedCount: len(orphaned),
+	}, nil
+}
+
+// GetBacklinks returns pages that link to the specified page ("What links here")
+func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBacklinksResult, error) {
+	if args.Title == "" {
+		return GetBacklinksResult{}, fmt.Errorf("title is required")
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return GetBacklinksResult{}, err
+	}
+
+	limit := normalizeLimit(args.Limit, 50, MaxLimit)
+
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("list", "backlinks")
+	params.Set("bltitle", args.Title)
+	params.Set("bllimit", strconv.Itoa(limit))
+
+	if args.Namespace >= 0 {
+		params.Set("blnamespace", strconv.Itoa(args.Namespace))
+	}
+
+	if !args.Redirect {
+		params.Set("blfilterredir", "nonredirects")
+	}
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return GetBacklinksResult{}, err
+	}
+
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return GetBacklinksResult{}, fmt.Errorf("unexpected response format")
+	}
+
+	backlinks, ok := query["backlinks"].([]interface{})
+	if !ok {
+		return GetBacklinksResult{Title: args.Title, Backlinks: make([]BacklinkInfo, 0)}, nil
+	}
+
+	result := GetBacklinksResult{
+		Title:     args.Title,
+		Backlinks: make([]BacklinkInfo, 0, len(backlinks)),
+	}
+
+	for _, bl := range backlinks {
+		link := bl.(map[string]interface{})
+		info := BacklinkInfo{
+			PageID:    getInt(link, "pageid"),
+			Title:     getString(link, "title"),
+			Namespace: getInt(link, "ns"),
+		}
+		if _, isRedirect := link["redirect"]; isRedirect {
+			info.IsRedirect = true
+		}
+		result.Backlinks = append(result.Backlinks, info)
+	}
+
+	result.Count = len(result.Backlinks)
+
+	// Check for continuation
+	if _, ok := resp["continue"]; ok {
+		result.HasMore = true
+	}
+
+	return result, nil
+}

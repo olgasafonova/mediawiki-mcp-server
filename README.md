@@ -12,8 +12,12 @@ Works with Wikipedia, Fandom wikis, corporate wikis, and any MediaWiki installat
 - **Edit** - Create and modify wiki pages (with bot password authentication)
 - **Parse** - Preview wikitext rendering before saving
 - **External Links** - Extract all external URLs from pages
-- **Link Checker** - Detect broken links across your wiki
+- **Link Checker** - Detect broken external links across your wiki
 - **Terminology Checker** - Ensure consistent brand/product naming using a wiki-hosted glossary
+- **Translation Checker** - Find pages missing in specific languages
+- **Broken Internal Links** - Find wiki links pointing to non-existent pages
+- **Orphaned Pages** - Find pages with no incoming links
+- **Backlinks** - See what pages link to any given page
 
 ### Production-Ready
 
@@ -111,6 +115,10 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 | Tool | Description |
 |------|-------------|
 | `mediawiki_check_terminology` | Check pages for terminology inconsistencies using a wiki glossary |
+| `mediawiki_check_translations` | Find pages missing in specific languages (localization gaps) |
+| `mediawiki_find_broken_internal_links` | Find internal wiki links pointing to non-existent pages |
+| `mediawiki_find_orphaned_pages` | Find pages with no incoming links ("lonely pages") |
+| `mediawiki_get_backlinks` | Get pages linking to a specific page ("What links here") |
 
 ### Write Operations
 
