@@ -101,7 +101,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close() // Error ignored intentionally; body already read
 
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)

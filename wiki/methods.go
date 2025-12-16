@@ -967,7 +967,7 @@ func (c *Client) CheckLinks(ctx context.Context, args CheckLinksArgs) (CheckLink
 					linkResult.Error = err.Error()
 					linkResult.Broken = true
 				} else {
-					resp.Body.Close()
+					_ = resp.Body.Close() // Error ignored; we only need the status
 					linkResult.StatusCode = resp.StatusCode
 					linkResult.Status = resp.Status
 
