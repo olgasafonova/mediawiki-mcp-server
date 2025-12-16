@@ -754,3 +754,25 @@ type ImageInfo struct {
 	Size      int    `json:"size,omitempty"`
 	MimeType  string `json:"mime_type,omitempty"`
 }
+
+// ========== File Search Types ==========
+
+type SearchInFileArgs struct {
+	Filename string `json:"filename" jsonschema:"required" jsonschema_description:"File page name (e.g., 'File:Report.pdf' or just 'Report.pdf')"`
+	Query    string `json:"query" jsonschema:"required" jsonschema_description:"Text to search for in the file"`
+}
+
+type SearchInFileResult struct {
+	Filename   string            `json:"filename"`
+	FileType   string            `json:"file_type"`
+	Matches    []FileSearchMatch `json:"matches"`
+	MatchCount int               `json:"match_count"`
+	Searchable bool              `json:"searchable"`
+	Message    string            `json:"message,omitempty"`
+}
+
+type FileSearchMatch struct {
+	Page    int    `json:"page,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Context string `json:"context"`
+}

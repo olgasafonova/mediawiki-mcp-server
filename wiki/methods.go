@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -3365,4 +3366,167 @@ func (c *Client) parseJSONResponse(resp *http.Response, target interface{}) erro
 	// Import would be needed: "encoding/json"
 	// For now, return error indicating this needs implementation
 	return fmt.Errorf("JSON parsing not implemented for multipart upload")
+}
+
+// SearchInFile searches for text within a wiki file (PDF, text, etc.)
+func (c *Client) SearchInFile(ctx context.Context, args SearchInFileArgs) (SearchInFileResult, error) {
+	if args.Filename == "" {
+		return SearchInFileResult{}, fmt.Errorf("filename is required")
+	}
+	if args.Query == "" {
+		return SearchInFileResult{}, fmt.Errorf("query is required")
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return SearchInFileResult{}, err
+	}
+
+	// Normalize filename to include File: prefix
+	filename := args.Filename
+	if !strings.HasPrefix(filename, "File:") {
+		filename = "File:" + filename
+	}
+
+	// Get file info including URL
+	fileURL, fileType, err := c.getFileURL(ctx, filename)
+	if err != nil {
+		return SearchInFileResult{}, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	// Download the file
+	fileData, err := c.downloadFile(ctx, fileURL)
+	if err != nil {
+		return SearchInFileResult{}, fmt.Errorf("failed to download file: %w", err)
+	}
+
+	result := SearchInFileResult{
+		Filename: filename,
+		FileType: fileType,
+		Matches:  make([]FileSearchMatch, 0),
+	}
+
+	// Handle based on file type
+	switch strings.ToLower(fileType) {
+	case "pdf", "application/pdf":
+		matches, searchable, message, err := SearchInPDF(fileData, args.Query)
+		if err != nil {
+			return SearchInFileResult{}, err
+		}
+		result.Matches = matches
+		result.MatchCount = len(matches)
+		result.Searchable = searchable
+		result.Message = message
+
+	case "txt", "text", "text/plain", "md", "markdown", "csv", "json", "xml", "html":
+		// Text-based files - search directly
+		text := string(fileData)
+		matches := searchInText(text, args.Query, 1)
+		result.Matches = matches
+		result.MatchCount = len(matches)
+		result.Searchable = true
+		if len(matches) == 0 {
+			result.Message = fmt.Sprintf("No matches found for '%s'", args.Query)
+		} else {
+			result.Message = fmt.Sprintf("Found %d matches", len(matches))
+		}
+
+	default:
+		result.Searchable = false
+		result.Message = fmt.Sprintf("File type '%s' is not supported for text search. Supported types: PDF (text-based), TXT, MD, CSV, JSON, XML, HTML", fileType)
+	}
+
+	return result, nil
+}
+
+// getFileURL retrieves the download URL and type for a wiki file
+func (c *Client) getFileURL(ctx context.Context, filename string) (string, string, error) {
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("titles", filename)
+	params.Set("prop", "imageinfo")
+	params.Set("iiprop", "url|mime|size")
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return "", "", err
+	}
+
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return "", "", fmt.Errorf("unexpected response format")
+	}
+
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return "", "", fmt.Errorf("no pages in response")
+	}
+
+	for _, pageData := range pages {
+		page := pageData.(map[string]interface{})
+
+		// Check if file exists
+		if _, missing := page["missing"]; missing {
+			return "", "", fmt.Errorf("file '%s' does not exist", filename)
+		}
+
+		imageinfo, ok := page["imageinfo"].([]interface{})
+		if !ok || len(imageinfo) == 0 {
+			return "", "", fmt.Errorf("no file info available for '%s'", filename)
+		}
+
+		info := imageinfo[0].(map[string]interface{})
+		fileURL := getString(info, "url")
+		mimeType := getString(info, "mime")
+
+		if fileURL == "" {
+			return "", "", fmt.Errorf("no download URL for '%s'", filename)
+		}
+
+		// Extract file type from mime or filename
+		fileType := mimeType
+		if mimeType == "application/pdf" {
+			fileType = "pdf"
+		} else if strings.HasPrefix(mimeType, "text/") {
+			fileType = strings.TrimPrefix(mimeType, "text/")
+		}
+
+		return fileURL, fileType, nil
+	}
+
+	return "", "", fmt.Errorf("file '%s' not found", filename)
+}
+
+// downloadFile downloads a file from the given URL
+func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fileURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", c.config.UserAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	// Limit download size to 50MB
+	const maxSize = 50 * 1024 * 1024
+	limitedReader := &io.LimitedReader{R: resp.Body, N: maxSize}
+
+	data, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file data: %w", err)
+	}
+
+	if limitedReader.N <= 0 {
+		return nil, fmt.Errorf("file exceeds maximum size of 50MB")
+	}
+
+	return data, nil
 }

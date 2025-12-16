@@ -34,7 +34,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.10.0" // Added: Section extraction, related pages, images, file uploads
+	ServerVersion = "1.11.0" // Added: PDF and file text search
 )
 
 // =============================================================================
@@ -1414,6 +1414,32 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 			"tool", "mediawiki_upload_file",
 			"filename", args.Filename,
 			"success", result.Success,
+		)
+		return nil, result, nil
+	})
+
+	// Search in file (PDF, text, etc.)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_search_in_file",
+		Description: "Search for text within wiki files. Supports text-based PDFs and text files (TXT, MD, CSV, JSON, XML, HTML). For PDFs, extracts text and searches; scanned/image PDFs are not supported (requires OCR).",
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "Search in File",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.SearchInFileArgs) (*mcp.CallToolResult, wiki.SearchInFileResult, error) {
+		defer recoverPanic(logger, "search_in_file")
+		result, err := client.SearchInFile(ctx, args)
+		if err != nil {
+			return nil, wiki.SearchInFileResult{}, fmt.Errorf("failed to search in file: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_search_in_file",
+			"filename", args.Filename,
+			"query", args.Query,
+			"matches_found", result.MatchCount,
+			"searchable", result.Searchable,
 		)
 		return nil, result, nil
 	})
