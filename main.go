@@ -4,13 +4,18 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
@@ -28,11 +33,246 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.8.0" // Added: mediawiki_list_users tool to list users by group
+	ServerVersion = "1.9.0" // Added: HTTP transport support for ChatGPT and n8n
 )
 
+// =============================================================================
+// Security Middleware for HTTP Transport
+// =============================================================================
+
+// RateLimiter implements a simple token bucket rate limiter per IP
+type RateLimiter struct {
+	mu       sync.Mutex
+	clients  map[string]*clientLimiter
+	rate     int           // requests per interval
+	interval time.Duration // interval duration
+	cleanup  time.Duration // cleanup old entries
+}
+
+type clientLimiter struct {
+	tokens    int
+	lastCheck time.Time
+}
+
+// NewRateLimiter creates a rate limiter with specified rate per interval
+func NewRateLimiter(rate int, interval time.Duration) *RateLimiter {
+	rl := &RateLimiter{
+		clients:  make(map[string]*clientLimiter),
+		rate:     rate,
+		interval: interval,
+		cleanup:  interval * 10,
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.cleanup)
+	for range ticker.C {
+		rl.mu.Lock()
+		now := time.Now()
+		for ip, client := range rl.clients {
+			if now.Sub(client.lastCheck) > rl.cleanup {
+				delete(rl.clients, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// Allow checks if a request from the given IP should be allowed
+func (rl *RateLimiter) Allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	client, exists := rl.clients[ip]
+	if !exists {
+		rl.clients[ip] = &clientLimiter{
+			tokens:    rl.rate - 1,
+			lastCheck: now,
+		}
+		return true
+	}
+
+	// Refill tokens based on elapsed time
+	elapsed := now.Sub(client.lastCheck)
+	refill := int(elapsed / rl.interval) * rl.rate
+	client.tokens = min(client.tokens+refill, rl.rate)
+	client.lastCheck = now
+
+	if client.tokens > 0 {
+		client.tokens--
+		return true
+	}
+	return false
+}
+
+// SecurityMiddleware wraps an HTTP handler with security checks
+type SecurityMiddleware struct {
+	handler        http.Handler
+	logger         *slog.Logger
+	bearerToken    string
+	allowedOrigins map[string]bool
+	rateLimiter    *RateLimiter
+}
+
+// SecurityConfig holds configuration for the security middleware
+type SecurityConfig struct {
+	BearerToken    string   // Required token for authentication (empty = no auth)
+	AllowedOrigins []string // Allowed Origin headers (empty = allow all)
+	RateLimit      int      // Requests per minute per IP (0 = unlimited)
+}
+
+// NewSecurityMiddleware creates a new security middleware
+func NewSecurityMiddleware(handler http.Handler, logger *slog.Logger, config SecurityConfig) *SecurityMiddleware {
+	origins := make(map[string]bool)
+	for _, o := range config.AllowedOrigins {
+		origins[o] = true
+	}
+
+	var rl *RateLimiter
+	if config.RateLimit > 0 {
+		rl = NewRateLimiter(config.RateLimit, time.Minute)
+	}
+
+	return &SecurityMiddleware{
+		handler:        handler,
+		logger:         logger,
+		bearerToken:    config.BearerToken,
+		allowedOrigins: origins,
+		rateLimiter:    rl,
+	}
+}
+
+func (s *SecurityMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Get client IP for logging and rate limiting
+	clientIP := getClientIP(r)
+
+	// 1. Rate limiting
+	if s.rateLimiter != nil && !s.rateLimiter.Allow(clientIP) {
+		s.logger.Warn("Rate limit exceeded",
+			"client_ip", clientIP,
+			"path", r.URL.Path,
+		)
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
+	// 2. Origin validation (protect against DNS rebinding attacks)
+	origin := r.Header.Get("Origin")
+	if origin != "" && len(s.allowedOrigins) > 0 {
+		if !s.allowedOrigins[origin] && !s.allowedOrigins["*"] {
+			s.logger.Warn("Origin not allowed",
+				"origin", origin,
+				"client_ip", clientIP,
+			)
+			http.Error(w, "Origin not allowed", http.StatusForbidden)
+			return
+		}
+	}
+
+	// 3. Bearer token authentication
+	if s.bearerToken != "" {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			s.logger.Warn("Missing Bearer token",
+				"client_ip", clientIP,
+				"path", r.URL.Path,
+			)
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(token), []byte(s.bearerToken)) != 1 {
+			s.logger.Warn("Invalid Bearer token",
+				"client_ip", clientIP,
+				"path", r.URL.Path,
+			)
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// 4. Set security headers
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Cache-Control", "no-store")
+
+	// 5. Handle CORS preflight
+	if r.Method == http.MethodOptions {
+		setCORSHeaders(w, r, s.allowedOrigins)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Set CORS headers for actual requests
+	setCORSHeaders(w, r, s.allowedOrigins)
+
+	// Log the request
+	s.logger.Info("HTTP request",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"client_ip", clientIP,
+		"origin", origin,
+	)
+
+	// Pass to the underlying handler
+	s.handler.ServeHTTP(w, r)
+}
+
+func setCORSHeaders(w http.ResponseWriter, r *http.Request, allowedOrigins map[string]bool) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+
+	// If specific origins are configured, check them
+	if len(allowedOrigins) > 0 {
+		if allowedOrigins["*"] {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if allowedOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+	} else {
+		// No restrictions configured, allow all
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+}
+
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header (common with proxies)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	// Check X-Real-IP header
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	// Fall back to RemoteAddr
+	ip := r.RemoteAddr
+	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
+		ip = ip[:colonIdx]
+	}
+	return ip
+}
+
 func main() {
-	// Configure logging to stderr (stdout is used for MCP protocol)
+	// Parse command-line flags
+	httpAddr := flag.String("http", "", "HTTP address to listen on (e.g., :8080 or 127.0.0.1:8080). If empty, uses stdio transport.")
+	bearerToken := flag.String("token", "", "Bearer token for HTTP authentication. Can also use MCP_AUTH_TOKEN env var.")
+	allowedOrigins := flag.String("origins", "", "Comma-separated allowed origins for CORS (e.g., 'https://chat.openai.com,https://n8n.example.com'). Empty allows all.")
+	rateLimit := flag.Int("rate-limit", 60, "Maximum requests per minute per IP (0 = unlimited)")
+	flag.Parse()
+
+	// Configure logging to stderr (stdout is used for MCP protocol in stdio mode)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -45,6 +285,12 @@ func main() {
 
 	// Create MediaWiki client
 	client := wiki.NewClient(config, logger)
+
+	// Get bearer token from flag or environment
+	authToken := *bearerToken
+	if authToken == "" {
+		authToken = os.Getenv("MCP_AUTH_TOKEN")
+	}
 
 	// Create MCP server
 	server := mcp.NewServer(&mcp.Implementation{
@@ -163,16 +409,83 @@ Read operations work without authentication.`,
 	// Register resources for direct wiki page access
 	registerResources(server, client, logger)
 
-	// Run server on stdio transport
 	ctx := context.Background()
-	logger.Info("Starting MediaWiki MCP Server",
+
+	// Choose transport based on flags
+	if *httpAddr != "" {
+		// HTTP transport mode (for ChatGPT, n8n, and remote clients)
+		runHTTPServer(server, logger, *httpAddr, authToken, *allowedOrigins, *rateLimit, config.BaseURL)
+	} else {
+		// stdio transport mode (default, for Claude Desktop, Cursor, etc.)
+		logger.Info("Starting MediaWiki MCP Server (stdio mode)",
+			"name", ServerName,
+			"version", ServerVersion,
+			"wiki_url", config.BaseURL,
+		)
+
+		if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+	}
+}
+
+// runHTTPServer starts the MCP server with HTTP transport
+func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, origins string, rateLimit int, wikiURL string) {
+	// Parse allowed origins
+	var allowedOriginsList []string
+	if origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowedOriginsList = append(allowedOriginsList, o)
+			}
+		}
+	}
+
+	// Create the Streamable HTTP handler
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	// Wrap with security middleware
+	securityConfig := SecurityConfig{
+		BearerToken:    authToken,
+		AllowedOrigins: allowedOriginsList,
+		RateLimit:      rateLimit,
+	}
+	securedHandler := NewSecurityMiddleware(mcpHandler, logger, securityConfig)
+
+	// Create HTTP server with timeouts
+	httpServer := &http.Server{
+		Addr:         addr,
+		Handler:      securedHandler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	// Log startup info
+	logger.Info("Starting MediaWiki MCP Server (HTTP mode)",
 		"name", ServerName,
 		"version", ServerVersion,
-		"wiki_url", config.BaseURL,
+		"address", addr,
+		"wiki_url", wikiURL,
+		"auth_enabled", authToken != "",
+		"rate_limit", rateLimit,
+		"allowed_origins", allowedOriginsList,
 	)
 
-	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
-		log.Fatalf("Server error: %v", err)
+	// Security warnings
+	if authToken == "" {
+		logger.Warn("⚠️  HTTP server running WITHOUT authentication. Set -token flag or MCP_AUTH_TOKEN env var for production use.")
+	}
+	if !strings.HasPrefix(addr, "127.0.0.1") && !strings.HasPrefix(addr, "localhost") {
+		logger.Warn("⚠️  Server binding to external interface. Ensure you're behind HTTPS proxy in production.")
+	}
+
+	// Start the server
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("HTTP server error: %v", err)
 	}
 }
 

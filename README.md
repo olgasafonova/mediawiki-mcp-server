@@ -144,20 +144,24 @@ Or edit the Cline MCP settings file directly (same location as Cursor).
 </details>
 
 <details>
-<summary><strong>n8n (via MCP nodes)</strong></summary>
+<summary><strong>n8n (via HTTP transport)</strong></summary>
 
-n8n can connect to MCP servers using the **MCP Client** node or custom Function nodes.
+n8n connects via HTTP transport using the **MCP Client Tool** node.
 
-1. Set environment variables on your n8n instance:
+1. **Start the server** with HTTP transport:
+   ```bash
+   export MEDIAWIKI_URL="https://wiki.software-innovation.com/api.php"
+   export MEDIAWIKI_USERNAME="your.email@tietoevry.com#wiki-MCP"
+   export MEDIAWIKI_PASSWORD="your-bot-password-here"
+   ./mediawiki-mcp-server -http :8080 -token "your-secret-token"
    ```
-   MEDIAWIKI_URL=https://wiki.software-innovation.com/api.php
-   MEDIAWIKI_USERNAME=your.email@tietoevry.com#wiki-MCP
-   MEDIAWIKI_PASSWORD=your-bot-password-here
-   ```
 
-2. Use the **Execute Command** node to run the MCP server, or integrate via the MCP Client community node.
+2. **In n8n**, add an **MCP Client Tool** node and configure:
+   - Transport: HTTP Streamable
+   - URL: `http://your-server:8080`
+   - Authentication: Bearer → your token
 
-See [n8n MCP documentation](https://docs.n8n.io/) for detailed integration options.
+See the [HTTP Transport section](#http-transport-chatgpt-n8n-remote-clients) for full setup guide.
 </details>
 
 ### Step 4: Test It
@@ -181,6 +185,8 @@ Choose your platform:
 - [Cursor](#cursor)
 - [VS Code](#vs-code)
 - [Claude Code CLI](#claude-code-cli)
+- [ChatGPT](#chatgpt) ✨ New in v1.9.0
+- [n8n](#n8n) ✨ New in v1.9.0
 
 ---
 
@@ -328,6 +334,70 @@ claude mcp add mediawiki ./mediawiki-mcp-server \
 ```
 
 Done! The MCP is now available in your Claude Code sessions.
+
+---
+
+### ChatGPT
+
+ChatGPT supports MCP via HTTP transport (requires Pro, Plus, Business, Enterprise, or Education account).
+
+**Step 1: Start the server with HTTP transport**
+
+```bash
+# Set your wiki credentials
+export MEDIAWIKI_URL="https://your-wiki.example.com/api.php"
+
+# Generate a secure token
+export MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+echo "Your token: $MCP_AUTH_TOKEN"
+
+# Start the server
+./mediawiki-mcp-server -http :8080
+```
+
+**Step 2: Configure ChatGPT**
+
+1. Go to **Settings** → **Connectors** → **Advanced** → **Developer Mode**
+2. Add a new MCP connector:
+   - **URL**: `http://your-server:8080` (must be publicly accessible)
+   - **Authentication**: Bearer token → paste your token
+
+**Step 3: Test it**
+
+Ask ChatGPT: *"Search the wiki for release notes"*
+
+For production use with HTTPS, see [Security Best Practices](#security-best-practices).
+
+---
+
+### n8n
+
+n8n connects via HTTP transport using the MCP Client Tool node.
+
+**Step 1: Start the server with HTTP transport**
+
+```bash
+export MEDIAWIKI_URL="https://your-wiki.example.com/api.php"
+export MCP_AUTH_TOKEN="your-secure-token"
+./mediawiki-mcp-server -http :8080
+```
+
+**Step 2: Configure n8n**
+
+1. Add an **MCP Client Tool** node to your workflow
+2. Configure:
+   - **Transport**: HTTP Streamable
+   - **URL**: `http://your-server:8080`
+   - **Authentication**: Bearer → your token
+
+3. Set environment variable on your n8n instance:
+   ```
+   N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+   ```
+
+**Step 3: Use in workflows**
+
+Connect the MCP Client Tool to an AI Agent node to let it search and interact with your wiki.
 
 ---
 
@@ -565,6 +635,7 @@ claude mcp add mediawiki ./mediawiki-mcp-server \
 | `MEDIAWIKI_USERNAME` | No | Bot username (`User@BotName`) |
 | `MEDIAWIKI_PASSWORD` | No | Bot password |
 | `MEDIAWIKI_TIMEOUT` | No | Request timeout (default: `30s`) |
+| `MCP_AUTH_TOKEN` | No | Bearer token for HTTP transport authentication |
 
 ---
 
@@ -700,19 +771,144 @@ Parameters:
 
 ---
 
+## HTTP Transport (ChatGPT, n8n, Remote Clients)
+
+Starting with v1.9.0, the server supports **HTTP transport** in addition to stdio. This enables integration with ChatGPT, n8n, and any MCP client that uses HTTP.
+
+### Quick Start (HTTP Mode)
+
+```bash
+# Start with HTTP transport on port 8080
+./mediawiki-mcp-server -http :8080
+
+# With authentication (recommended for production)
+./mediawiki-mcp-server -http :8080 -token "your-secret-token"
+
+# Or use environment variable
+export MCP_AUTH_TOKEN="your-secret-token"
+./mediawiki-mcp-server -http :8080
+```
+
+### CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-http` | (empty) | HTTP address (e.g., `:8080`, `127.0.0.1:8080`). Empty = stdio mode |
+| `-token` | (empty) | Bearer token for authentication. Also reads `MCP_AUTH_TOKEN` env var |
+| `-origins` | (empty) | Comma-separated allowed origins for CORS. Empty = allow all |
+| `-rate-limit` | 60 | Max requests per minute per IP. 0 = unlimited |
+
+### ChatGPT Configuration
+
+1. **Start the server** with HTTP transport:
+   ```bash
+   ./mediawiki-mcp-server -http :8080 -token "your-secret-token"
+   ```
+
+2. **In ChatGPT**, go to **Settings** → **Connectors** → **Advanced** → **Developer Mode**
+
+3. **Add your MCP server** with:
+   - **URL**: `http://your-server:8080` (or your public URL)
+   - **Authentication**: Bearer token → enter your secret token
+
+4. **Test it**: Ask ChatGPT *"Search the wiki for release notes"*
+
+**Requirements**: ChatGPT Pro, Plus, Business, Enterprise, or Education account.
+
+### n8n Configuration
+
+n8n can connect via the **MCP Client Tool** node:
+
+1. **Start the server** with HTTP transport:
+   ```bash
+   ./mediawiki-mcp-server -http :8080 -token "your-secret-token"
+   ```
+
+2. **In n8n**, add an **MCP Client Tool** node
+
+3. **Configure connection**:
+   - **Transport**: HTTP Streamable
+   - **URL**: `http://your-server:8080`
+   - **Authentication**: Bearer → your token
+
+4. **Set environment variable** (required for AI agent use):
+   ```
+   N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+   ```
+
+### Security Best Practices
+
+The HTTP transport includes built-in security features:
+
+| Feature | Description |
+|---------|-------------|
+| **Bearer Authentication** | Require token via `Authorization: Bearer <token>` header |
+| **Origin Validation** | Restrict which domains can connect (CORS) |
+| **Rate Limiting** | Prevent abuse with per-IP request limits |
+| **Security Headers** | X-Content-Type-Options, X-Frame-Options, Cache-Control |
+
+**Production Checklist:**
+
+1. ✅ **Always use authentication** in production:
+   ```bash
+   ./mediawiki-mcp-server -http :8080 -token "$(openssl rand -hex 32)"
+   ```
+
+2. ✅ **Use HTTPS** via reverse proxy (nginx, Caddy, etc.):
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name mcp.example.com;
+
+       location / {
+           proxy_pass http://127.0.0.1:8080;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   ```
+
+3. ✅ **Restrict origins** for known clients:
+   ```bash
+   ./mediawiki-mcp-server -http :8080 -token "secret" \
+     -origins "https://chat.openai.com,https://n8n.example.com"
+   ```
+
+4. ✅ **Bind to localhost** if using a reverse proxy:
+   ```bash
+   ./mediawiki-mcp-server -http 127.0.0.1:8080 -token "secret"
+   ```
+
+### Transport Comparison
+
+| Aspect | stdio | HTTP |
+|--------|-------|------|
+| **Use case** | Local apps (Claude Desktop, Cursor) | Remote clients (ChatGPT, n8n) |
+| **Performance** | Fastest (no network) | Slight overhead |
+| **Security** | OS-level process isolation | Token auth + HTTPS |
+| **Concurrency** | Single client | Multiple clients |
+| **Setup** | Just run the binary | Need auth token + optional proxy |
+
+**Recommendation**: Use stdio for local development and desktop apps. Use HTTP for remote access, automation, and web-based AI assistants.
+
+---
+
 ## Compatibility
 
-| Platform | Status |
-|----------|--------|
-| Claude Desktop (Mac) | ✅ Fully supported |
-| Claude Desktop (Windows) | ✅ Fully supported |
-| Claude Code CLI | ✅ Fully supported |
-| Cursor | ✅ Fully supported |
-| VS Code + Cline | ✅ Supported |
-| VS Code + Continue | ✅ Supported |
-| ChatGPT | ❌ Not supported (MCP is an Anthropic protocol) |
-
-*If OpenAI adopts MCP in the future, this server would work with ChatGPT automatically.*
+| Platform | Transport | Status |
+|----------|-----------|--------|
+| Claude Desktop (Mac) | stdio | ✅ Fully supported |
+| Claude Desktop (Windows) | stdio | ✅ Fully supported |
+| Claude Code CLI | stdio | ✅ Fully supported |
+| Cursor | stdio | ✅ Fully supported |
+| VS Code + Cline | stdio | ✅ Supported |
+| VS Code + Continue | stdio | ✅ Supported |
+| **ChatGPT** | HTTP | ✅ **Supported (v1.9.0+)** |
+| **n8n** | HTTP | ✅ **Supported (v1.9.0+)** |
+| Any MCP HTTP client | HTTP | ✅ Supported |
 
 ---
 
