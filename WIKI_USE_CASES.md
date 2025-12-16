@@ -642,3 +642,399 @@ mediawiki_find_replace(execute_preview="abc123")
 
 **Instead of**: "Create a new page about X"
 **Say**: "Check if we have a page about X, then create one if not" (check first)
+
+---
+
+## Internal vs Open Source Strategy
+
+This MCP server serves two audiences:
+1. **Internal (Tieto)** - Public 360° Wiki at `wiki.software-innovation.com`
+2. **Open Source** - Any MediaWiki installation (Wikipedia, Fandom, corporate wikis)
+
+### Strategy Options Evaluated
+
+| Option | Pros | Cons | Verdict |
+|--------|------|------|---------|
+| **Separate repos** | Clean separation | Double maintenance, features drift | ❌ No |
+| **Fork model** | Clear upstream/downstream | Merge conflicts, still 2 repos | ❌ No |
+| **Single repo + config** | One codebase, stays in sync | Must externalize all differences | ✅ Yes |
+| **Core + plugins** | Maximum flexibility | Over-engineered for this use case | ❌ No |
+
+### Chosen: Single Repo + Configuration
+
+**Principle**: The codebase is 100% open source. All Tieto-specific behavior comes from configuration, not code.
+
+### What's Currently Tieto-Specific
+
+| Component | Current State | How to Externalize |
+|-----------|---------------|-------------------|
+| Wiki URL in README | Hardcoded `wiki.software-innovation.com` | Keep as example, add generic examples |
+| Bot password instructions | References Tieto SSO | Add generic instructions first |
+| Example prompts | Mention "eFormidling", "AutoSaver" | Use generic examples in main docs |
+| AI Instructions | Public 360° wiki guidelines | Load from config file or env var |
+| Glossary page | `Brand Terminology Glossary` | Already configurable via parameter |
+
+### Implementation Plan
+
+#### Phase A: Clean Separation in README
+
+```markdown
+# README structure:
+
+## Quick Start (Generic)
+- Works with any MediaWiki
+- Generic examples
+
+## Platform Setup
+- Claude Desktop, Cursor, VS Code, etc.
+- No company-specific references
+
+## Tieto Setup (Collapsible Section)
+<details>
+<summary>Public 360° Wiki Setup (Tieto employees)</summary>
+- wiki.software-innovation.com specific instructions
+- Bot password via Tieto SSO
+- Tieto-specific example prompts
+</details>
+```
+
+#### Phase B: Externalize AI Instructions
+
+Current: Instructions hardcoded in `wiki_editing_guidelines.go`
+
+Future:
+```go
+// Load instructions from:
+// 1. MEDIAWIKI_INSTRUCTIONS_FILE env var (path to markdown file)
+// 2. MEDIAWIKI_INSTRUCTIONS env var (inline text)
+// 3. Default generic instructions (fallback)
+```
+
+This lets Tieto deploy with:
+```json
+{
+  "env": {
+    "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+    "MEDIAWIKI_INSTRUCTIONS_FILE": "/path/to/tieto-wiki-guidelines.md"
+  }
+}
+```
+
+#### Phase C: Config File Support
+
+```yaml
+# mediawiki-mcp-config.yaml (optional)
+wiki_url: https://wiki.software-innovation.com/api.php
+instructions_file: ./tieto-guidelines.md
+default_glossary: "Brand Terminology Glossary"
+default_category_for_audits: "Product Documentation"
+
+# Custom terminology rules
+terminology:
+  - wrong: "Tietoevry"
+    correct: "Tieto"
+  - wrong: "Public 360"
+    correct: "Public 360°"
+```
+
+Server loads config from:
+1. `MEDIAWIKI_CONFIG_FILE` env var
+2. `./mediawiki-mcp-config.yaml` in current dir
+3. Built-in defaults
+
+#### Phase D: Separate Instruction Files
+
+```
+mediawiki-mcp-server/
+├── instructions/
+│   ├── generic.md          # Open source default
+│   ├── tieto-internal.md   # Tieto-specific (gitignored or separate repo)
+│   └── wikipedia.md        # Example for Wikipedia editing
+├── main.go
+└── ...
+```
+
+### Distribution Strategy
+
+| Audience | Gets | How |
+|----------|------|-----|
+| Open source users | GitHub releases | Download binary, set URL |
+| Tieto employees | Pre-configured package | Internal docs with config file |
+| Other enterprises | GitHub + their config | Fork config, not code |
+
+### What NEVER Goes in Open Source
+
+- Actual credentials or tokens
+- Internal wiki URLs in code (only in examples/docs)
+- Customer names or internal project references
+- Tieto-specific glossaries (those live in the wiki itself)
+
+### Migration Checklist
+
+- [ ] Move Tieto setup to collapsible section in README
+- [ ] Add generic Quick Start as primary documentation
+- [ ] Create `MEDIAWIKI_INSTRUCTIONS_FILE` env var support
+- [ ] Create `instructions/generic.md` with universal wiki guidelines
+- [ ] Create `instructions/tieto-example.md` as reference (gitignored)
+- [ ] Add config file support (`mediawiki-mcp-config.yaml`)
+- [ ] Update AI instructions to load from config
+- [ ] Test with Wikipedia as example open source wiki
+- [ ] Update release notes to emphasize "works with any wiki"
+
+---
+
+## Implementation Details (Phase 1)
+
+### Enhanced Edit Responses
+
+**Current response** (example from `find_replace`):
+```json
+{
+  "success": true,
+  "message": "Replaced 3 occurrences"
+}
+```
+
+**Proposed response**:
+```json
+{
+  "success": true,
+  "page": "Team",
+  "action": "find_replace",
+  "changes": {
+    "find": "Smith",
+    "replace": "Johnson",
+    "occurrences": 3,
+    "matches": [
+      {"line": 5, "before": "John Smith", "after": "John Johnson"},
+      {"line": 12, "before": "Contact: Smith", "after": "Contact: Johnson"},
+      {"line": 20, "before": "Smith's report", "after": "Johnson's report"}
+    ]
+  },
+  "revision": {
+    "old": 1234,
+    "new": 1235,
+    "diff_url": "https://wiki.example.com/index.php?diff=1235&oldid=1234"
+  },
+  "undo": {
+    "instruction": "mediawiki_undo_edit(page='Team', to_revision=1234)",
+    "wiki_url": "https://wiki.example.com/index.php?title=Team&action=edit&undoafter=1234&undo=1235"
+  }
+}
+```
+
+### Code Changes Required
+
+**File: `wiki/types.go`**
+```go
+// Add to edit result types
+type EditRevisionInfo struct {
+    OldRevision int64  `json:"old_revision"`
+    NewRevision int64  `json:"new_revision"`
+    DiffURL     string `json:"diff_url"`
+}
+
+type UndoInfo struct {
+    Instruction string `json:"instruction"`
+    WikiURL     string `json:"wiki_url"`
+}
+
+// Update FindReplaceResult
+type FindReplaceResult struct {
+    Success  bool             `json:"success"`
+    Page     string           `json:"page"`
+    Action   string           `json:"action"`
+    Changes  FindReplaceChanges `json:"changes"`
+    Revision EditRevisionInfo `json:"revision"`
+    Undo     UndoInfo         `json:"undo"`
+}
+```
+
+**File: `wiki/methods.go`**
+```go
+// In FindReplace method, after successful edit:
+func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindReplaceResult, error) {
+    // ... existing code to find matches ...
+
+    // Get current revision before edit
+    pageInfo, _ := c.GetPageInfo(ctx, args.Title)
+    oldRevision := pageInfo.LastRevisionID
+
+    // ... perform edit ...
+
+    // Get new revision after edit
+    newPageInfo, _ := c.GetPageInfo(ctx, args.Title)
+    newRevision := newPageInfo.LastRevisionID
+
+    return FindReplaceResult{
+        Success: true,
+        Page:    args.Title,
+        Action:  "find_replace",
+        Revision: EditRevisionInfo{
+            OldRevision: oldRevision,
+            NewRevision: newRevision,
+            DiffURL:     fmt.Sprintf("%s?diff=%d&oldid=%d", c.baseURL, newRevision, oldRevision),
+        },
+        Undo: UndoInfo{
+            Instruction: fmt.Sprintf("mediawiki_undo_edit(page='%s', to_revision=%d)", args.Title, oldRevision),
+            WikiURL:     fmt.Sprintf("%s?title=%s&action=edit&undoafter=%d&undo=%d",
+                c.baseURL, url.QueryEscape(args.Title), oldRevision, newRevision),
+        },
+    }, nil
+}
+```
+
+### Session Tracking Implementation
+
+**File: `wiki/session.go`** (new file)
+```go
+package wiki
+
+import (
+    "sync"
+    "time"
+)
+
+type EditLogEntry struct {
+    Time       time.Time `json:"time"`
+    Page       string    `json:"page"`
+    Action     string    `json:"action"`
+    OldRev     int64     `json:"old_revision"`
+    NewRev     int64     `json:"new_revision"`
+    Summary    string    `json:"summary"`
+}
+
+type Session struct {
+    mu          sync.RWMutex
+    edits       []EditLogEntry
+    viewedPages map[string]time.Time
+    searches    []string
+}
+
+func NewSession() *Session {
+    return &Session{
+        edits:       make([]EditLogEntry, 0),
+        viewedPages: make(map[string]time.Time),
+        searches:    make([]string, 0),
+    }
+}
+
+func (s *Session) LogEdit(entry EditLogEntry) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.edits = append(s.edits, entry)
+}
+
+func (s *Session) LogView(page string) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.viewedPages[page] = time.Now()
+}
+
+func (s *Session) GetEdits() []EditLogEntry {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    return append([]EditLogEntry{}, s.edits...)
+}
+
+func (s *Session) GetWorkingSet() map[string]interface{} {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    viewed := make([]string, 0, len(s.viewedPages))
+    for page := range s.viewedPages {
+        viewed = append(viewed, page)
+    }
+
+    edited := make([]string, 0)
+    for _, e := range s.edits {
+        edited = append(edited, e.Page)
+    }
+
+    return map[string]interface{}{
+        "recently_viewed": viewed,
+        "recently_edited": edited,
+        "edit_count":      len(s.edits),
+    }
+}
+```
+
+### Undo Tool Implementation
+
+**File: `main.go`** (add to tool registration)
+```go
+// Undo edit tool
+mcp.AddTool(server, &mcp.Tool{
+    Name:        "mediawiki_undo_edit",
+    Description: "Undo a recent edit by reverting to a previous revision. Use this when the user says 'undo that' or when an edit needs to be reverted. Only works for edits made in the current session by default.",
+    Annotations: &mcp.ToolAnnotations{
+        Title:           "Undo Edit",
+        ReadOnlyHint:    false,
+        DestructiveHint: ptr(true),
+    },
+}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.UndoEditArgs) (*mcp.CallToolResult, wiki.UndoEditResult, error) {
+    // Verify this was a recent edit (safety check)
+    // Perform undo via MediaWiki API
+    // Return confirmation with new revision info
+})
+```
+
+**File: `wiki/types.go`**
+```go
+type UndoEditArgs struct {
+    Page       string `json:"page" jsonschema:"required,description=Page title to undo edit on"`
+    ToRevision int64  `json:"to_revision" jsonschema:"required,description=Revision ID to restore to"`
+    Summary    string `json:"summary" jsonschema:"description=Edit summary for the undo"`
+}
+
+type UndoEditResult struct {
+    Success     bool   `json:"success"`
+    Page        string `json:"page"`
+    FromRev     int64  `json:"from_revision"`
+    ToRev       int64  `json:"to_revision"`
+    NewRev      int64  `json:"new_revision"`
+    Message     string `json:"message"`
+}
+```
+
+---
+
+## Testing Strategy
+
+### Unit Tests for Recovery Features
+
+```go
+func TestFindReplaceReturnsRevisionInfo(t *testing.T) {
+    // Mock wiki client
+    // Perform find_replace
+    // Assert response includes old_revision, new_revision, undo info
+}
+
+func TestSessionTracksEdits(t *testing.T) {
+    session := NewSession()
+    session.LogEdit(EditLogEntry{Page: "Test", Action: "find_replace"})
+
+    edits := session.GetEdits()
+    assert.Len(t, edits, 1)
+    assert.Equal(t, "Test", edits[0].Page)
+}
+
+func TestUndoEditRestoresRevision(t *testing.T) {
+    // Create a page
+    // Edit it
+    // Undo
+    // Verify content matches original
+}
+```
+
+### Integration Tests
+
+```go
+func TestFullEditRecoveryWorkflow(t *testing.T) {
+    // 1. Get page content
+    // 2. Do find_replace
+    // 3. Verify response has revision info
+    // 4. Call undo_edit with the revision
+    // 5. Verify page content restored
+}
+```
