@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -115,6 +116,8 @@ type SecurityMiddleware struct {
 	bearerToken    string
 	allowedOrigins map[string]bool
 	rateLimiter    *RateLimiter
+	maxBodySize    int64
+	trustedProxies []*net.IPNet // CIDR ranges of trusted proxies
 }
 
 // SecurityConfig holds configuration for the security middleware
@@ -122,7 +125,15 @@ type SecurityConfig struct {
 	BearerToken    string   // Required token for authentication (empty = no auth)
 	AllowedOrigins []string // Allowed Origin headers (empty = allow all)
 	RateLimit      int      // Requests per minute per IP (0 = unlimited)
+	MaxBodySize    int64    // Maximum request body size in bytes (0 = default 2MB)
+	TrustedProxies []string // CIDR ranges of trusted proxies (e.g., "10.0.0.0/8", "192.168.1.1/32")
 }
+
+// Default and maximum body size limits
+const (
+	DefaultMaxBodySize = 2 * 1024 * 1024  // 2MB - generous for MCP requests
+	MaxAllowedBodySize = 10 * 1024 * 1024 // 10MB - absolute maximum
+)
 
 // NewSecurityMiddleware creates a new security middleware
 func NewSecurityMiddleware(handler http.Handler, logger *slog.Logger, config SecurityConfig) *SecurityMiddleware {
@@ -136,20 +147,71 @@ func NewSecurityMiddleware(handler http.Handler, logger *slog.Logger, config Sec
 		rl = NewRateLimiter(config.RateLimit, time.Minute)
 	}
 
+	// Set body size limit with sensible defaults
+	maxBody := config.MaxBodySize
+	if maxBody <= 0 {
+		maxBody = DefaultMaxBodySize
+	} else if maxBody > MaxAllowedBodySize {
+		maxBody = MaxAllowedBodySize
+	}
+
+	// Parse trusted proxy CIDR ranges
+	var trustedProxies []*net.IPNet
+	for _, cidr := range config.TrustedProxies {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		// If no CIDR suffix, assume /32 for IPv4 or /128 for IPv6
+		if !strings.Contains(cidr, "/") {
+			if strings.Contains(cidr, ":") {
+				cidr += "/128"
+			} else {
+				cidr += "/32"
+			}
+		}
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			logger.Warn("Invalid trusted proxy CIDR, skipping",
+				"cidr", cidr,
+				"error", err,
+			)
+			continue
+		}
+		trustedProxies = append(trustedProxies, ipNet)
+	}
+
 	return &SecurityMiddleware{
 		handler:        handler,
 		logger:         logger,
 		bearerToken:    config.BearerToken,
 		allowedOrigins: origins,
 		rateLimiter:    rl,
+		maxBodySize:    maxBody,
+		trustedProxies: trustedProxies,
 	}
 }
 
 func (s *SecurityMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Get client IP for logging and rate limiting
-	clientIP := getClientIP(r)
+	clientIP := s.getClientIP(r)
 
-	// 1. Rate limiting
+	// 1. Request body size limit (prevents DoS via large payloads)
+	if r.Body != nil && r.ContentLength > s.maxBodySize {
+		s.logger.Warn("Request body too large",
+			"client_ip", clientIP,
+			"content_length", r.ContentLength,
+			"max_size", s.maxBodySize,
+		)
+		http.Error(w, fmt.Sprintf("Request body too large (max %d bytes)", s.maxBodySize), http.StatusRequestEntityTooLarge)
+		return
+	}
+	// Wrap body reader to enforce limit even when Content-Length is missing/wrong
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, s.maxBodySize)
+	}
+
+	// 2. Rate limiting
 	if s.rateLimiter != nil && !s.rateLimiter.Allow(clientIP) {
 		s.logger.Warn("Rate limit exceeded",
 			"client_ip", clientIP,
@@ -159,7 +221,7 @@ func (s *SecurityMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Origin validation (protect against DNS rebinding attacks)
+	// 3. Origin validation (protect against DNS rebinding attacks)
 	origin := r.Header.Get("Origin")
 	if origin != "" && len(s.allowedOrigins) > 0 {
 		if !s.allowedOrigins[origin] && !s.allowedOrigins["*"] {
@@ -172,7 +234,7 @@ func (s *SecurityMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Bearer token authentication
+	// 4. Bearer token authentication
 	if s.bearerToken != "" {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
@@ -195,12 +257,12 @@ func (s *SecurityMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Set security headers
+	// 5. Set security headers
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Cache-Control", "no-store")
 
-	// 5. Handle CORS preflight
+	// 6. Handle CORS preflight
 	if r.Method == http.MethodOptions {
 		setCORSHeaders(w, r, s.allowedOrigins)
 		w.WriteHeader(http.StatusNoContent)
@@ -246,22 +308,68 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request, allowedOrigins map[s
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
 
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (common with proxies)
+// getClientIP extracts the real client IP, accounting for trusted proxies.
+// When trusted proxies are configured, it walks backward through X-Forwarded-For
+// to find the rightmost IP that isn't from a trusted proxy.
+// This prevents IP spoofing attacks while supporting legitimate proxy chains.
+func (s *SecurityMiddleware) getClientIP(r *http.Request) string {
+	// Get the direct connection IP (strip port if present)
+	remoteIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(remoteIP); err == nil {
+		remoteIP = host
+	}
+
+	// If no trusted proxies configured, don't trust any forwarding headers
+	// This is the secure default - only trust headers when explicitly configured
+	if len(s.trustedProxies) == 0 {
+		return remoteIP
+	}
+
+	// Check if the direct connection is from a trusted proxy
+	if !s.isTrustedProxy(remoteIP) {
+		return remoteIP
+	}
+
+	// Process X-Forwarded-For header (rightmost untrusted IP is the client)
+	// Format: X-Forwarded-For: client, proxy1, proxy2
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+		ips := strings.Split(xff, ",")
+		// Walk backward to find the rightmost untrusted IP
+		for i := len(ips) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(ips[i])
+			if ip == "" {
+				continue
+			}
+			if !s.isTrustedProxy(ip) {
+				return ip
+			}
+		}
 	}
-	// Check X-Real-IP header
+
+	// Check X-Real-IP header (some proxies use this instead)
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		xri = strings.TrimSpace(xri)
+		if xri != "" && !s.isTrustedProxy(xri) {
+			return xri
+		}
 	}
-	// Fall back to RemoteAddr
-	ip := r.RemoteAddr
-	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
-		ip = ip[:colonIdx]
+
+	// Fall back to remote address
+	return remoteIP
+}
+
+// isTrustedProxy checks if an IP is within any trusted proxy CIDR range
+func (s *SecurityMiddleware) isTrustedProxy(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
 	}
-	return ip
+	for _, network := range s.trustedProxies {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
@@ -270,6 +378,7 @@ func main() {
 	bearerToken := flag.String("token", "", "Bearer token for HTTP authentication. Can also use MCP_AUTH_TOKEN env var.")
 	allowedOrigins := flag.String("origins", "", "Comma-separated allowed origins for CORS (e.g., 'https://chat.openai.com,https://n8n.example.com'). Empty allows all.")
 	rateLimit := flag.Int("rate-limit", 60, "Maximum requests per minute per IP (0 = unlimited)")
+	trustedProxies := flag.String("trusted-proxies", "", "Comma-separated trusted proxy IPs/CIDRs (e.g., '10.0.0.0/8,192.168.1.1'). Required to trust X-Forwarded-For header.")
 	flag.Parse()
 
 	// Configure logging to stderr (stdout is used for MCP protocol in stdio mode)
@@ -414,7 +523,7 @@ Read operations work without authentication.`,
 	// Choose transport based on flags
 	if *httpAddr != "" {
 		// HTTP transport mode (for ChatGPT, n8n, and remote clients)
-		runHTTPServer(server, logger, *httpAddr, authToken, *allowedOrigins, *rateLimit, config.BaseURL)
+		runHTTPServer(server, logger, *httpAddr, authToken, *allowedOrigins, *rateLimit, *trustedProxies, config.BaseURL)
 	} else {
 		// stdio transport mode (default, for Claude Desktop, Cursor, etc.)
 		logger.Info("Starting MediaWiki MCP Server (stdio mode)",
@@ -430,7 +539,7 @@ Read operations work without authentication.`,
 }
 
 // runHTTPServer starts the MCP server with HTTP transport
-func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, origins string, rateLimit int, wikiURL string) {
+func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, origins string, rateLimit int, trustedProxies, wikiURL string) {
 	// Parse allowed origins
 	var allowedOriginsList []string
 	if origins != "" {
@@ -438,6 +547,17 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 			o = strings.TrimSpace(o)
 			if o != "" {
 				allowedOriginsList = append(allowedOriginsList, o)
+			}
+		}
+	}
+
+	// Parse trusted proxies
+	var trustedProxiesList []string
+	if trustedProxies != "" {
+		for _, p := range strings.Split(trustedProxies, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				trustedProxiesList = append(trustedProxiesList, p)
 			}
 		}
 	}
@@ -452,13 +572,41 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		BearerToken:    authToken,
 		AllowedOrigins: allowedOriginsList,
 		RateLimit:      rateLimit,
+		TrustedProxies: trustedProxiesList,
 	}
 	securedHandler := NewSecurityMiddleware(mcpHandler, logger, securityConfig)
+
+	// Create mux for routing health checks separately from MCP
+	mux := http.NewServeMux()
+
+	// Health endpoint (no auth required - for load balancers and monitoring)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"status":"healthy","server":"%s","version":"%s"}`, ServerName, ServerVersion)
+	})
+
+	// Readiness endpoint (checks if wiki connection is configured)
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		if wikiURL == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, `{"status":"not_ready","error":"wiki_url_not_configured"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"status":"ready","wiki_url":"%s"}`, wikiURL)
+	})
+
+	// All other routes go through secured MCP handler
+	mux.Handle("/", securedHandler)
 
 	// Create HTTP server with timeouts
 	httpServer := &http.Server{
 		Addr:         addr,
-		Handler:      securedHandler,
+		Handler:      mux,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,

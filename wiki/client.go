@@ -10,17 +10,27 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// CacheEntry holds cached data with expiration
+// CacheEntry holds cached data with expiration and LRU tracking
 type CacheEntry struct {
-	Data      interface{}
-	ExpiresAt time.Time
+	Data       interface{}
+	ExpiresAt  time.Time
+	AccessedAt time.Time // For LRU eviction
+	Key        string    // Store key for eviction
 }
+
+// Cache size limits to prevent unbounded memory growth
+const (
+	MaxCacheEntries = 1000 // Maximum number of cache entries
+	CacheCleanupInterval = 5 * time.Minute // How often to run cache cleanup
+)
 
 // Client handles communication with the MediaWiki API
 type Client struct {
@@ -37,9 +47,11 @@ type Client struct {
 	// Rate limiting - semaphore to control concurrent requests
 	semaphore chan struct{}
 
-	// Response cache
-	cache    sync.Map // key (string) -> *CacheEntry
-	cacheTTL map[string]time.Duration
+	// Response cache with LRU eviction
+	cache      sync.Map // key (string) -> *CacheEntry
+	cacheTTL   map[string]time.Duration
+	cacheCount int64    // Atomic counter for cache size
+	cacheMu    sync.Mutex // Protects eviction operations
 }
 
 // MaxConcurrentRequests limits parallel API calls to prevent overwhelming the server
@@ -70,7 +82,7 @@ func NewClient(config *Config, logger *slog.Logger) *Client {
 		"search":       1 * time.Minute,  // Search results
 	}
 
-	return &Client{
+	client := &Client{
 		config: config,
 		httpClient: &http.Client{
 			Timeout:   config.Timeout,
@@ -81,17 +93,102 @@ func NewClient(config *Config, logger *slog.Logger) *Client {
 		semaphore: sem,
 		cacheTTL:  cacheTTL,
 	}
+
+	// Start background cache cleanup routine
+	go client.cacheCleanupLoop()
+
+	return client
+}
+
+// cacheCleanupLoop periodically cleans up expired entries and enforces size limits
+func (c *Client) cacheCleanupLoop() {
+	ticker := time.NewTicker(CacheCleanupInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.cleanupCache()
+	}
+}
+
+// cleanupCache removes expired entries and evicts LRU entries if over limit
+func (c *Client) cleanupCache() {
+	now := time.Now()
+	var expiredCount int64
+
+	// First pass: remove expired entries
+	c.cache.Range(func(key, value interface{}) bool {
+		ce := value.(*CacheEntry)
+		if now.After(ce.ExpiresAt) {
+			c.cache.Delete(key)
+			expiredCount++
+		}
+		return true
+	})
+
+	// Update counter for expired entries
+	if expiredCount > 0 {
+		atomic.AddInt64(&c.cacheCount, -expiredCount)
+	}
+
+	// Check if we need to evict for size limit
+	currentCount := atomic.LoadInt64(&c.cacheCount)
+	if currentCount > MaxCacheEntries {
+		c.evictLRU(int(currentCount - MaxCacheEntries + MaxCacheEntries/10)) // Evict 10% extra
+	}
+}
+
+// evictLRU removes the least recently used entries
+func (c *Client) evictLRU(count int) {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	// Collect all entries with their access times
+	type entryInfo struct {
+		key        string
+		accessedAt time.Time
+	}
+	var entries []entryInfo
+
+	c.cache.Range(func(key, value interface{}) bool {
+		ce := value.(*CacheEntry)
+		entries = append(entries, entryInfo{
+			key:        key.(string),
+			accessedAt: ce.AccessedAt,
+		})
+		return true
+	})
+
+	// Sort by access time (oldest first)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].accessedAt.Before(entries[j].accessedAt)
+	})
+
+	// Evict the oldest entries
+	evicted := 0
+	for _, entry := range entries {
+		if evicted >= count {
+			break
+		}
+		c.cache.Delete(entry.key)
+		evicted++
+	}
+
+	atomic.AddInt64(&c.cacheCount, -int64(evicted))
 }
 
 // getCached retrieves a cached value if it exists and hasn't expired
 func (c *Client) getCached(key string) (interface{}, bool) {
 	if entry, ok := c.cache.Load(key); ok {
 		ce := entry.(*CacheEntry)
-		if time.Now().Before(ce.ExpiresAt) {
+		now := time.Now()
+		if now.Before(ce.ExpiresAt) {
+			// Update access time for LRU tracking
+			ce.AccessedAt = now
 			return ce.Data, true
 		}
 		// Expired, delete it
 		c.cache.Delete(key)
+		atomic.AddInt64(&c.cacheCount, -1)
 	}
 	return nil, false
 }
@@ -102,20 +199,43 @@ func (c *Client) setCache(key string, data interface{}, ttlKey string) {
 	if t, ok := c.cacheTTL[ttlKey]; ok {
 		ttl = t
 	}
+
+	now := time.Now()
+
+	// Check if this is a new entry or update
+	_, existed := c.cache.Load(key)
+
 	c.cache.Store(key, &CacheEntry{
-		Data:      data,
-		ExpiresAt: time.Now().Add(ttl),
+		Data:       data,
+		ExpiresAt:  now.Add(ttl),
+		AccessedAt: now,
+		Key:        key,
 	})
+
+	// Only increment count for new entries
+	if !existed {
+		newCount := atomic.AddInt64(&c.cacheCount, 1)
+
+		// Trigger eviction if over limit (async to not block caller)
+		if newCount > MaxCacheEntries {
+			go c.evictLRU(int(newCount - MaxCacheEntries + MaxCacheEntries/10))
+		}
+	}
 }
 
 // InvalidateCachePrefix removes all cache entries with keys starting with prefix
 func (c *Client) InvalidateCachePrefix(prefix string) {
+	var deletedCount int64
 	c.cache.Range(func(key, value interface{}) bool {
 		if strings.HasPrefix(key.(string), prefix) {
 			c.cache.Delete(key)
+			deletedCount++
 		}
 		return true
 	})
+	if deletedCount > 0 {
+		atomic.AddInt64(&c.cacheCount, -deletedCount)
+	}
 }
 
 // apiRequest makes a request to the MediaWiki API with rate limiting

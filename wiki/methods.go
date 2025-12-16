@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -12,6 +13,80 @@ import (
 	"sync"
 	"time"
 )
+
+// Private/internal IP ranges that should be blocked for SSRF protection
+var (
+	privateIPBlocks []*net.IPNet
+)
+
+func init() {
+	// Initialize private IP ranges
+	// These are IPs that shouldn't be accessed via external link checking
+	privateCIDRs := []string{
+		"127.0.0.0/8",    // IPv4 loopback
+		"10.0.0.0/8",     // RFC 1918 - Private Class A
+		"172.16.0.0/12",  // RFC 1918 - Private Class B
+		"192.168.0.0/16", // RFC 1918 - Private Class C
+		"169.254.0.0/16", // Link-local
+		"0.0.0.0/8",      // Current network
+		"100.64.0.0/10",  // Shared address space (CGN)
+		"192.0.0.0/24",   // IETF Protocol assignments
+		"192.0.2.0/24",   // TEST-NET-1
+		"198.51.100.0/24", // TEST-NET-2
+		"203.0.113.0/24", // TEST-NET-3
+		"224.0.0.0/4",    // Multicast
+		"240.0.0.0/4",    // Reserved
+		"255.255.255.255/32", // Broadcast
+		"::1/128",        // IPv6 loopback
+		"fe80::/10",      // IPv6 link-local
+		"fc00::/7",       // IPv6 unique local
+		"ff00::/8",       // IPv6 multicast
+	}
+
+	for _, cidr := range privateCIDRs {
+		_, block, err := net.ParseCIDR(cidr)
+		if err == nil {
+			privateIPBlocks = append(privateIPBlocks, block)
+		}
+	}
+}
+
+// isPrivateIP checks if an IP address is private/internal
+func isPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return true // Treat nil as private (fail-safe)
+	}
+	for _, block := range privateIPBlocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPrivateHost checks if a hostname resolves to any private IP
+// Returns an error if the host resolves to a private IP
+func isPrivateHost(hostname string) (bool, error) {
+	// First, try to parse as an IP directly
+	if ip := net.ParseIP(hostname); ip != nil {
+		return isPrivateIP(ip), nil
+	}
+
+	// Resolve hostname
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		// DNS resolution failed - could be temporary, let the HTTP client handle it
+		return false, nil
+	}
+
+	// Check all resolved IPs - if ANY is private, block it
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
 // Search searches for pages matching the query
 func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, error) {
@@ -1104,31 +1179,39 @@ func (c *Client) CheckLinks(ctx context.Context, args CheckLinksArgs) (CheckLink
 				linkResult.Status = "invalid_url"
 				linkResult.Error = "Invalid URL format"
 				linkResult.Broken = true
-			} else {
-				// Make HEAD request first (faster)
-				req, _ := http.NewRequestWithContext(ctx, "HEAD", checkURL, nil)
-				req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
-
-				resp, err := httpClient.Do(req)
-				if err != nil {
-					// Try GET if HEAD fails
-					req, _ = http.NewRequestWithContext(ctx, "GET", checkURL, nil)
-					req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
-					resp, err = httpClient.Do(req)
-				}
-
-				if err != nil {
-					linkResult.Status = "error"
-					linkResult.Error = err.Error()
+			} else if hostname := parsedURL.Hostname(); hostname != "" {
+				// SSRF protection: block private/internal IPs
+				isPrivate, _ := isPrivateHost(hostname)
+				if isPrivate {
+					linkResult.Status = "blocked"
+					linkResult.Error = "URLs pointing to private/internal networks are not allowed"
 					linkResult.Broken = true
 				} else {
-					_ = resp.Body.Close() // Error ignored; we only need the status
-					linkResult.StatusCode = resp.StatusCode
-					linkResult.Status = resp.Status
+					// Make HEAD request first (faster)
+					req, _ := http.NewRequestWithContext(ctx, "HEAD", checkURL, nil)
+					req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
 
-					// Consider 4xx and 5xx as broken (except 403 which might be access denied)
-					if resp.StatusCode >= 400 {
+					resp, err := httpClient.Do(req)
+					if err != nil {
+						// Try GET if HEAD fails
+						req, _ = http.NewRequestWithContext(ctx, "GET", checkURL, nil)
+						req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
+						resp, err = httpClient.Do(req)
+					}
+
+					if err != nil {
+						linkResult.Status = "error"
+						linkResult.Error = err.Error()
 						linkResult.Broken = true
+					} else {
+						_ = resp.Body.Close() // Error ignored; we only need the status
+						linkResult.StatusCode = resp.StatusCode
+						linkResult.Status = resp.Status
+
+						// Consider 4xx and 5xx as broken (except 403 which might be access denied)
+						if resp.StatusCode >= 400 {
+							linkResult.Broken = true
+						}
 					}
 				}
 			}
