@@ -360,7 +360,15 @@ Once configured, try these prompts in Claude, Cursor, or your AI assistant:
 | *"What pages link to the API Reference?"* | Shows backlinks |
 | *"Check the Product category for terminology issues"* | Validates consistent naming |
 
-### Editing (requires authentication)
+### Quick Edits (requires authentication)
+| Prompt | What it does |
+|--------|--------------|
+| *"Strike out 'John Smith' on the Team page - he left the company"* | Applies strikethrough formatting |
+| *"Replace 'Public 360' with 'Public 360°' on the Release Notes page"* | Find and replace text |
+| *"Make all occurrences of 'API Gateway' bold on the Architecture page"* | Applies bold formatting |
+| *"Replace 'old-domain.com' with 'new-domain.com' across all Documentation pages"* | Bulk replace across multiple pages |
+
+### Full Page Editing (requires authentication)
 | Prompt | What it does |
 |--------|--------------|
 | *"Create a new page called 'Meeting Notes' with today's date"* | Creates new page |
@@ -385,6 +393,22 @@ Your wiki's API URL is typically:
 ---
 
 ## Features
+
+### AI-Guided Tool Selection ✨
+The server includes comprehensive instructions that help AI assistants:
+- **Decision trees** for choosing the right tool based on user intent
+- **Common mistake warnings** to avoid inefficient workflows
+- **Example mappings** from natural language to specific tools
+- **Wiki editing guidelines** following MediaWiki best practices
+- **MCP 2025 security guidelines** for safe, consensual editing
+
+### Quick Edits
+Make simple changes without the overhead of fetching, modifying, and pushing entire pages:
+- **Find & Replace** - Replace text in a page with one command
+- **Apply Formatting** - Add strikethrough, bold, italic, underline, or code formatting
+- **Bulk Replace** - Update text across multiple pages or an entire category
+- **Search in Page** - Find specific text within a page before editing
+- **Fuzzy Title Matching** - Find pages even with typos or case differences
 
 ### Read & Search
 - Full-text search across all wiki pages
@@ -509,6 +533,15 @@ claude mcp add mediawiki ./mediawiki-mcp-server \
 | `mediawiki_compare_revisions` | Diff between versions |
 | `mediawiki_get_user_contributions` | User's edit history |
 
+### Quick Edit Tools
+| Tool | Description |
+|------|-------------|
+| `mediawiki_find_replace` | Find and replace text in a page |
+| `mediawiki_apply_formatting` | Apply formatting (strikethrough, bold, italic, underline, code) |
+| `mediawiki_bulk_replace` | Replace text across multiple pages or a category |
+| `mediawiki_search_in_page` | Search for text within a specific page |
+| `mediawiki_resolve_title` | Find page titles with fuzzy matching |
+
 ### Write Operations
 | Tool | Description |
 |------|-------------|
@@ -545,6 +578,98 @@ Restart your AI application after config changes.
 
 ---
 
+## Quick Edit Tools Reference
+
+These tools let you make simple edits without manually fetching and rewriting entire pages.
+
+### Find and Replace (`mediawiki_find_replace`)
+
+Replace specific text in a page:
+
+```
+Parameters:
+- title: Page title (required)
+- find: Text to find (required)
+- replace: Replacement text (required)
+- all: Replace all occurrences (default: false, replaces only first)
+- use_regex: Treat 'find' as regex pattern
+- preview: Show changes without saving
+- summary: Edit summary for wiki history
+```
+
+**Example:** Replace "version 2.0" with "version 3.0" on the Release Notes page.
+
+### Apply Formatting (`mediawiki_apply_formatting`)
+
+Add wiki formatting to specific text:
+
+```
+Parameters:
+- title: Page title (required)
+- text: Text to format (required)
+- format: One of: strikethrough, bold, italic, underline, code, nowiki
+- all: Apply to all occurrences (default: false)
+- preview: Show changes without saving
+```
+
+**Supported formats:**
+| Format | Wiki syntax | Result |
+|--------|-------------|--------|
+| `strikethrough` | `<s>text</s>` | ~~text~~ |
+| `bold` | `'''text'''` | **text** |
+| `italic` | `''text''` | *text* |
+| `underline` | `<u>text</u>` | <u>text</u> |
+| `code` | `<code>text</code>` | `text` |
+| `nowiki` | `<nowiki>text</nowiki>` | Prevents wiki parsing |
+
+**Example:** Strike out "John Smith" on the Team page because he left the company.
+
+### Bulk Replace (`mediawiki_bulk_replace`)
+
+Replace text across multiple pages at once:
+
+```
+Parameters:
+- find: Text to find (required)
+- replace: Replacement text (required)
+- pages: List of specific page titles
+- category: OR apply to all pages in a category
+- use_regex: Treat 'find' as regex pattern
+- preview: Show what would change without saving
+- limit: Maximum pages to process (default: 50)
+```
+
+**Example:** Replace "old-api.example.com" with "api.example.com" across all pages in the Documentation category.
+
+### Search in Page (`mediawiki_search_in_page`)
+
+Find text within a specific page before editing:
+
+```
+Parameters:
+- title: Page title (required)
+- query: Search text (required)
+- use_regex: Treat query as regex
+- context_lines: Lines of context around matches (default: 2)
+```
+
+**Example:** Search for "deprecated" on the API Reference page to see which sections need updating.
+
+### Resolve Title (`mediawiki_resolve_title`)
+
+Find pages with fuzzy matching, helpful when exact title is unknown:
+
+```
+Parameters:
+- title: Page title to search for (required)
+- fuzzy: Enable fuzzy matching (default: true)
+- max_results: Maximum results to return (default: 5)
+```
+
+**Example:** Find the correct title when you're unsure if it's "Module Overview", "Module overview", or "Modules Overview".
+
+---
+
 ## Compatibility
 
 | Platform | Status |
@@ -558,6 +683,31 @@ Restart your AI application after config changes.
 | ChatGPT | ❌ Not supported (MCP is an Anthropic protocol) |
 
 *If OpenAI adopts MCP in the future, this server would work with ChatGPT automatically.*
+
+---
+
+## AI Guidance (For Developers)
+
+The server embeds comprehensive instructions via the MCP `Instructions` field. These instructions help AI models:
+
+### Tool Selection
+```
+User: "Strike out John Smith on the Team page"
+AI reads: Decision tree → "Strike out [name]" → mediawiki_apply_formatting
+```
+
+### Editing Guidelines
+- Content accuracy and conciseness
+- Formatting standards (headings, bold, italic, lists)
+- Category and page naming conventions
+- What NOT to do (don't remove content without asking, don't over-edit)
+
+### MCP 2025 Security
+- User consent requirements
+- Preview-before-save workflow
+- Data privacy guidelines
+
+The guidelines are defined in `wiki_editing_guidelines.go` and can be customized for specific wiki policies.
 
 ---
 

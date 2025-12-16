@@ -28,7 +28,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.5.0" // Added revision history, diff, and user contributions tools
+	ServerVersion = "1.7.1" // Fixed: MediaWiki API returns content under "*" key, not "content"
 )
 
 func main() {
@@ -52,37 +52,109 @@ func main() {
 		Version: ServerVersion,
 	}, &mcp.ServerOptions{
 		Logger: logger,
-		Instructions: `MediaWiki MCP Server provides tools and resources for interacting with MediaWiki wikis.
+		Instructions: `MediaWiki MCP Server - Tool Selection Guide
 
-Resources (direct context access):
-- wiki://page/{title}: Access wiki page content directly
-- wiki://category/{name}: List pages in a category
+` + WikiEditingGuidelines + `
 
-Tools:
-- mediawiki_search: Search for pages by text
-- mediawiki_get_page: Get page content (wikitext or HTML)
-- mediawiki_list_pages: List all pages with pagination
-- mediawiki_list_categories: List all categories
-- mediawiki_get_category_members: Get pages in a category
-- mediawiki_get_page_info: Get metadata about a page
-- mediawiki_edit_page: Create or edit a page (requires authentication)
-- mediawiki_get_recent_changes: Get recent wiki changes
-- mediawiki_get_external_links: Get external URLs from a page
-- mediawiki_get_external_links_batch: Get external URLs from multiple pages
-- mediawiki_check_links: Check if URLs are accessible (broken link detection)
-- mediawiki_check_terminology: Check pages for terminology inconsistencies using a wiki glossary
-- mediawiki_check_translations: Find pages missing in specific languages (localization gaps)
-- mediawiki_find_broken_internal_links: Find internal wiki links pointing to non-existent pages
-- mediawiki_find_orphaned_pages: Find pages with no incoming links
-- mediawiki_get_backlinks: Get pages linking to a specific page ("What links here")
-- mediawiki_get_revisions: Get revision history (edit log) for a page
-- mediawiki_compare_revisions: Compare two revisions and get the diff
-- mediawiki_get_user_contributions: Get edit history for a specific user
+` + MCP2025BestPractices + `
 
-Configure via environment variables:
-- MEDIAWIKI_URL: Wiki API URL (e.g., https://wiki.example.com/api.php)
-- MEDIAWIKI_USERNAME: Bot username (for editing)
-- MEDIAWIKI_PASSWORD: Bot password (for editing)`,
+## DECISION TREE: Choosing the Right Tool
+
+### User wants to EDIT something:
+
+1. "Strike out/cross out [name]" or "mark [text] as deleted"
+   → USE: mediawiki_apply_formatting (format="strikethrough")
+
+2. "Make [text] bold/italic/underlined"
+   → USE: mediawiki_apply_formatting (format="bold"/"italic"/"underline")
+
+3. "Replace [X] with [Y]" or "Change [old] to [new]" on ONE page
+   → USE: mediawiki_find_replace (use preview=true first)
+
+4. "Update [term] across all pages" or "Fix [brand name] everywhere"
+   → USE: mediawiki_bulk_replace (specify pages=[] or category="...")
+
+5. "Add new content" or "Create a page" or complex multi-section edits
+   → USE: mediawiki_edit_page (last resort for simple edits!)
+
+### User wants to FIND something:
+
+1. "Find [text] on the wiki" (don't know which page)
+   → USE: mediawiki_search
+
+2. "Find [text] on [specific page]" (know the page)
+   → USE: mediawiki_search_in_page
+
+3. "What's on page [title]?" or "Show me [page]"
+   → USE: mediawiki_get_page (try exact title first)
+
+4. Page not found? Title might be wrong?
+   → USE: mediawiki_resolve_title (handles case sensitivity, typos)
+
+### User asks about HISTORY/CHANGES:
+
+1. "Who edited [page]?" or "Show edit history"
+   → USE: mediawiki_get_revisions
+
+2. "What changed?" or "Show me the diff"
+   → USE: mediawiki_compare_revisions
+
+3. "What did [user] edit?"
+   → USE: mediawiki_get_user_contributions
+
+4. "What's new on the wiki?"
+   → USE: mediawiki_get_recent_changes
+
+### User asks about QUALITY/LINKS:
+
+1. "Check for broken links"
+   → External URLs: mediawiki_check_links
+   → Internal wiki links: mediawiki_find_broken_internal_links
+
+2. "Check terminology/brand consistency"
+   → USE: mediawiki_check_terminology
+
+3. "Find orphaned/unlinked pages"
+   → USE: mediawiki_find_orphaned_pages
+
+4. "What links to [page]?"
+   → USE: mediawiki_get_backlinks
+
+## COMMON MISTAKES TO AVOID
+
+❌ DON'T use mediawiki_edit_page for simple text changes
+   → Instead use mediawiki_find_replace or mediawiki_apply_formatting
+
+❌ DON'T guess page titles - they are case-sensitive
+   → If page not found, use mediawiki_resolve_title
+
+❌ DON'T edit without preview for destructive changes
+   → Always use preview=true first for find_replace and bulk_replace
+
+❌ DON'T fetch entire page just to search within it
+   → Use mediawiki_search_in_page instead
+
+## EXAMPLE USER REQUESTS → TOOL MAPPING
+
+| User Says | Use This Tool |
+|-----------|---------------|
+| "Strike out John Smith - he left" | mediawiki_apply_formatting |
+| "Replace Public 360 with Public 360°" | mediawiki_find_replace |
+| "Update our brand name on all docs" | mediawiki_bulk_replace |
+| "What does the API page say?" | mediawiki_get_page |
+| "Is Module Overview or Module overview?" | mediawiki_resolve_title |
+| "Find all mentions of deprecated" | mediawiki_search |
+| "Who changed the release notes?" | mediawiki_get_revisions |
+
+## RESOURCES (Direct Context Access)
+
+- wiki://page/{title} - Get page content directly
+- wiki://category/{name} - List category members
+
+## AUTHENTICATION
+
+Editing requires MEDIAWIKI_USERNAME and MEDIAWIKI_PASSWORD environment variables.
+Read operations work without authentication.`,
 	})
 
 	// Register all tools
@@ -108,7 +180,7 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 	// Search tool
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "mediawiki_search",
-		Description: "Full-text search across wiki pages. Returns titles, snippets, and page IDs. Use 'offset' parameter for pagination when results exceed limit.",
+		Description: "Search ACROSS the entire wiki. Use when user doesn't know which page contains info, e.g., 'find pages about API' or 'where is X documented?'. For searching within a specific known page, use mediawiki_search_in_page instead.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:         "Search Wiki",
 			ReadOnlyHint:  true,
@@ -259,7 +331,7 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 	// Edit page (requires authentication)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "mediawiki_edit_page",
-		Description: "Create or update wiki page content. WARNING: Overwrites existing content unless 'section' is specified. Requires MEDIAWIKI_USERNAME and MEDIAWIKI_PASSWORD environment variables.",
+		Description: "Create new pages or rewrite entire page content. WARNING: For simple edits (changing text, formatting), use mediawiki_find_replace or mediawiki_apply_formatting instead. This tool overwrites entire page content unless 'section' is specified.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Edit Page",
 			ReadOnlyHint:    false,
@@ -623,6 +695,140 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 			"user", args.User,
 			"contributions_found", result.Count,
 			"has_more", result.HasMore,
+		)
+		return nil, result, nil
+	})
+
+	// ========== Simple Edit Tools ==========
+
+	// Find and replace text in a page
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_find_replace",
+		Description: "PREFERRED for simple text changes. Replace specific text in a page without fetching/rewriting the whole page. Examples: fix typos, update names, correct terminology. Always use preview=true first to verify matches.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Find and Replace",
+			ReadOnlyHint:    false,
+			DestructiveHint: ptr(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.FindReplaceArgs) (*mcp.CallToolResult, wiki.FindReplaceResult, error) {
+		defer recoverPanic(logger, "find_replace")
+		result, err := client.FindReplace(ctx, args)
+		if err != nil {
+			return nil, wiki.FindReplaceResult{}, fmt.Errorf("find/replace failed: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_find_replace",
+			"title", args.Title,
+			"matches", result.MatchCount,
+			"replaced", result.ReplaceCount,
+			"preview", args.Preview,
+		)
+		return nil, result, nil
+	})
+
+	// Apply formatting to text
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_apply_formatting",
+		Description: "BEST for formatting requests. Apply strikethrough/bold/italic/underline/code to specific text. Use when user says 'strike out', 'cross out', 'make bold', 'italicize'. Example: 'strike out John Smith' → format='strikethrough', text='John Smith'.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Apply Formatting",
+			ReadOnlyHint:    false,
+			DestructiveHint: ptr(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.ApplyFormattingArgs) (*mcp.CallToolResult, wiki.ApplyFormattingResult, error) {
+		defer recoverPanic(logger, "apply_formatting")
+		result, err := client.ApplyFormatting(ctx, args)
+		if err != nil {
+			return nil, wiki.ApplyFormattingResult{}, fmt.Errorf("apply formatting failed: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_apply_formatting",
+			"title", args.Title,
+			"format", args.Format,
+			"matches", result.MatchCount,
+			"formatted", result.FormatCount,
+		)
+		return nil, result, nil
+	})
+
+	// Bulk find and replace across multiple pages
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_bulk_replace",
+		Description: "Update text across MULTIPLE pages at once. Use when user says 'update everywhere', 'fix on all pages', 'change brand name across docs'. Specify pages=[] list OR category='CategoryName'. ALWAYS preview=true first!",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Bulk Replace",
+			ReadOnlyHint:    false,
+			DestructiveHint: ptr(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.BulkReplaceArgs) (*mcp.CallToolResult, wiki.BulkReplaceResult, error) {
+		defer recoverPanic(logger, "bulk_replace")
+		result, err := client.BulkReplace(ctx, args)
+		if err != nil {
+			return nil, wiki.BulkReplaceResult{}, fmt.Errorf("bulk replace failed: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_bulk_replace",
+			"pages_processed", result.PagesProcessed,
+			"pages_modified", result.PagesModified,
+			"total_changes", result.TotalChanges,
+			"preview", args.Preview,
+		)
+		return nil, result, nil
+	})
+
+	// Search within a specific page
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_search_in_page",
+		Description: "Search WITHIN a known page (not across wiki). Use when user says 'find X on page Y' or 'does page Y mention X'. More efficient than get_page + manual search. Also use before find_replace to preview matches.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "Search in Page",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.SearchInPageArgs) (*mcp.CallToolResult, wiki.SearchInPageResult, error) {
+		defer recoverPanic(logger, "search_in_page")
+		result, err := client.SearchInPage(ctx, args)
+		if err != nil {
+			return nil, wiki.SearchInPageResult{}, fmt.Errorf("search in page failed: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_search_in_page",
+			"title", args.Title,
+			"query", args.Query,
+			"matches", result.MatchCount,
+		)
+		return nil, result, nil
+	})
+
+	// Resolve page title with fuzzy matching
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_resolve_title",
+		Description: "RECOVERY tool when page not found. Wiki titles are case-sensitive! If 'Module overview' fails, this finds 'Module Overview'. Also handles typos and partial matches. Use BEFORE retrying get_page with a guessed title.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "Resolve Title",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.ResolveTitleArgs) (*mcp.CallToolResult, wiki.ResolveTitleResult, error) {
+		defer recoverPanic(logger, "resolve_title")
+		result, err := client.ResolveTitle(ctx, args)
+		if err != nil {
+			return nil, wiki.ResolveTitleResult{}, fmt.Errorf("resolve title failed: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_resolve_title",
+			"input_title", args.Title,
+			"exact_match", result.ExactMatch,
+			"resolved_title", result.ResolvedTitle,
+			"suggestions", len(result.Suggestions),
 		)
 		return nil, result, nil
 	})

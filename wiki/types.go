@@ -505,3 +505,133 @@ type UserContribution struct {
 	Minor     bool   `json:"minor,omitempty"`
 	New       bool   `json:"new,omitempty"`
 }
+
+// ========== Find and Replace Types ==========
+
+type FindReplaceArgs struct {
+	Title    string `json:"title" jsonschema:"required" jsonschema_description:"Page title to edit"`
+	Find     string `json:"find" jsonschema:"required" jsonschema_description:"Text to find (exact match or regex if use_regex=true)"`
+	Replace  string `json:"replace" jsonschema:"required" jsonschema_description:"Replacement text"`
+	UseRegex bool   `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as a regular expression"`
+	All      bool   `json:"all,omitempty" jsonschema_description:"Replace all occurrences (default: first only)"`
+	Preview  bool   `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
+	Summary  string `json:"summary,omitempty" jsonschema_description:"Edit summary"`
+	Minor    bool   `json:"minor,omitempty" jsonschema_description:"Mark as minor edit"`
+}
+
+type FindReplaceResult struct {
+	Success       bool     `json:"success"`
+	Title         string   `json:"title"`
+	MatchCount    int      `json:"match_count"`
+	ReplaceCount  int      `json:"replace_count"`
+	Preview       bool     `json:"preview"`
+	Changes       []TextChange `json:"changes,omitempty"`
+	RevisionID    int      `json:"revision_id,omitempty"`
+	Message       string   `json:"message"`
+}
+
+type TextChange struct {
+	Line       int    `json:"line"`
+	Before     string `json:"before"`
+	After      string `json:"after"`
+	Context    string `json:"context,omitempty"`
+}
+
+// ========== Apply Formatting Types ==========
+
+type ApplyFormattingArgs struct {
+	Title   string `json:"title" jsonschema:"required" jsonschema_description:"Page title to edit"`
+	Text    string `json:"text" jsonschema:"required" jsonschema_description:"Text to find and format"`
+	Format  string `json:"format" jsonschema:"required" jsonschema_description:"Format to apply: 'strikethrough', 'bold', 'italic', 'underline', 'code', 'nowiki'"`
+	All     bool   `json:"all,omitempty" jsonschema_description:"Apply to all occurrences (default: first only)"`
+	Preview bool   `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
+	Summary string `json:"summary,omitempty" jsonschema_description:"Edit summary (auto-generated if empty)"`
+}
+
+type ApplyFormattingResult struct {
+	Success      bool        `json:"success"`
+	Title        string      `json:"title"`
+	Format       string      `json:"format_applied"`
+	MatchCount   int         `json:"match_count"`
+	FormatCount  int         `json:"format_count"`
+	Preview      bool        `json:"preview"`
+	Changes      []TextChange `json:"changes,omitempty"`
+	RevisionID   int         `json:"revision_id,omitempty"`
+	Message      string      `json:"message"`
+}
+
+// ========== Bulk Replace Types ==========
+
+type BulkReplaceArgs struct {
+	Pages        []string `json:"pages,omitempty" jsonschema_description:"Page titles to process"`
+	Category     string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages)"`
+	Find         string   `json:"find" jsonschema:"required" jsonschema_description:"Text to find"`
+	Replace      string   `json:"replace" jsonschema:"required" jsonschema_description:"Replacement text"`
+	UseRegex     bool     `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as regex"`
+	Preview      bool     `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
+	Summary      string   `json:"summary,omitempty" jsonschema_description:"Edit summary"`
+	Limit        int      `json:"limit,omitempty" jsonschema_description:"Max pages to process (default 10, max 50)"`
+}
+
+type BulkReplaceResult struct {
+	PagesProcessed int                `json:"pages_processed"`
+	PagesModified  int                `json:"pages_modified"`
+	TotalChanges   int                `json:"total_changes"`
+	Preview        bool               `json:"preview"`
+	Results        []PageReplaceResult `json:"results"`
+	Message        string             `json:"message"`
+}
+
+type PageReplaceResult struct {
+	Title        string       `json:"title"`
+	MatchCount   int          `json:"match_count"`
+	ReplaceCount int          `json:"replace_count"`
+	Changes      []TextChange `json:"changes,omitempty"`
+	RevisionID   int          `json:"revision_id,omitempty"`
+	Error        string       `json:"error,omitempty"`
+}
+
+// ========== Search in Page Types ==========
+
+type SearchInPageArgs struct {
+	Title       string `json:"title" jsonschema:"required" jsonschema_description:"Page title to search in"`
+	Query       string `json:"query" jsonschema:"required" jsonschema_description:"Text to search for"`
+	UseRegex    bool   `json:"use_regex,omitempty" jsonschema_description:"Treat query as regex"`
+	ContextLines int   `json:"context_lines,omitempty" jsonschema_description:"Lines of context around matches (default 2)"`
+}
+
+type SearchInPageResult struct {
+	Title      string        `json:"title"`
+	Query      string        `json:"query"`
+	MatchCount int           `json:"match_count"`
+	Matches    []PageMatch   `json:"matches"`
+}
+
+type PageMatch struct {
+	Line       int    `json:"line"`
+	Column     int    `json:"column"`
+	Text       string `json:"text"`
+	Context    string `json:"context"`
+}
+
+// ========== Resolve Title Types ==========
+
+type ResolveTitleArgs struct {
+	Title      string `json:"title" jsonschema:"required" jsonschema_description:"Page title to resolve (can be inexact)"`
+	Fuzzy      bool   `json:"fuzzy,omitempty" jsonschema_description:"Enable fuzzy matching for similar titles"`
+	MaxResults int    `json:"max_results,omitempty" jsonschema_description:"Max suggestions to return (default 5)"`
+}
+
+type ResolveTitleResult struct {
+	ExactMatch    bool            `json:"exact_match"`
+	ResolvedTitle string          `json:"resolved_title,omitempty"`
+	PageID        int             `json:"page_id,omitempty"`
+	Suggestions   []TitleSuggestion `json:"suggestions,omitempty"`
+	Message       string          `json:"message"`
+}
+
+type TitleSuggestion struct {
+	Title      string  `json:"title"`
+	PageID     int     `json:"page_id"`
+	Similarity float64 `json:"similarity,omitempty"`
+}

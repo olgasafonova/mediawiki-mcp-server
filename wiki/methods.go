@@ -125,7 +125,7 @@ func (c *Client) GetPage(ctx context.Context, args GetPageArgs) (PageContent, er
 func (c *Client) getPageWikitext(ctx context.Context, title string) (PageContent, error) {
 	// Ensure logged in for wikis requiring auth for read
 	if err := c.EnsureLoggedIn(ctx); err != nil {
-		return PageContent{}, err
+		return PageContent{}, fmt.Errorf("authentication required: %w (configure MEDIAWIKI_USERNAME and MEDIAWIKI_PASSWORD)", err)
 	}
 
 	params := url.Values{}
@@ -137,29 +137,61 @@ func (c *Client) getPageWikitext(ctx context.Context, title string) (PageContent
 
 	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
-		return PageContent{}, err
+		return PageContent{}, fmt.Errorf("API request failed: %w", err)
 	}
 
-	query := resp["query"].(map[string]interface{})
-	pages := query["pages"].(map[string]interface{})
+	// Safely extract query object
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return PageContent{}, fmt.Errorf("unexpected API response: missing 'query' object. This may indicate authentication is required for reading pages")
+	}
+
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return PageContent{}, fmt.Errorf("unexpected API response: missing 'pages' object")
+	}
 
 	for pageID, pageData := range pages {
-		page := pageData.(map[string]interface{})
+		page, ok := pageData.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		// Check if page exists
 		if _, missing := page["missing"]; missing {
-			return PageContent{}, fmt.Errorf("page '%s' does not exist", title)
+			// Try to suggest similar pages
+			return PageContent{}, fmt.Errorf("page '%s' does not exist. Try using mediawiki_resolve_title to find the correct page name", title)
 		}
 
-		revisions := page["revisions"].([]interface{})
-		if len(revisions) == 0 {
-			return PageContent{}, fmt.Errorf("no revisions found for page '%s'", title)
+		revisions, ok := page["revisions"].([]interface{})
+		if !ok || len(revisions) == 0 {
+			return PageContent{}, fmt.Errorf("no revisions found for page '%s'. The page may be empty or protected", title)
 		}
 
-		rev := revisions[0].(map[string]interface{})
-		slots := rev["slots"].(map[string]interface{})
-		main := slots["main"].(map[string]interface{})
-		content := main["content"].(string)
+		rev, ok := revisions[0].(map[string]interface{})
+		if !ok {
+			return PageContent{}, fmt.Errorf("invalid revision data for page '%s'", title)
+		}
+
+		slots, ok := rev["slots"].(map[string]interface{})
+		if !ok {
+			return PageContent{}, fmt.Errorf("invalid slots data for page '%s'. This may be a MediaWiki version compatibility issue", title)
+		}
+
+		main, ok := slots["main"].(map[string]interface{})
+		if !ok {
+			return PageContent{}, fmt.Errorf("invalid main slot data for page '%s'", title)
+		}
+
+		// MediaWiki API returns content under "*" key, not "content"
+		content, ok := main["*"].(string)
+		if !ok {
+			// Some versions might use "content" instead
+			content, ok = main["content"].(string)
+			if !ok {
+				return PageContent{}, fmt.Errorf("page '%s' has no content or content is not text", title)
+			}
+		}
 
 		truncated := false
 		if len(content) > CharacterLimit {
@@ -167,13 +199,25 @@ func (c *Client) getPageWikitext(ctx context.Context, title string) (PageContent
 		}
 
 		id, _ := strconv.Atoi(pageID)
+		pageTitle, _ := page["title"].(string)
+		if pageTitle == "" {
+			pageTitle = title
+		}
+
+		revID := 0
+		if rid, ok := rev["revid"].(float64); ok {
+			revID = int(rid)
+		}
+
+		timestamp, _ := rev["timestamp"].(string)
+
 		result := PageContent{
-			Title:     page["title"].(string),
+			Title:     pageTitle,
 			PageID:    id,
 			Content:   content,
 			Format:    "wikitext",
-			Revision:  int(rev["revid"].(float64)),
-			Timestamp: rev["timestamp"].(string),
+			Revision:  revID,
+			Timestamp: timestamp,
 			Truncated: truncated,
 		}
 
@@ -184,13 +228,13 @@ func (c *Client) getPageWikitext(ctx context.Context, title string) (PageContent
 		return result, nil
 	}
 
-	return PageContent{}, fmt.Errorf("page '%s' not found", title)
+	return PageContent{}, fmt.Errorf("page '%s' not found in API response", title)
 }
 
 func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, error) {
 	// Ensure logged in for wikis requiring auth for read
 	if err := c.EnsureLoggedIn(ctx); err != nil {
-		return PageContent{}, err
+		return PageContent{}, fmt.Errorf("authentication required: %w (configure MEDIAWIKI_USERNAME and MEDIAWIKI_PASSWORD)", err)
 	}
 
 	params := url.Values{}
@@ -200,12 +244,23 @@ func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, er
 
 	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
-		return PageContent{}, err
+		return PageContent{}, fmt.Errorf("API request failed: %w", err)
 	}
 
-	parse := resp["parse"].(map[string]interface{})
-	text := parse["text"].(map[string]interface{})
-	content := text["*"].(string)
+	parse, ok := resp["parse"].(map[string]interface{})
+	if !ok {
+		return PageContent{}, fmt.Errorf("unexpected API response: missing 'parse' object. Page '%s' may not exist or authentication is required", title)
+	}
+
+	text, ok := parse["text"].(map[string]interface{})
+	if !ok {
+		return PageContent{}, fmt.Errorf("unexpected API response: missing 'text' object for page '%s'", title)
+	}
+
+	content, ok := text["*"].(string)
+	if !ok {
+		return PageContent{}, fmt.Errorf("page '%s' has no HTML content", title)
+	}
 
 	// Sanitize HTML to prevent XSS
 	content = sanitizeHTML(content)
@@ -215,12 +270,27 @@ func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, er
 		content, truncated = truncateContent(content, CharacterLimit)
 	}
 
+	pageTitle, _ := parse["title"].(string)
+	if pageTitle == "" {
+		pageTitle = title
+	}
+
+	pageID := 0
+	if pid, ok := parse["pageid"].(float64); ok {
+		pageID = int(pid)
+	}
+
+	revID := 0
+	if rid, ok := parse["revid"].(float64); ok {
+		revID = int(rid)
+	}
+
 	result := PageContent{
-		Title:     parse["title"].(string),
-		PageID:    int(parse["pageid"].(float64)),
+		Title:     pageTitle,
+		PageID:    pageID,
 		Content:   content,
 		Format:    "html",
-		Revision:  int(parse["revid"].(float64)),
+		Revision:  revID,
 		Truncated: truncated,
 	}
 
@@ -1950,6 +2020,459 @@ func (c *Client) GetUserContributions(ctx context.Context, args GetUserContribut
 	}
 
 	return result, nil
+}
+
+// ========== Simple Edit Tools ==========
+
+// FindReplace finds and replaces text in a wiki page
+func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindReplaceResult, error) {
+	if args.Title == "" {
+		return FindReplaceResult{}, fmt.Errorf("title is required")
+	}
+	if args.Find == "" {
+		return FindReplaceResult{}, fmt.Errorf("find text is required")
+	}
+
+	// Get current page content
+	page, err := c.GetPage(ctx, GetPageArgs{Title: args.Title, Format: "wikitext"})
+	if err != nil {
+		return FindReplaceResult{}, fmt.Errorf("failed to get page: %w", err)
+	}
+
+	result := FindReplaceResult{
+		Title:   page.Title,
+		Preview: args.Preview,
+	}
+
+	// Build regex pattern
+	var re *regexp.Regexp
+	if args.UseRegex {
+		re, err = regexp.Compile(args.Find)
+		if err != nil {
+			return FindReplaceResult{}, fmt.Errorf("invalid regex pattern: %w", err)
+		}
+	} else {
+		re = regexp.MustCompile(regexp.QuoteMeta(args.Find))
+	}
+
+	// Find all matches with line context
+	lines := strings.Split(page.Content, "\n")
+	var changes []TextChange
+	newLines := make([]string, len(lines))
+	copy(newLines, lines)
+
+	for lineNum, line := range lines {
+		matches := re.FindAllStringIndex(line, -1)
+		if len(matches) == 0 {
+			continue
+		}
+
+		result.MatchCount += len(matches)
+
+		// Apply replacements
+		if args.All {
+			newLine := re.ReplaceAllString(line, args.Replace)
+			if newLine != line {
+				changes = append(changes, TextChange{
+					Line:    lineNum + 1,
+					Before:  line,
+					After:   newLine,
+					Context: extractContext(line, matches[0][0], matches[0][1], 40),
+				})
+				newLines[lineNum] = newLine
+				result.ReplaceCount += len(matches)
+			}
+		} else if result.ReplaceCount == 0 {
+			// Replace first occurrence only
+			newLine := re.ReplaceAllStringFunc(line, func(match string) string {
+				if result.ReplaceCount == 0 {
+					result.ReplaceCount++
+					return args.Replace
+				}
+				return match
+			})
+			if newLine != line {
+				changes = append(changes, TextChange{
+					Line:    lineNum + 1,
+					Before:  line,
+					After:   newLine,
+					Context: extractContext(line, matches[0][0], matches[0][1], 40),
+				})
+				newLines[lineNum] = newLine
+			}
+		}
+	}
+
+	result.Changes = changes
+
+	if result.MatchCount == 0 {
+		result.Message = fmt.Sprintf("No matches found for '%s'", args.Find)
+		return result, nil
+	}
+
+	if args.Preview {
+		result.Success = true
+		result.Message = fmt.Sprintf("Preview: %d matches found, %d would be replaced", result.MatchCount, result.ReplaceCount)
+		return result, nil
+	}
+
+	// Apply the edit
+	newContent := strings.Join(newLines, "\n")
+	summary := args.Summary
+	if summary == "" {
+		summary = fmt.Sprintf("Replaced '%s' with '%s'", truncateString(args.Find, 30), truncateString(args.Replace, 30))
+	}
+
+	editResult, err := c.EditPage(ctx, EditPageArgs{
+		Title:   page.Title,
+		Content: newContent,
+		Summary: summary,
+		Minor:   args.Minor,
+	})
+	if err != nil {
+		return FindReplaceResult{}, fmt.Errorf("failed to save changes: %w", err)
+	}
+
+	result.Success = editResult.Success
+	result.RevisionID = editResult.RevisionID
+	result.Message = fmt.Sprintf("Replaced %d occurrence(s)", result.ReplaceCount)
+
+	return result, nil
+}
+
+// ApplyFormatting applies formatting to text in a wiki page
+func (c *Client) ApplyFormatting(ctx context.Context, args ApplyFormattingArgs) (ApplyFormattingResult, error) {
+	if args.Title == "" {
+		return ApplyFormattingResult{}, fmt.Errorf("title is required")
+	}
+	if args.Text == "" {
+		return ApplyFormattingResult{}, fmt.Errorf("text is required")
+	}
+	if args.Format == "" {
+		return ApplyFormattingResult{}, fmt.Errorf("format is required")
+	}
+
+	// Map format to wikitext markup
+	formatMap := map[string][2]string{
+		"strikethrough": {"<s>", "</s>"},
+		"strike":        {"<s>", "</s>"},
+		"bold":          {"'''", "'''"},
+		"italic":        {"''", "''"},
+		"underline":     {"<u>", "</u>"},
+		"code":          {"<code>", "</code>"},
+		"nowiki":        {"<nowiki>", "</nowiki>"},
+	}
+
+	markup, ok := formatMap[strings.ToLower(args.Format)]
+	if !ok {
+		return ApplyFormattingResult{}, fmt.Errorf("unknown format: %s (use: strikethrough, bold, italic, underline, code, nowiki)", args.Format)
+	}
+
+	// Use FindReplace to apply formatting
+	replacement := markup[0] + args.Text + markup[1]
+
+	findArgs := FindReplaceArgs{
+		Title:   args.Title,
+		Find:    args.Text,
+		Replace: replacement,
+		All:     args.All,
+		Preview: args.Preview,
+		Minor:   true,
+	}
+
+	if args.Summary != "" {
+		findArgs.Summary = args.Summary
+	} else {
+		findArgs.Summary = fmt.Sprintf("Applied %s formatting to '%s'", args.Format, truncateString(args.Text, 30))
+	}
+
+	frResult, err := c.FindReplace(ctx, findArgs)
+	if err != nil {
+		return ApplyFormattingResult{}, err
+	}
+
+	return ApplyFormattingResult{
+		Success:     frResult.Success,
+		Title:       frResult.Title,
+		Format:      args.Format,
+		MatchCount:  frResult.MatchCount,
+		FormatCount: frResult.ReplaceCount,
+		Preview:     args.Preview,
+		Changes:     frResult.Changes,
+		RevisionID:  frResult.RevisionID,
+		Message:     frResult.Message,
+	}, nil
+}
+
+// BulkReplace performs find/replace across multiple pages
+func (c *Client) BulkReplace(ctx context.Context, args BulkReplaceArgs) (BulkReplaceResult, error) {
+	if args.Find == "" {
+		return BulkReplaceResult{}, fmt.Errorf("find text is required")
+	}
+
+	// Get pages to process
+	var pagesToProcess []string
+	limit := normalizeLimit(args.Limit, 10, 50)
+
+	if len(args.Pages) > 0 {
+		pagesToProcess = args.Pages
+		if len(pagesToProcess) > limit {
+			pagesToProcess = pagesToProcess[:limit]
+		}
+	} else if args.Category != "" {
+		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+			Category: args.Category,
+			Limit:    limit,
+		})
+		if err != nil {
+			return BulkReplaceResult{}, fmt.Errorf("failed to get category members: %w", err)
+		}
+		for _, p := range catResult.Members {
+			pagesToProcess = append(pagesToProcess, p.Title)
+		}
+	} else {
+		return BulkReplaceResult{}, fmt.Errorf("either 'pages' or 'category' must be specified")
+	}
+
+	result := BulkReplaceResult{
+		Preview: args.Preview,
+		Results: make([]PageReplaceResult, 0, len(pagesToProcess)),
+	}
+
+	summary := args.Summary
+	if summary == "" {
+		summary = fmt.Sprintf("Bulk replace: '%s' → '%s'", truncateString(args.Find, 20), truncateString(args.Replace, 20))
+	}
+
+	for _, pageTitle := range pagesToProcess {
+		pageResult := PageReplaceResult{Title: pageTitle}
+
+		frResult, err := c.FindReplace(ctx, FindReplaceArgs{
+			Title:    pageTitle,
+			Find:     args.Find,
+			Replace:  args.Replace,
+			UseRegex: args.UseRegex,
+			All:      true,
+			Preview:  args.Preview,
+			Summary:  summary,
+		})
+
+		if err != nil {
+			pageResult.Error = err.Error()
+		} else {
+			pageResult.MatchCount = frResult.MatchCount
+			pageResult.ReplaceCount = frResult.ReplaceCount
+			pageResult.RevisionID = frResult.RevisionID
+			if args.Preview {
+				pageResult.Changes = frResult.Changes
+			}
+
+			if frResult.ReplaceCount > 0 {
+				result.PagesModified++
+				result.TotalChanges += frResult.ReplaceCount
+			}
+		}
+
+		result.Results = append(result.Results, pageResult)
+	}
+
+	result.PagesProcessed = len(result.Results)
+
+	if args.Preview {
+		result.Message = fmt.Sprintf("Preview: %d pages would be modified with %d total changes", result.PagesModified, result.TotalChanges)
+	} else {
+		result.Message = fmt.Sprintf("Modified %d pages with %d total changes", result.PagesModified, result.TotalChanges)
+	}
+
+	return result, nil
+}
+
+// SearchInPage searches for text within a specific page
+func (c *Client) SearchInPage(ctx context.Context, args SearchInPageArgs) (SearchInPageResult, error) {
+	if args.Title == "" {
+		return SearchInPageResult{}, fmt.Errorf("title is required")
+	}
+	if args.Query == "" {
+		return SearchInPageResult{}, fmt.Errorf("query is required")
+	}
+
+	// Get page content
+	page, err := c.GetPage(ctx, GetPageArgs{Title: args.Title, Format: "wikitext"})
+	if err != nil {
+		return SearchInPageResult{}, fmt.Errorf("failed to get page: %w", err)
+	}
+
+	result := SearchInPageResult{
+		Title:   page.Title,
+		Query:   args.Query,
+		Matches: make([]PageMatch, 0),
+	}
+
+	// Build regex
+	var re *regexp.Regexp
+	if args.UseRegex {
+		re, err = regexp.Compile("(?i)" + args.Query)
+		if err != nil {
+			return SearchInPageResult{}, fmt.Errorf("invalid regex: %w", err)
+		}
+	} else {
+		re = regexp.MustCompile("(?i)" + regexp.QuoteMeta(args.Query))
+	}
+
+	contextLines := args.ContextLines
+	if contextLines <= 0 {
+		contextLines = 2
+	}
+
+	lines := strings.Split(page.Content, "\n")
+
+	for lineNum, line := range lines {
+		matches := re.FindAllStringIndex(line, -1)
+		for _, match := range matches {
+			// Build context from surrounding lines
+			startLine := lineNum - contextLines
+			if startLine < 0 {
+				startLine = 0
+			}
+			endLine := lineNum + contextLines + 1
+			if endLine > len(lines) {
+				endLine = len(lines)
+			}
+
+			contextStr := strings.Join(lines[startLine:endLine], "\n")
+
+			result.Matches = append(result.Matches, PageMatch{
+				Line:    lineNum + 1,
+				Column:  match[0] + 1,
+				Text:    line[match[0]:match[1]],
+				Context: contextStr,
+			})
+		}
+	}
+
+	result.MatchCount = len(result.Matches)
+	return result, nil
+}
+
+// ResolveTitle tries to find the correct page title with fuzzy matching
+func (c *Client) ResolveTitle(ctx context.Context, args ResolveTitleArgs) (ResolveTitleResult, error) {
+	if args.Title == "" {
+		return ResolveTitleResult{}, fmt.Errorf("title is required")
+	}
+
+	maxResults := args.MaxResults
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+
+	result := ResolveTitleResult{
+		Suggestions: make([]TitleSuggestion, 0),
+	}
+
+	// First try exact match with normalization
+	normalizedTitle := normalizePageTitle(args.Title)
+	info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: normalizedTitle})
+	if err == nil && info.Exists {
+		result.ExactMatch = true
+		result.ResolvedTitle = info.Title
+		result.PageID = info.PageID
+		result.Message = "Exact match found"
+		return result, nil
+	}
+
+	// Try case-insensitive search
+	searchResult, err := c.Search(ctx, SearchArgs{
+		Query: args.Title,
+		Limit: maxResults * 2, // Get more to filter
+	})
+	if err != nil {
+		return ResolveTitleResult{}, fmt.Errorf("search failed: %w", err)
+	}
+
+	// Calculate similarity and rank results
+	titleLower := strings.ToLower(args.Title)
+	for _, hit := range searchResult.Results {
+		hitLower := strings.ToLower(hit.Title)
+
+		// Calculate simple similarity score
+		similarity := calculateSimilarity(titleLower, hitLower)
+
+		result.Suggestions = append(result.Suggestions, TitleSuggestion{
+			Title:      hit.Title,
+			PageID:     hit.PageID,
+			Similarity: similarity,
+		})
+	}
+
+	// Sort by similarity (descending)
+	for i := 0; i < len(result.Suggestions)-1; i++ {
+		for j := i + 1; j < len(result.Suggestions); j++ {
+			if result.Suggestions[j].Similarity > result.Suggestions[i].Similarity {
+				result.Suggestions[i], result.Suggestions[j] = result.Suggestions[j], result.Suggestions[i]
+			}
+		}
+	}
+
+	// Limit results
+	if len(result.Suggestions) > maxResults {
+		result.Suggestions = result.Suggestions[:maxResults]
+	}
+
+	if len(result.Suggestions) > 0 && result.Suggestions[0].Similarity > 0.8 {
+		result.ResolvedTitle = result.Suggestions[0].Title
+		result.PageID = result.Suggestions[0].PageID
+		result.Message = fmt.Sprintf("Did you mean '%s'?", result.Suggestions[0].Title)
+	} else if len(result.Suggestions) > 0 {
+		result.Message = fmt.Sprintf("Page '%s' not found. Similar pages found.", args.Title)
+	} else {
+		result.Message = fmt.Sprintf("Page '%s' not found. No similar pages.", args.Title)
+	}
+
+	return result, nil
+}
+
+// Helper function to truncate string for display
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// Helper function to calculate string similarity (Jaccard-like)
+func calculateSimilarity(s1, s2 string) float64 {
+	if s1 == s2 {
+		return 1.0
+	}
+
+	// Split into words
+	words1 := strings.Fields(s1)
+	words2 := strings.Fields(s2)
+
+	if len(words1) == 0 || len(words2) == 0 {
+		return 0.0
+	}
+
+	// Count common words
+	set1 := make(map[string]bool)
+	for _, w := range words1 {
+		set1[w] = true
+	}
+
+	common := 0
+	for _, w := range words2 {
+		if set1[w] {
+			common++
+		}
+	}
+
+	// Jaccard similarity
+	union := len(words1) + len(words2) - common
+	if union == 0 {
+		return 0.0
+	}
+
+	return float64(common) / float64(union)
 }
 
 // checkPagesExist checks if multiple pages exist using MediaWiki's multi-value API
