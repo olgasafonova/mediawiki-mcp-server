@@ -60,6 +60,7 @@ Your wiki's API URL is usually:
 | ChatGPT | [Setup instructions](#chatgpt) |
 | n8n | [Setup instructions](#n8n) |
 | VS Code + Cline | [Setup instructions](#vs-code) |
+| Google ADK (Go/Python) | [Setup instructions](#google-adk) |
 
 ---
 
@@ -265,6 +266,103 @@ Install the **Cline** extension, then configure it the same way as [Cursor](#cur
 
 ---
 
+## Google ADK
+
+Google's [Agent Development Kit](https://google.github.io/adk-docs/) connects to MCP servers via stdio or Streamable HTTP.
+
+<details open>
+<summary><strong>Go (stdio)</strong></summary>
+
+```go
+import (
+    "os/exec"
+    "google.golang.org/adk/tool/mcptoolset"
+    "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// Create MCP toolset for wiki access
+wikiTools, _ := mcptoolset.New(mcptoolset.Config{
+    Transport: &mcp.CommandTransport{
+        Command: exec.Command("/path/to/mediawiki-mcp-server"),
+        Env: []string{
+            "MEDIAWIKI_URL=https://your-wiki.com/api.php",
+        },
+    },
+})
+
+// Add to your agent
+agent := llmagent.New(llmagent.Config{
+    Name:     "wiki-agent",
+    Model:    model,
+    Toolsets: []tool.Set{wikiTools},
+})
+```
+
+</details>
+
+<details>
+<summary><strong>Go (Streamable HTTP)</strong></summary>
+
+First, start the server in HTTP mode:
+
+```bash
+export MEDIAWIKI_URL="https://your-wiki.com/api.php"
+./mediawiki-mcp-server -http :8080 -token "your-secret-token"
+```
+
+Then connect from your ADK agent:
+
+```go
+import (
+    "google.golang.org/adk/tool/mcptoolset"
+    "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+wikiTools, _ := mcptoolset.New(mcptoolset.Config{
+    Transport: mcp.NewStreamableHTTPClientTransport("http://localhost:8080"),
+})
+```
+
+</details>
+
+<details>
+<summary><strong>Python (stdio)</strong></summary>
+
+```python
+from google.adk.tools.mcp_tool import MCPToolset, StdioConnectionParams, StdioServerParameters
+
+wiki_tools = MCPToolset(
+    connection_params=StdioConnectionParams(
+        server_params=StdioServerParameters(
+            command="/path/to/mediawiki-mcp-server",
+            env={"MEDIAWIKI_URL": "https://your-wiki.com/api.php"},
+        )
+    )
+)
+```
+
+</details>
+
+<details>
+<summary><strong>Python (Streamable HTTP)</strong></summary>
+
+Start the server in HTTP mode, then:
+
+```python
+from google.adk.tools.mcp_tool import MCPToolset, StreamableHTTPConnectionParams
+
+wiki_tools = MCPToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://localhost:8080",
+        headers={"Authorization": "Bearer your-secret-token"},
+    )
+)
+```
+
+</details>
+
+---
+
 ## Need to Edit Wiki Pages?
 
 Reading works without login. **Editing requires a bot password.**
@@ -408,6 +506,7 @@ pdftotext -v
 | VS Code + Cline | stdio | ✅ Supported |
 | ChatGPT | HTTP | ✅ Supported |
 | n8n | HTTP | ✅ Supported |
+| Google ADK | stdio / HTTP | ✅ Supported |
 
 **Works with any wiki:** Wikipedia, Fandom, corporate wikis, or any MediaWiki installation.
 
