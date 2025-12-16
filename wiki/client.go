@@ -261,7 +261,20 @@ func truncateContent(content string, limit int) (string, bool) {
 	if len(content) <= limit {
 		return content, false
 	}
-	return content[:limit] + "\n\n[Content truncated. Original length: " + fmt.Sprint(len(content)) + " characters]", true
+
+	truncationMsg := fmt.Sprintf(`
+
+---
+[CONTENT TRUNCATED]
+Showing: %d of %d characters (%.1f%% of full content)
+
+To get the full content:
+1. Request specific sections using the 'section' parameter
+2. Use mediawiki_get_page_info to check the full page size first
+3. For very large pages, consider fetching in chunks`,
+		limit, len(content), float64(limit)/float64(len(content))*100)
+
+	return content[:limit] + truncationMsg, true
 }
 
 // normalizeLimit ensures limit is within bounds

@@ -465,10 +465,38 @@ func (c *Client) GetPageInfo(ctx context.Context, args PageInfoArgs) (PageInfo, 
 // EditPage creates or edits a page
 func (c *Client) EditPage(ctx context.Context, args EditPageArgs) (EditResult, error) {
 	if args.Title == "" {
-		return EditResult{}, fmt.Errorf("title is required")
+		return EditResult{}, &ValidationError{
+			Field:   "title",
+			Message: "page title is required",
+			Suggestion: `Provide a title for the page you want to edit.
+
+Example:
+  Title: "My Page"
+  Title: "Category:My Category"
+  Title: "User:Username/Subpage"`,
+		}
 	}
 	if args.Content == "" {
-		return EditResult{}, fmt.Errorf("content is required")
+		return EditResult{}, &ValidationError{
+			Field:   "content",
+			Message: "page content is required",
+			Suggestion: `Provide the wikitext content for the page.
+
+Example:
+  Content: "== Section ==\nThis is the page content."
+
+If you want to clear a page, use a single space or redirect instead.`,
+		}
+	}
+
+	// Validate content size
+	if err := ValidateContentSize(args.Content, args.Title, MaxEditSize); err != nil {
+		return EditResult{}, err
+	}
+
+	// Validate content for dangerous patterns
+	if err := ValidateWikitextContent(args.Content, args.Title); err != nil {
+		return EditResult{}, err
 	}
 
 	token, err := c.getCSRFToken(ctx)

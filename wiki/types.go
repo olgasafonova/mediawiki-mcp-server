@@ -4,9 +4,12 @@ import "time"
 
 // Constants for response limits
 const (
-	DefaultLimit    = 50
-	MaxLimit        = 500
-	CharacterLimit  = 25000
+	DefaultLimit   = 50
+	MaxLimit       = 500
+	CharacterLimit = 150000 // 150KB - accommodates large documentation pages
+
+	// Edit limits
+	MaxEditSize = 200000 // 200KB max for edits (larger than read to allow updates)
 )
 
 // ========== Search Types ==========

