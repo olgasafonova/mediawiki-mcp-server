@@ -108,11 +108,6 @@ func (c *Client) setCache(key string, data interface{}, ttlKey string) {
 	})
 }
 
-// invalidateCache removes a specific key from the cache
-func (c *Client) invalidateCache(key string) {
-	c.cache.Delete(key)
-}
-
 // InvalidateCachePrefix removes all cache entries with keys starting with prefix
 func (c *Client) InvalidateCachePrefix(prefix string) {
 	c.cache.Range(func(key, value interface{}) bool {
