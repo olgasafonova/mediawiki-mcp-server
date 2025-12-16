@@ -1132,9 +1132,7 @@ func parseTableRow(row string) []string {
 		}
 
 		// Remove leading | if present
-		if strings.HasPrefix(line, "|") {
-			line = strings.TrimPrefix(line, "|")
-		}
+		line = strings.TrimPrefix(line, "|")
 
 		// Split by || for multiple cells on one line
 		parts := strings.Split(line, "||")
