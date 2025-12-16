@@ -28,7 +28,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.7.1" // Fixed: MediaWiki API returns content under "*" key, not "content"
+	ServerVersion = "1.8.0" // Added: mediawiki_list_users tool to list users by group
 )
 
 func main() {
@@ -829,6 +829,31 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 			"exact_match", result.ExactMatch,
 			"resolved_title", result.ResolvedTitle,
 			"suggestions", len(result.Suggestions),
+		)
+		return nil, result, nil
+	})
+
+	// List users by group
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mediawiki_list_users",
+		Description: "List wiki users, optionally filtered by group. Use group='sysop' for admins, 'bureaucrat' for bureaucrats, 'bot' for bots. Returns user names, groups, edit counts, and registration dates.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "List Users",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  ptr(true),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args wiki.ListUsersArgs) (*mcp.CallToolResult, wiki.ListUsersResult, error) {
+		defer recoverPanic(logger, "list_users")
+		result, err := client.ListUsers(ctx, args)
+		if err != nil {
+			return nil, wiki.ListUsersResult{}, fmt.Errorf("list users failed: %w", err)
+		}
+		logger.Info("Tool executed",
+			"tool", "mediawiki_list_users",
+			"group", args.Group,
+			"users_returned", len(result.Users),
+			"has_more", result.HasMore,
 		)
 		return nil, result, nil
 	})

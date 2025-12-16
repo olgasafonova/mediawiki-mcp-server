@@ -360,6 +360,13 @@ Once configured, try these prompts in Claude, Cursor, or your AI assistant:
 | *"What pages link to the API Reference?"* | Shows backlinks |
 | *"Check the Product category for terminology issues"* | Validates consistent naming |
 
+### Users & Administration
+| Prompt | What it does |
+|--------|--------------|
+| *"Who are the wiki admins?"* | Lists users with sysop rights |
+| *"Show me all bot accounts"* | Lists users in the bot group |
+| *"List bureaucrats on this wiki"* | Lists users who can grant admin rights |
+
 ### Quick Edits (requires authentication)
 | Prompt | What it does |
 |--------|--------------|
@@ -508,6 +515,7 @@ claude mcp add mediawiki ./mediawiki-mcp-server \
 | `mediawiki_get_page_info` | Get page metadata |
 | `mediawiki_get_recent_changes` | Recent activity |
 | `mediawiki_get_wiki_info` | Wiki statistics |
+| `mediawiki_list_users` | List users by group (admins, bots, etc.) |
 | `mediawiki_parse` | Preview wikitext |
 
 ### Link Analysis
@@ -667,6 +675,28 @@ Parameters:
 ```
 
 **Example:** Find the correct title when you're unsure if it's "Module Overview", "Module overview", or "Modules Overview".
+
+### List Users (`mediawiki_list_users`)
+
+List wiki users, optionally filtered by group:
+
+```
+Parameters:
+- group: Filter by user group (optional)
+- limit: Maximum users to return (default: 50)
+- active_only: Only show recently active users
+- continue_from: Pagination token for more results
+```
+
+**Common groups:**
+| Group | Description |
+|-------|-------------|
+| `sysop` | Administrators |
+| `bureaucrat` | Can grant admin rights |
+| `bot` | Automated accounts |
+| `interface-admin` | Can edit CSS/JS |
+
+**Example:** List all wiki administrators to find who can help with access issues.
 
 ---
 

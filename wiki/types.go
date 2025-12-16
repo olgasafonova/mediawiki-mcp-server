@@ -635,3 +635,28 @@ type TitleSuggestion struct {
 	PageID     int     `json:"page_id"`
 	Similarity float64 `json:"similarity,omitempty"`
 }
+
+// ========== List Users Types ==========
+
+type ListUsersArgs struct {
+	Group        string `json:"group,omitempty" jsonschema_description:"Filter by user group: 'sysop' (admins), 'bureaucrat', 'bot', or empty for all users"`
+	Limit        int    `json:"limit,omitempty" jsonschema_description:"Maximum users to return (default 50, max 500)"`
+	ContinueFrom string `json:"continue_from,omitempty" jsonschema_description:"Continue token for pagination"`
+	ActiveOnly   bool   `json:"active_only,omitempty" jsonschema_description:"Only return users active in the last 30 days"`
+}
+
+type ListUsersResult struct {
+	Users        []UserInfo `json:"users"`
+	TotalCount   int        `json:"total_count"`
+	HasMore      bool       `json:"has_more"`
+	ContinueFrom string     `json:"continue_from,omitempty"`
+	Group        string     `json:"group,omitempty"`
+}
+
+type UserInfo struct {
+	UserID       int      `json:"user_id"`
+	Name         string   `json:"name"`
+	Groups       []string `json:"groups,omitempty"`
+	EditCount    int      `json:"edit_count,omitempty"`
+	Registration string   `json:"registration,omitempty"`
+}
