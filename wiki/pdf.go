@@ -1,14 +1,13 @@
 package wiki
 
 import (
+	"bytes"
 	"fmt"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
-
-	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
 // Pre-compiled regexes for text cleaning (performance optimization)
@@ -18,71 +17,79 @@ var (
 	blankLinesRegex = regexp.MustCompile(`\n{3,}`)
 )
 
-// SearchInPDF searches for a query string in PDF content
+// isPdfToTextAvailable checks if pdftotext command is available
+func isPdfToTextAvailable() bool {
+	_, err := exec.LookPath("pdftotext")
+	return err == nil
+}
+
+// SearchInPDF searches for a query string in PDF content using external pdftotext
 func SearchInPDF(pdfData []byte, query string) ([]FileSearchMatch, bool, string, error) {
 	if len(pdfData) == 0 {
 		return nil, false, "Empty PDF data", nil
 	}
 
-	// Create a temporary file to work with pdfcpu (it works with files)
-	tmpFile, err := os.CreateTemp("", "mediawiki-pdf-*.pdf")
+	// Check if pdftotext is available
+	if !isPdfToTextAvailable() {
+		installHint := getInstallHint()
+		return nil, false, fmt.Sprintf("PDF search requires 'pdftotext' (poppler-utils). %s", installHint), nil
+	}
+
+	// Create a temporary file for the PDF
+	tmpPDF, err := os.CreateTemp("", "mediawiki-pdf-*.pdf")
 	if err != nil {
 		return nil, false, fmt.Sprintf("Failed to create temp file: %v", err), nil
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	tmpPDFPath := tmpPDF.Name()
+	defer os.Remove(tmpPDFPath)
 
 	// Write PDF data to temp file
-	if _, err := tmpFile.Write(pdfData); err != nil {
-		tmpFile.Close()
+	if _, err := tmpPDF.Write(pdfData); err != nil {
+		tmpPDF.Close()
 		return nil, false, fmt.Sprintf("Failed to write temp file: %v", err), nil
 	}
-	tmpFile.Close()
+	tmpPDF.Close()
 
-	// Create output directory for extracted text
-	tmpDir, err := os.MkdirTemp("", "mediawiki-pdf-extract-")
+	// Create temp file for text output
+	tmpTXT, err := os.CreateTemp("", "mediawiki-pdf-*.txt")
 	if err != nil {
-		return nil, false, fmt.Sprintf("Failed to create temp dir: %v", err), nil
+		return nil, false, fmt.Sprintf("Failed to create temp text file: %v", err), nil
 	}
-	defer os.RemoveAll(tmpDir)
+	tmpTXTPath := tmpTXT.Name()
+	tmpTXT.Close()
+	defer os.Remove(tmpTXTPath)
 
-	// Try to extract text content
-	conf := model.NewDefaultConfiguration()
-	err = api.ExtractContentFile(tmpPath, tmpDir, nil, conf)
-	if err != nil {
-		// Check if it might be a scanned/image PDF
-		return nil, false, fmt.Sprintf("Failed to extract text from PDF: %v. The file may be scanned/image-based (requires OCR) or encrypted.", err), nil
-	}
+	// Run pdftotext
+	// -layout preserves the original layout
+	// -enc UTF-8 ensures proper encoding
+	cmd := exec.Command("pdftotext", "-layout", "-enc", "UTF-8", tmpPDFPath, tmpTXTPath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
-	// Read all extracted text files
-	var allText strings.Builder
-	pageCount := 0
-
-	entries, err := os.ReadDir(tmpDir)
-	if err != nil {
-		return nil, false, fmt.Sprintf("Failed to read extracted content: %v", err), nil
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	if err := cmd.Run(); err != nil {
+		errMsg := stderr.String()
+		if strings.Contains(errMsg, "Incorrect password") || strings.Contains(errMsg, "encrypted") {
+			return nil, false, "PDF is password-protected or encrypted", nil
 		}
-		if strings.HasSuffix(entry.Name(), ".txt") {
-			pageCount++
-			content, err := os.ReadFile(filepath.Join(tmpDir, entry.Name()))
-			if err == nil {
-				allText.WriteString(string(content))
-				allText.WriteString("\n")
-			}
-		}
+		return nil, false, fmt.Sprintf("Failed to extract text from PDF: %v. The file may be corrupted or in an unsupported format.", err), nil
 	}
 
-	text := allText.String()
+	// Read extracted text
+	textBytes, err := os.ReadFile(tmpTXTPath)
+	if err != nil {
+		return nil, false, fmt.Sprintf("Failed to read extracted text: %v", err), nil
+	}
+
+	text := string(textBytes)
 	text = cleanPDFText(text)
 
 	if strings.TrimSpace(text) == "" {
-		return nil, false, "No readable text found in PDF. The file may be scanned/image-based (requires OCR) or encrypted.", nil
+		return nil, false, "No readable text found in PDF. The file may be scanned/image-based (requires OCR) or empty.", nil
 	}
+
+	// Estimate page count from form feeds or content structure
+	pageCount := strings.Count(text, "\f") + 1
+	text = strings.ReplaceAll(text, "\f", "\n\n") // Replace form feeds with double newlines
 
 	// Search for query
 	matches := searchInText(text, query, pageCount)
@@ -92,6 +99,20 @@ func SearchInPDF(pdfData []byte, query string) ([]FileSearchMatch, bool, string,
 	}
 
 	return matches, true, fmt.Sprintf("Found %d matches in PDF (%d pages)", len(matches), pageCount), nil
+}
+
+// getInstallHint returns platform-specific installation instructions
+func getInstallHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "Install with: brew install poppler"
+	case "linux":
+		return "Install with: apt install poppler-utils (Debian/Ubuntu) or yum install poppler-utils (RHEL/CentOS)"
+	case "windows":
+		return "Install with: choco install poppler (or download from https://github.com/oschwartz10612/poppler-windows/releases)"
+	default:
+		return "Install poppler-utils for your platform"
+	}
 }
 
 // cleanPDFText normalizes extracted PDF text
@@ -140,8 +161,7 @@ func searchInText(text, query string, pageCount int) []FileSearchMatch {
 			}
 
 			// Estimate page number if we have multiple pages
-			// This is a rough estimate since we don't have page boundaries
-			if pageCount > 1 {
+			if pageCount > 1 && len(lines) > 0 {
 				estimatedPage := (lineNum * pageCount / len(lines)) + 1
 				if estimatedPage > pageCount {
 					estimatedPage = pageCount
