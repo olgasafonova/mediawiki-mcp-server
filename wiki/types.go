@@ -63,10 +63,12 @@ type ListPagesArgs struct {
 }
 
 type ListPagesResult struct {
-	Pages        []PageSummary `json:"pages"`
-	TotalCount   int           `json:"total_count"`
-	HasMore      bool          `json:"has_more"`
-	ContinueFrom string        `json:"continue_from,omitempty"`
+	Pages          []PageSummary `json:"pages"`
+	ReturnedCount  int           `json:"returned_count"`
+	TotalCount     int           `json:"total_count,omitempty"` // Deprecated: use returned_count. Shows returned count, not actual total.
+	TotalEstimate  int           `json:"total_estimate,omitempty"` // Estimated total pages in namespace (when available)
+	HasMore        bool          `json:"has_more"`
+	ContinueFrom   string        `json:"continue_from,omitempty"`
 }
 
 type PageSummary struct {
@@ -312,10 +314,11 @@ type PageExternalLinks struct {
 // ========== Terminology Check Types ==========
 
 type CheckTerminologyArgs struct {
-	Pages        []string `json:"pages,omitempty" jsonschema_description:"Page titles to check. If empty, uses pages from category."`
-	Category     string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages list)"`
-	GlossaryPage string   `json:"glossary_page,omitempty" jsonschema_description:"Wiki page containing the glossary table (default: 'Brand Terminology Glossary')"`
-	Limit        int      `json:"limit,omitempty" jsonschema_description:"Max pages to check (default 10, max 50)"`
+	Pages             []string `json:"pages,omitempty" jsonschema_description:"Page titles to check. If empty, uses pages from category."`
+	Category          string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages list)"`
+	GlossaryPage      string   `json:"glossary_page,omitempty" jsonschema_description:"Wiki page containing the glossary table (default: 'Brand Terminology Glossary')"`
+	Limit             int      `json:"limit,omitempty" jsonschema_description:"Max pages to check (default 10, max 50)"`
+	ExcludeCodeBlocks *bool    `json:"exclude_code_blocks,omitempty" jsonschema_description:"Skip code blocks (syntaxhighlight, source, pre, code tags) to avoid false positives on code paths. Default: true"`
 }
 
 type CheckTerminologyResult struct {

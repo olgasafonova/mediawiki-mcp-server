@@ -113,10 +113,11 @@ func convertBoldItalic(text string) string {
 	text = boldRegex2.ReplaceAllString(text, `'''$1'''`)
 
 	// Italic: *text* or _text_ -> ''text''
-	italicRegex1 := regexp.MustCompile(`(?:^|[^\*])\*([^\*\n]+?)\*(?:[^\*]|$)`)
-	text = italicRegex1.ReplaceAllString(text, `''$1''`)
-	italicRegex2 := regexp.MustCompile(`(?:^|[^_])_([^_\n]+?)_(?:[^_]|$)`)
-	text = italicRegex2.ReplaceAllString(text, `''$1''`)
+	// Capture boundary characters to preserve spacing around formatting
+	italicRegex1 := regexp.MustCompile(`(^|[^\*])\*([^\*\n]+?)\*([^\*]|$)`)
+	text = italicRegex1.ReplaceAllString(text, `$1''$2''$3`)
+	italicRegex2 := regexp.MustCompile(`(^|[^_])_([^_\n]+?)_([^_]|$)`)
+	text = italicRegex2.ReplaceAllString(text, `$1''$2''$3`)
 
 	// Restore inline code
 	for i, code := range inlineCodes {

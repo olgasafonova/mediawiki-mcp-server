@@ -733,6 +733,9 @@ var (
 
 	// Remove style attributes that could contain expressions
 	styleAttrRegex = regexp.MustCompile(`(?i)\s+style\s*=\s*(?:"[^"]*"|'[^']*')`)
+
+	// Remove HTML comments (including MediaWiki cache comments like <!-- NewPP limit report -->)
+	htmlCommentRegex = regexp.MustCompile(`(?s)<!--.*?-->`)
 )
 
 // sanitizeHTML removes potentially dangerous HTML elements and attributes
@@ -758,6 +761,9 @@ func sanitizeHTML(html string) string {
 
 	// Remove style attributes (can contain CSS expressions)
 	html = styleAttrRegex.ReplaceAllString(html, "")
+
+	// Remove HTML comments (reduces token usage by removing MediaWiki cache comments)
+	html = htmlCommentRegex.ReplaceAllString(html, "")
 
 	return html
 }

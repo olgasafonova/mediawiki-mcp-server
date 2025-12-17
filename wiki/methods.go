@@ -409,6 +409,38 @@ func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, er
 	return result, nil
 }
 
+// getNamespacePageCount tries to get total page count for a namespace
+// Returns 0 if unable to fetch statistics
+func (c *Client) getNamespacePageCount(ctx context.Context, namespace int) int {
+	// For main namespace (0), we can get statistics from siteinfo
+	if namespace == 0 {
+		params := url.Values{}
+		params.Set("action", "query")
+		params.Set("meta", "siteinfo")
+		params.Set("siprop", "statistics")
+
+		resp, err := c.apiRequest(ctx, params)
+		if err != nil {
+			return 0
+		}
+
+		query := getMap(resp["query"])
+		if query == nil {
+			return 0
+		}
+		stats := getMap(query["statistics"])
+		if stats == nil {
+			return 0
+		}
+
+		// "articles" gives the count of content pages in main namespace
+		return getInt(stats["articles"])
+	}
+
+	// For other namespaces, we can't efficiently get totals without iterating
+	return 0
+}
+
 // ListPages lists pages in the wiki
 func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesResult, error) {
 	// Ensure logged in for wikis requiring auth for read
@@ -459,8 +491,9 @@ func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesRe
 	}
 
 	result := ListPagesResult{
-		Pages:      pages,
-		TotalCount: len(pages),
+		Pages:         pages,
+		ReturnedCount: len(pages),
+		TotalCount:    len(pages), // Deprecated: kept for backwards compatibility
 	}
 
 	// Check for continuation
@@ -468,6 +501,13 @@ func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesRe
 		if apcontinue := getString(cont["apcontinue"]); apcontinue != "" {
 			result.HasMore = true
 			result.ContinueFrom = apcontinue
+		}
+	}
+
+	// Try to get namespace statistics for total estimate (only when no prefix filter)
+	if args.Prefix == "" && args.Namespace >= 0 {
+		if estimate := c.getNamespacePageCount(ctx, args.Namespace); estimate > 0 {
+			result.TotalEstimate = estimate
 		}
 	}
 
@@ -1354,6 +1394,12 @@ func (c *Client) CheckTerminology(ctx context.Context, args CheckTerminologyArgs
 		Pages:        make([]PageTerminologyResult, 0, len(pagesToCheck)),
 	}
 
+	// Determine if code blocks should be excluded (default: true)
+	excludeCode := true
+	if args.ExcludeCodeBlocks != nil {
+		excludeCode = *args.ExcludeCodeBlocks
+	}
+
 	// Check each page
 	for _, pageTitle := range pagesToCheck {
 		// Check for context cancellation
@@ -1362,7 +1408,7 @@ func (c *Client) CheckTerminology(ctx context.Context, args CheckTerminologyArgs
 			return result, ctx.Err()
 		default:
 		}
-		pageResult := c.checkPageTerminology(ctx, pageTitle, glossary)
+		pageResult := c.checkPageTerminology(ctx, pageTitle, glossary, excludeCode)
 		result.Pages = append(result.Pages, pageResult)
 		result.IssuesFound += pageResult.IssueCount
 	}
@@ -1461,7 +1507,7 @@ func parseTableRow(row string) []string {
 }
 
 // checkPageTerminology checks a single page against the glossary
-func (c *Client) checkPageTerminology(ctx context.Context, title string, glossary []GlossaryTerm) PageTerminologyResult {
+func (c *Client) checkPageTerminology(ctx context.Context, title string, glossary []GlossaryTerm, excludeCode bool) PageTerminologyResult {
 	result := PageTerminologyResult{
 		Title:  title,
 		Issues: make([]TerminologyIssue, 0),
@@ -1473,7 +1519,14 @@ func (c *Client) checkPageTerminology(ctx context.Context, title string, glossar
 		return result
 	}
 
-	lines := strings.Split(page.Content, "\n")
+	content := page.Content
+
+	// Strip code blocks to avoid false positives on code paths like SI.Data
+	if excludeCode {
+		content = stripCodeBlocksForTerminology(content)
+	}
+
+	lines := strings.Split(content, "\n")
 
 	for lineNum, line := range lines {
 		for _, term := range glossary {
@@ -1544,6 +1597,37 @@ func extractContext(line string, start, end, contextLen int) string {
 	}
 
 	return context
+}
+
+// stripCodeBlocksForTerminology removes code block content while preserving line structure
+// This prevents false positives on code paths like SI.Data, namespace.Class, etc.
+func stripCodeBlocksForTerminology(content string) string {
+	// Replace content inside code tags with spaces to preserve line numbers
+	// Handles: <syntaxhighlight>, <source>, <pre>, <code>
+	codeTagPatterns := []string{
+		`(?is)<syntaxhighlight[^>]*>(.*?)</syntaxhighlight>`,
+		`(?is)<source[^>]*>(.*?)</source>`,
+		`(?is)<pre[^>]*>(.*?)</pre>`,
+		`(?is)<code[^>]*>(.*?)</code>`,
+	}
+
+	for _, pattern := range codeTagPatterns {
+		re := regexp.MustCompile(pattern)
+		content = re.ReplaceAllStringFunc(content, func(match string) string {
+			// Replace the entire match with spaces, preserving newlines
+			var result strings.Builder
+			for _, ch := range match {
+				if ch == '\n' {
+					result.WriteRune('\n')
+				} else {
+					result.WriteRune(' ')
+				}
+			}
+			return result.String()
+		})
+	}
+
+	return content
 }
 
 // CheckTranslations checks if pages exist in all specified languages
@@ -1850,7 +1934,8 @@ func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesAr
 		return FindOrphanedPagesResult{}, fmt.Errorf("results not found in querypage")
 	}
 
-	orphaned := make([]OrphanedPage, 0)
+	// Collect filtered titles
+	var filteredTitles []string
 	for _, r := range results {
 		page := r.(map[string]interface{})
 
@@ -1867,10 +1952,47 @@ func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesAr
 			continue
 		}
 
-		orphaned = append(orphaned, OrphanedPage{
-			Title:  title,
-			PageID: getInt(page["value"]),
-		})
+		filteredTitles = append(filteredTitles, title)
+	}
+
+	// Fetch actual page info (pageid, length, touched) for the filtered pages
+	orphaned := make([]OrphanedPage, 0, len(filteredTitles))
+	if len(filteredTitles) > 0 {
+		// Batch fetch page info (up to 50 at a time)
+		for i := 0; i < len(filteredTitles); i += 50 {
+			end := i + 50
+			if end > len(filteredTitles) {
+				end = len(filteredTitles)
+			}
+			batch := filteredTitles[i:end]
+
+			infoParams := url.Values{}
+			infoParams.Set("action", "query")
+			infoParams.Set("titles", strings.Join(batch, "|"))
+			infoParams.Set("prop", "info")
+
+			infoResp, err := c.apiRequest(ctx, infoParams)
+			if err != nil {
+				// Fall back to basic info if fetch fails
+				for _, title := range batch {
+					orphaned = append(orphaned, OrphanedPage{Title: title})
+				}
+				continue
+			}
+
+			infoQuery, _ := infoResp["query"].(map[string]interface{})
+			pages, _ := infoQuery["pages"].(map[string]interface{})
+
+			for _, pageData := range pages {
+				p := pageData.(map[string]interface{})
+				orphaned = append(orphaned, OrphanedPage{
+					Title:      getString(p["title"]),
+					PageID:     getInt(p["pageid"]),
+					Length:     getInt(p["length"]),
+					LastEdited: getString(p["touched"]),
+				})
+			}
+		}
 	}
 
 	return FindOrphanedPagesResult{
