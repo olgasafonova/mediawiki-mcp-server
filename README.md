@@ -408,6 +408,8 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 
 ## Example Prompts
 
+> 📖 **More examples:** See [WIKI_USE_CASES.md](WIKI_USE_CASES.md) for detailed workflows by persona (content editors, documentation managers, developers).
+
 ### Search & Read
 - *"What does our wiki say about deployment?"*
 - *"Find all pages mentioning the API"*
