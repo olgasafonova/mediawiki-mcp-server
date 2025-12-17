@@ -31,7 +31,7 @@ func createMockClient(t *testing.T, server *httptest.Server) *Client {
 func mockMediaWikiServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		_ = r.ParseForm()
 		action := r.FormValue("action")
 		meta := r.FormValue("meta")
 
@@ -46,7 +46,7 @@ func mockMediaWikiServer(t *testing.T, handler http.HandlerFunc) *httptest.Serve
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 			return
 		}
 
@@ -65,7 +65,7 @@ func mockMediaWikiServer(t *testing.T, handler http.HandlerFunc) *httptest.Serve
 				tokens["csrftoken"] = "test-csrf-token"
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 			return
 		}
 
@@ -77,7 +77,7 @@ func mockMediaWikiServer(t *testing.T, handler http.HandlerFunc) *httptest.Serve
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 			return
 		}
 
@@ -110,7 +110,7 @@ func TestSearch_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -165,7 +165,7 @@ func TestListPages_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -203,7 +203,7 @@ func TestListPages_WithContinuation(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -242,7 +242,7 @@ func TestListCategories_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -274,7 +274,7 @@ func TestGetCategoryMembers_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -318,7 +318,7 @@ func TestAPIRequest_Error(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -339,7 +339,7 @@ func TestAPIRequest_Error(t *testing.T) {
 func TestAPIRequest_HTTPError(t *testing.T) {
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Internal Server Error"))
+		_, _ = w.Write([]byte("Internal Server Error"))
 	})
 	defer server.Close()
 
@@ -357,7 +357,7 @@ func TestAPIRequest_HTTPError(t *testing.T) {
 func TestAPIRequest_InvalidJSON(t *testing.T) {
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("invalid json"))
+		_, _ = w.Write([]byte("invalid json"))
 	})
 	defer server.Close()
 
@@ -377,7 +377,7 @@ func TestAPIRequest_ContextCancellation(t *testing.T) {
 		// Slow response
 		time.Sleep(100 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{})
 	})
 	defer server.Close()
 
@@ -398,7 +398,7 @@ func TestAPIRequest_ContextCancellation(t *testing.T) {
 func TestAPIRequest_ClientError(t *testing.T) {
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad Request"))
+		_, _ = w.Write([]byte("Bad Request"))
 	})
 	defer server.Close()
 
@@ -435,7 +435,7 @@ func TestSearch_MalformedResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(tt.response)
+				_ = json.NewEncoder(w).Encode(tt.response)
 			})
 			defer server.Close()
 
@@ -475,7 +475,7 @@ func TestGetPage_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -511,7 +511,7 @@ func TestGetPage_NotFound(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -576,7 +576,7 @@ func TestGetWikiInfo_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -618,7 +618,7 @@ func TestGetPageInfo_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
@@ -683,7 +683,7 @@ func TestGetRecentChanges_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	defer server.Close()
 
