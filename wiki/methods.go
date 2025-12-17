@@ -3606,8 +3606,9 @@ func (c *Client) FindSimilarPages(ctx context.Context, args FindSimilarPagesArgs
 	sourceTerms := extractKeyTerms(sourceContent.Content)
 	if len(sourceTerms) == 0 {
 		return FindSimilarPagesResult{
-			SourcePage: normalizedTitle,
-			Message:    "Source page has no significant terms for comparison",
+			SourcePage:   normalizedTitle,
+			SimilarPages: []SimilarPage{},
+			Message:      "Source page has no significant terms for comparison",
 		}, nil
 	}
 
@@ -3647,8 +3648,9 @@ func (c *Client) FindSimilarPages(ctx context.Context, args FindSimilarPagesArgs
 
 	if len(candidatePages) == 0 {
 		return FindSimilarPagesResult{
-			SourcePage: normalizedTitle,
-			Message:    "No candidate pages found for comparison",
+			SourcePage:   normalizedTitle,
+			SimilarPages: []SimilarPage{},
+			Message:      "No candidate pages found for comparison",
 		}, nil
 	}
 
@@ -3795,8 +3797,9 @@ func (c *Client) CompareTopic(ctx context.Context, args CompareTopicArgs) (Compa
 
 	if len(pageTitles) == 0 {
 		return CompareTopicResult{
-			Topic:   args.Topic,
-			Summary: fmt.Sprintf("No pages found mentioning '%s'", args.Topic),
+			Topic:        args.Topic,
+			PageMentions: []TopicMention{},
+			Summary:      fmt.Sprintf("No pages found mentioning '%s'", args.Topic),
 		}, nil
 	}
 
