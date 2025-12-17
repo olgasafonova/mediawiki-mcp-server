@@ -21,6 +21,27 @@ var (
 	privateIPBlocks []*net.IPNet
 )
 
+// linkCheckClient is a shared HTTP client for link checking with connection pooling
+// Using a shared client improves performance by reusing TCP connections
+var linkCheckClient = &http.Client{
+	// Timeout is set per-request via context; this is a fallback max
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true, // Link checking doesn't need compression
+		ForceAttemptHTTP2:   true,
+	},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// Allow up to 5 redirects
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		return nil
+	},
+}
+
 func init() {
 	// Initialize private IP ranges
 	// These are IPs that shouldn't be accessed via external link checking
@@ -1063,7 +1084,7 @@ func (c *Client) GetExternalLinks(ctx context.Context, args GetExternalLinksArgs
 }
 
 // GetExternalLinksBatch retrieves external links from multiple wiki pages
-// Optimized to process pages in parallel using goroutines
+// Uses a worker pool pattern to limit concurrent API requests
 func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLinksBatchArgs) (ExternalLinksBatchResult, error) {
 	if len(args.Titles) == 0 {
 		return ExternalLinksBatchResult{}, fmt.Errorf("at least one title is required")
@@ -1075,45 +1096,79 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 		args.Titles = args.Titles[:maxBatch]
 	}
 
-	// Process pages in parallel
+	// Worker pool configuration
+	numWorkers := 4 // Limit concurrent API requests
+	if len(args.Titles) < numWorkers {
+		numWorkers = len(args.Titles)
+	}
+
+	// Job and result types
+	type job struct {
+		index int
+		title string
+	}
 	type pageResult struct {
 		index int
 		data  PageExternalLinks
 	}
 
+	jobs := make(chan job, len(args.Titles))
 	results := make(chan pageResult, len(args.Titles))
+
+	// Start workers
 	var wg sync.WaitGroup
-
-	for i, title := range args.Titles {
+	for w := 0; w < numWorkers; w++ {
 		wg.Add(1)
-		go func(idx int, t string) {
+		go func() {
 			defer wg.Done()
+			for j := range jobs {
+				// Check context cancellation
+				select {
+				case <-ctx.Done():
+					results <- pageResult{
+						index: j.index,
+						data: PageExternalLinks{
+							Title: j.title,
+							Links: make([]ExternalLink, 0),
+							Error: "request cancelled",
+						},
+					}
+					continue
+				default:
+				}
 
-			pageLinks, err := c.GetExternalLinks(ctx, GetExternalLinksArgs{Title: t})
-			if err != nil {
+				pageLinks, err := c.GetExternalLinks(ctx, GetExternalLinksArgs{Title: j.title})
+				if err != nil {
+					results <- pageResult{
+						index: j.index,
+						data: PageExternalLinks{
+							Title: j.title,
+							Links: make([]ExternalLink, 0),
+							Error: err.Error(),
+						},
+					}
+					continue
+				}
+
 				results <- pageResult{
-					index: idx,
+					index: j.index,
 					data: PageExternalLinks{
-						Title: t,
-						Links: make([]ExternalLink, 0),
-						Error: err.Error(),
+						Title: pageLinks.Title,
+						Links: pageLinks.Links,
+						Count: pageLinks.Count,
 					},
 				}
-				return
 			}
-
-			results <- pageResult{
-				index: idx,
-				data: PageExternalLinks{
-					Title: pageLinks.Title,
-					Links: pageLinks.Links,
-					Count: pageLinks.Count,
-				},
-			}
-		}(i, title)
+		}()
 	}
 
-	// Close results channel when all goroutines complete
+	// Send jobs to workers
+	for i, title := range args.Titles {
+		jobs <- job{index: i, title: title}
+	}
+	close(jobs)
+
+	// Close results channel when all workers complete
 	go func() {
 		wg.Wait()
 		close(results)
@@ -1151,17 +1206,7 @@ func (c *Client) CheckLinks(ctx context.Context, args CheckLinksArgs) (CheckLink
 	if args.Timeout > 0 && args.Timeout <= 30 {
 		timeout = args.Timeout
 	}
-
-	httpClient := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Allow up to 5 redirects
-			if len(via) >= 5 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-	}
+	requestTimeout := time.Duration(timeout) * time.Second
 
 	result := CheckLinksResult{
 		Results:    make([]LinkCheckResult, 0, len(args.URLs)),
@@ -1198,17 +1243,22 @@ func (c *Client) CheckLinks(ctx context.Context, args CheckLinksArgs) (CheckLink
 					linkResult.Error = "URLs pointing to private/internal networks are not allowed"
 					linkResult.Broken = true
 				} else {
+					// Create per-request context with timeout
+					reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+
 					// Make HEAD request first (faster)
-					req, _ := http.NewRequestWithContext(ctx, "HEAD", checkURL, nil)
+					req, _ := http.NewRequestWithContext(reqCtx, "HEAD", checkURL, nil)
 					req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
 
-					resp, err := httpClient.Do(req)
+					resp, err := linkCheckClient.Do(req)
 					if err != nil {
-						// Try GET if HEAD fails
-						req, _ = http.NewRequestWithContext(ctx, "GET", checkURL, nil)
+						// Try GET if HEAD fails (some servers don't support HEAD)
+						req, _ = http.NewRequestWithContext(reqCtx, "GET", checkURL, nil)
 						req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
-						resp, err = httpClient.Do(req)
+						resp, err = linkCheckClient.Do(req)
 					}
+
+					cancel() // Release context resources
 
 					if err != nil {
 						linkResult.Status = "error"
@@ -1298,6 +1348,12 @@ func (c *Client) CheckTerminology(ctx context.Context, args CheckTerminologyArgs
 
 	// Check each page
 	for _, pageTitle := range pagesToCheck {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
 		pageResult := c.checkPageTerminology(ctx, pageTitle, glossary)
 		result.Pages = append(result.Pages, pageResult)
 		result.IssuesFound += pageResult.IssueCount
@@ -1533,6 +1589,13 @@ func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsAr
 
 	// Check each base page for all languages
 	for _, basePage := range basePages {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
+
 		pageResult := PageTranslationResult{
 			BasePage:     basePage,
 			Translations: make(map[string]TranslationStatus),
@@ -1628,6 +1691,13 @@ func (c *Client) FindBrokenInternalLinks(ctx context.Context, args FindBrokenInt
 	pageContents := make(map[string]string)
 
 	for _, pageTitle := range pagesToCheck {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
+
 		page, err := c.GetPage(ctx, GetPageArgs{Title: pageTitle, Format: "wikitext"})
 		if err != nil {
 			result.Pages = append(result.Pages, PageBrokenLinksResult{
@@ -3714,6 +3784,13 @@ func (c *Client) FindSimilarPages(ctx context.Context, args FindSimilarPagesArgs
 	scored := make([]scoredPage, 0)
 
 	for _, candidateTitle := range candidatePages {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			break
+		default:
+		}
+
 		// Get candidate content
 		candContent, err := c.GetPage(ctx, GetPageArgs{Title: candidateTitle})
 		if err != nil {
@@ -3852,6 +3929,13 @@ func (c *Client) CompareTopic(ctx context.Context, args CompareTopicArgs) (Compa
 	for _, title := range pageTitles {
 		if len(mentions) >= limit {
 			break
+		}
+
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			break
+		default:
 		}
 
 		// Get page content

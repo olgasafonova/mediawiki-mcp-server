@@ -36,6 +36,10 @@ var stopwords = map[string]bool{
 	"see": true, "use": true, "used": true, "using": true,
 }
 
+// Pre-compiled regex for whitespace normalization (performance optimization)
+// Uses \s+ to match all whitespace including newlines for wiki markup cleanup
+var multiWhitespaceRegex = regexp.MustCompile(`\s+`)
+
 // Wiki markup patterns to remove
 var wikiMarkupPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\[\[Category:[^\]]+\]\]`),                    // Category links
@@ -66,8 +70,8 @@ func removeWikiMarkup(content string) string {
 		result = pattern.ReplaceAllString(result, " $1 ")
 	}
 
-	// Remove multiple spaces
-	result = regexp.MustCompile(`\s+`).ReplaceAllString(result, " ")
+	// Remove multiple spaces (using pre-compiled regex)
+	result = multiWhitespaceRegex.ReplaceAllString(result, " ")
 
 	return strings.TrimSpace(result)
 }
