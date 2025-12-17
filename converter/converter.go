@@ -8,7 +8,7 @@ import (
 
 // Config holds conversion configuration options
 type Config struct {
-	Theme            string // Theme name: "tietoevry", "neutral", "dark"
+	Theme            string // Theme name: "tieto", "neutral", "dark"
 	AddCSS           bool   // Include CSS styling block in output
 	ReverseChangelog bool   // Reverse changelog entries (newest first)
 	PrettifyChecks   bool   // Replace ✓ with ✅

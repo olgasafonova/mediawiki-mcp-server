@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/olgasafonova/mediawiki-mcp-server/converter"
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
 )
 
@@ -34,8 +35,48 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.15.0" // Phase 1: revision info and undo instructions in edit responses
+	ServerVersion = "1.17.0" // Added Markdown to MediaWiki converter tool
 )
+
+// =============================================================================
+// Markdown Converter Types
+// =============================================================================
+
+// ConvertMarkdownArgs holds parameters for the mediawiki_convert_markdown tool
+type ConvertMarkdownArgs struct {
+	// Markdown is the source text to convert (required)
+	Markdown string `json:"markdown" jsonschema:"required,description=The Markdown text to convert to MediaWiki markup"`
+
+	// Theme selects the color scheme: "tieto", "neutral" (default), or "dark"
+	Theme string `json:"theme,omitempty" jsonschema:"enum=tieto,enum=neutral,enum=dark,description=Color theme: tieto (brand colors), neutral (no styling), dark (dark mode)"`
+
+	// AddCSS includes CSS styling block in output for branded appearance
+	AddCSS *bool `json:"add_css,omitempty" jsonschema:"description=Include CSS styling block for branded appearance"`
+
+	// ReverseChangelog reorders changelog entries newest-first
+	ReverseChangelog *bool `json:"reverse_changelog,omitempty" jsonschema:"description=Reorder changelog entries with newest first"`
+
+	// PrettifyChecks replaces plain checkmarks (✓) with emoji (✅)
+	PrettifyChecks *bool `json:"prettify_checks,omitempty" jsonschema:"description=Replace plain checkmarks with emoji ✅"`
+}
+
+// ConvertMarkdownResult contains the conversion output
+type ConvertMarkdownResult struct {
+	// Wikitext is the converted MediaWiki markup
+	Wikitext string `json:"wikitext"`
+
+	// InputLength is the character count of input Markdown
+	InputLength int `json:"input_length"`
+
+	// OutputLength is the character count of output wikitext
+	OutputLength int `json:"output_length"`
+
+	// ThemeUsed indicates which theme was applied
+	ThemeUsed string `json:"theme_used"`
+
+	// AvailableThemes lists all supported themes
+	AvailableThemes []converter.ThemeInfo `json:"available_themes"`
+}
 
 // =============================================================================
 // Security Middleware for HTTP Transport
@@ -492,6 +533,18 @@ func main() {
 4. "What links to [page]?"
    → USE: mediawiki_get_backlinks
 
+### User wants to CONVERT content:
+
+1. "Convert this Markdown to wiki format" or "Transform README for wiki"
+   → USE: mediawiki_convert_markdown
+
+2. "Add this Markdown content to the wiki" (two-step process)
+   → FIRST: mediawiki_convert_markdown (to get wikitext)
+   → THEN: mediawiki_edit_page (to save the converted content)
+
+3. "Convert with Tieto branding" or "Use brand colors"
+   → USE: mediawiki_convert_markdown (theme="tieto", add_css=true)
+
 ## COMMON MISTAKES TO AVOID
 
 ❌ DON'T use mediawiki_edit_page for simple text changes
@@ -517,6 +570,8 @@ func main() {
 | "Is Module Overview or Module overview?" | mediawiki_resolve_title |
 | "Find all mentions of deprecated" | mediawiki_search |
 | "Who changed the release notes?" | mediawiki_get_revisions |
+| "Convert this README to wiki format" | mediawiki_convert_markdown |
+| "Add release notes (in Markdown) to wiki" | mediawiki_convert_markdown → mediawiki_edit_page |
 
 ## RESOURCES (Direct Context Access)
 
@@ -1518,6 +1573,77 @@ func registerTools(server *mcp.Server, client *wiki.Client, logger *slog.Logger)
 			"topic", args.Topic,
 			"pages_found", result.PagesFound,
 			"inconsistencies", len(result.Inconsistencies),
+		)
+		return nil, result, nil
+	})
+
+	// Convert Markdown to MediaWiki
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "mediawiki_convert_markdown",
+		Description: `Convert Markdown text to MediaWiki markup. Use this tool when you need to transform Markdown-formatted content into wiki-compatible format before creating or editing wiki pages.
+
+WHEN TO USE:
+- User provides Markdown content to add to the wiki
+- Converting documentation from GitHub/GitLab to wiki format
+- Transforming README files for wiki publishing
+- Preparing release notes written in Markdown
+
+THEMES:
+- "tieto": Tieto brand colors (Hero Blue #021e57 headings, yellow code highlights)
+- "neutral": Clean output without custom colors (default)
+- "dark": Dark mode optimized colors
+
+OPTIONS:
+- add_css: Include CSS styling block for branded appearance
+- reverse_changelog: Reorder changelog entries newest-first
+- prettify_checks: Replace plain checkmarks with emoji ✅
+
+EXAMPLE:
+Input: "# Hello\n**bold** and *italic*\n- item 1\n- item 2"
+Output: "= Hello =\n'''bold''' and ''italic''\n* item 1\n* item 2"`,
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "Convert Markdown to MediaWiki",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  ptr(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args ConvertMarkdownArgs) (*mcp.CallToolResult, ConvertMarkdownResult, error) {
+		defer recoverPanic(logger, "convert_markdown")
+
+		// Build config from args
+		config := converter.DefaultConfig()
+		if args.Theme != "" {
+			config.Theme = args.Theme
+		}
+		if args.AddCSS != nil {
+			config.AddCSS = *args.AddCSS
+		}
+		if args.ReverseChangelog != nil {
+			config.ReverseChangelog = *args.ReverseChangelog
+		}
+		if args.PrettifyChecks != nil {
+			config.PrettifyChecks = *args.PrettifyChecks
+		}
+
+		// Perform conversion
+		wikitext := converter.Convert(args.Markdown, config)
+
+		// Get available themes for info
+		themes := converter.ListThemes()
+
+		result := ConvertMarkdownResult{
+			Wikitext:        wikitext,
+			InputLength:     len(args.Markdown),
+			OutputLength:    len(wikitext),
+			ThemeUsed:       config.Theme,
+			AvailableThemes: themes,
+		}
+
+		logger.Info("Tool executed",
+			"tool", "mediawiki_convert_markdown",
+			"theme", config.Theme,
+			"input_chars", len(args.Markdown),
+			"output_chars", len(wikitext),
 		)
 		return nil, result, nil
 	})

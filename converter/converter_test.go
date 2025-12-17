@@ -13,15 +13,15 @@ func TestConvertHeaders(t *testing.T) {
 		contains string
 	}{
 		{
-			name:     "H1 with tietoevry theme",
+			name:     "H1 with tieto theme",
 			input:    "# Hello World",
-			theme:    "tietoevry",
+			theme:    "tieto",
 			contains: `=<span style="color:#021e57;">Hello World</span>=`,
 		},
 		{
-			name:     "H2 with tietoevry theme",
+			name:     "H2 with tieto theme",
 			input:    "## Section Title",
-			theme:    "tietoevry",
+			theme:    "tieto",
 			contains: `==<span style="color:#021e57;">Section Title</span>==`,
 		},
 		{
@@ -184,7 +184,7 @@ func TestConvertTables(t *testing.T) {
 }
 
 func TestConvertCallouts(t *testing.T) {
-	theme := ThemeTietoevry
+	theme := ThemeTieto
 
 	tests := []struct {
 		name     string
@@ -251,7 +251,7 @@ func TestGetTheme(t *testing.T) {
 		name     string
 		expected string
 	}{
-		{"tietoevry", "tietoevry"},
+		{"tieto", "tieto"},
 		{"neutral", "neutral"},
 		{"dark", "dark"},
 		{"nonexistent", "neutral"}, // Should default to neutral
@@ -299,7 +299,7 @@ This is **bold** and *italic* text.
 ` + "```json\n{\"key\": \"value\"}\n```"
 
 	config := Config{
-		Theme:            "tietoevry",
+		Theme:            "tieto",
 		AddCSS:           false,
 		ReverseChangelog: true,
 		PrettifyChecks:   true,
@@ -325,7 +325,7 @@ This is **bold** and *italic* text.
 func TestConversionWithCSS(t *testing.T) {
 	input := "# Hello"
 	config := Config{
-		Theme:  "tietoevry",
+		Theme:  "tieto",
 		AddCSS: true,
 	}
 

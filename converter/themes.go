@@ -40,10 +40,10 @@ type CalloutStyle struct {
 
 // Pre-defined themes
 
-// ThemeTietoevry applies Tietoevry brand colors (Hero Blue #021e57)
-var ThemeTietoevry = Theme{
-	Name:        "tietoevry",
-	Description: "Tietoevry brand colors with Hero Blue headings and yellow code highlights",
+// ThemeTieto applies Tieto brand colors (Hero Blue #021e57)
+var ThemeTieto = Theme{
+	Name:        "tieto",
+	Description: "Tieto brand colors with Hero Blue headings and yellow code highlights",
 	Headings: map[int]string{
 		1: "#021e57", // Hero Blue
 		2: "#021e57",
@@ -143,9 +143,9 @@ var ThemeDark = Theme{
 
 // AvailableThemes lists all built-in themes
 var AvailableThemes = map[string]Theme{
-	"tietoevry": ThemeTietoevry,
-	"neutral":   ThemeNeutral,
-	"dark":      ThemeDark,
+	"tieto":   ThemeTieto,
+	"neutral": ThemeNeutral,
+	"dark":    ThemeDark,
 }
 
 // GetTheme returns a theme by name, defaulting to neutral if not found
