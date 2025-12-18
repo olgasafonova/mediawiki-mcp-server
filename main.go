@@ -35,7 +35,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.17.2" // Fixed enum struct tag crash on Windows
+	ServerVersion = "1.17.3" // Fixed enum struct tag crash on Windows
 )
 
 // =============================================================================
