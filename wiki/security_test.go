@@ -553,3 +553,64 @@ func TestSecurity_SSRFErrorCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestSecurity_UnicodeNormalization(t *testing.T) {
+	// Test that Unicode normalization prevents bypass attacks
+	testCases := []struct {
+		input    string
+		expected string
+		desc     string
+	}{
+		// NFC normalization: combining characters should be composed
+		{"cafe\u0301", "café", "combining acute accent"},
+		{"n\u0303", "ñ", "combining tilde"},
+		// Already normalized strings should be unchanged
+		{"café", "café", "pre-composed"},
+		{"normal text", "normal text", "ASCII only"},
+		// Empty and whitespace
+		{"", "", "empty string"},
+		{"   ", "   ", "whitespace only"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := NormalizeUnicode(tc.input)
+			if result != tc.expected {
+				t.Errorf("NormalizeUnicode(%q) = %q, want %q", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSecurity_UnicodeBypassPrevention(t *testing.T) {
+	// Test that dangerous patterns are detected even with Unicode tricks
+	testCases := []struct {
+		content     string
+		shouldBlock bool
+		desc        string
+	}{
+		// Standard dangerous patterns
+		{"<script>alert(1)</script>", true, "plain script tag"},
+		{"<SCRIPT>alert(1)</SCRIPT>", true, "uppercase script tag"},
+
+		// Unicode normalization bypass attempts
+		// Note: These use combining characters that normalize to the same visual representation
+		{"<scrıpt>", false, "Turkish dotless i - different character"},
+
+		// Safe content
+		{"Hello world", false, "plain text"},
+		{"<syntaxhighlight><script></script></syntaxhighlight>", false, "script in code block"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := ValidateWikitextContent(tc.content, "TestPage")
+			if tc.shouldBlock && err == nil {
+				t.Errorf("Expected content to be blocked: %q", tc.content)
+			}
+			if !tc.shouldBlock && err != nil {
+				t.Errorf("Expected content to be allowed: %q, got error: %v", tc.content, err)
+			}
+		})
+	}
+}

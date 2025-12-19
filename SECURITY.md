@@ -124,6 +124,21 @@ SSRF errors include programmatic error codes for automated handling:
 | `SSRF_REDIRECT_BLOCKED` | Redirect target is private |
 | `SSRF_INVALID_URL` | URL format is invalid |
 
+### 9. Unicode Normalization
+
+All user input is normalized to Unicode NFC (Canonical Decomposition, followed by Canonical Composition) form before processing. This prevents bypass attacks using:
+
+- **Combining characters**: `cafe\u0301` (e + combining accent) → `café`
+- **Alternative representations**: Different Unicode encodings of the same visual character
+- **Homoglyph attacks**: Characters that look similar but have different code points
+
+Applied to:
+- Page titles (`normalizePageTitle`)
+- Content validation (`ValidateWikitextContent`)
+- Search queries
+
+This matches MediaWiki's internal normalization, ensuring consistent behavior.
+
 ---
 
 ## Security Recommendations

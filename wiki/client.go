@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // CacheEntry holds cached data with expiration and LRU tracking
@@ -677,12 +679,24 @@ func normalizeCategoryName(name string) string {
 	return name
 }
 
+// NormalizeUnicode applies NFC normalization to a string
+// This prevents Unicode-based bypass attacks where attackers use alternative
+// representations of characters (e.g., combining characters, different encodings)
+// to evade security checks. NFC (Canonical Decomposition, followed by Canonical Composition)
+// is the standard normalization form used by MediaWiki.
+func NormalizeUnicode(s string) string {
+	return norm.NFC.String(s)
+}
+
 // normalizePageTitle normalizes a page title to MediaWiki conventions:
+// - Applies Unicode NFC normalization
 // - Trims whitespace
 // - Replaces underscores with spaces
 // - Capitalizes the first letter of the title and namespace prefix
 // This helps handle case variations like "Module overview" vs "Module Overview"
 func normalizePageTitle(title string) string {
+	// Apply Unicode normalization first to prevent bypass attacks
+	title = NormalizeUnicode(title)
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return title

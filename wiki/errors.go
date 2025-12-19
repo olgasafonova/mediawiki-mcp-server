@@ -3,6 +3,8 @@ package wiki
 import (
 	"fmt"
 	"strings"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Error codes for programmatic error handling
@@ -333,10 +335,15 @@ func stripSafeCodeBlocks(content string) string {
 
 // ValidateWikitextContent checks content for dangerous patterns
 // Code inside safe wrapper tags (syntaxhighlight, source, pre, code, nowiki) is allowed
+// SECURITY: Applies Unicode NFC normalization to prevent bypass attacks
 func ValidateWikitextContent(content, title string) error {
+	// Apply Unicode NFC normalization to prevent bypass attacks using
+	// alternative character representations (e.g., combining characters)
+	normalizedContent := norm.NFC.String(content)
+
 	// Strip out safe code blocks before checking for dangerous patterns
 	// This allows code examples in documentation
-	contentToCheck := stripSafeCodeBlocks(content)
+	contentToCheck := stripSafeCodeBlocks(normalizedContent)
 	lowerContent := strings.ToLower(contentToCheck)
 
 	for _, pattern := range DangerousPatterns {
