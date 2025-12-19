@@ -969,3 +969,36 @@ type Inconsistency struct {
 	ValueA      string `json:"value_a"`
 	ValueB      string `json:"value_b"`
 }
+
+// ========== Wiki Health Audit Types ==========
+
+// WikiHealthAuditArgs contains parameters for a comprehensive wiki health audit.
+type WikiHealthAuditArgs struct {
+	Pages    []string `json:"pages,omitempty" jsonschema_description:"Specific pages to audit"`
+	Category string   `json:"category,omitempty" jsonschema_description:"Category to audit (alternative to pages)"`
+	Limit    int      `json:"limit,omitempty" jsonschema_description:"Max pages to audit (default 20, max 50)"`
+	Checks   []string `json:"checks,omitempty" jsonschema_description:"Which checks to run: 'links', 'terminology', 'orphans', 'external', 'activity'. Default: all except 'external'"`
+}
+
+// WikiHealthAuditResult contains the aggregated results of a wiki health audit.
+type WikiHealthAuditResult struct {
+	WikiName       string                         `json:"wiki_name"`
+	AuditedAt      string                         `json:"audited_at"`
+	PagesAudited   int                            `json:"pages_audited"`
+	HealthScore    int                            `json:"health_score"`
+	Summary        WikiHealthAuditSummary         `json:"summary"`
+	BrokenLinks    *FindBrokenInternalLinksResult `json:"broken_links,omitempty"`
+	Terminology    *CheckTerminologyResult        `json:"terminology,omitempty"`
+	OrphanedPages  *FindOrphanedPagesResult       `json:"orphaned_pages,omitempty"`
+	ExternalLinks  *CheckLinksResult              `json:"external_links,omitempty"`
+	RecentActivity *AggregatedChanges             `json:"recent_activity,omitempty"`
+	Errors         []string                       `json:"errors,omitempty"`
+}
+
+// WikiHealthAuditSummary provides a quick overview of audit findings.
+type WikiHealthAuditSummary struct {
+	BrokenLinksCount    int `json:"broken_links_count"`
+	TerminologyIssues   int `json:"terminology_issues"`
+	OrphanedPagesCount  int `json:"orphaned_pages_count"`
+	ExternalBrokenCount int `json:"external_broken_count"`
+}

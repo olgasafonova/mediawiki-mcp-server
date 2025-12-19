@@ -101,6 +101,8 @@ func (h *HandlerRegistry) registerByName(server *mcp.Server, spec ToolSpec) {
 		h.register(server, tool, spec, h.client.CheckTerminology)
 	case "CheckTranslations":
 		h.register(server, tool, spec, h.client.CheckTranslations)
+	case "HealthAudit":
+		h.register(server, tool, spec, h.client.HealthAudit)
 
 	// Discovery tools
 	case "FindSimilarPages":

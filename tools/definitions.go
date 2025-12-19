@@ -286,6 +286,16 @@ var AllTools = []ToolSpec{
 		Idempotent:  true,
 		OpenWorld:   true,
 	},
+	{
+		Name:        "mediawiki_audit",
+		Method:      "HealthAudit",
+		Title:       "Wiki Health Audit",
+		Category:    "quality",
+		Description: "Run comprehensive wiki health audit. Checks broken links, terminology, orphaned pages, and recent activity in parallel. Returns aggregated health score (0-100) and detailed results. Checks: 'links' (broken internal), 'terminology' (glossary violations), 'orphans' (unlinked pages), 'activity' (recent changes), 'external' (broken external links, slow).",
+		ReadOnly:    true,
+		Idempotent:  true,
+		OpenWorld:   true,
+	},
 
 	// ==========================================================================
 	// DISCOVERY TOOLS

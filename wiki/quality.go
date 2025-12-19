@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 // CheckTerminology checks pages for terminology inconsistencies based on a wiki glossary
@@ -398,4 +400,210 @@ func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsAr
 
 	result.PagesChecked = len(result.Pages)
 	return result, nil
+}
+
+// HealthAudit runs a comprehensive wiki health audit, checking multiple quality metrics in parallel.
+// It aggregates results from various checks and calculates an overall health score.
+func (c *Client) HealthAudit(ctx context.Context, args WikiHealthAuditArgs) (WikiHealthAuditResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return WikiHealthAuditResult{}, err
+	}
+
+	// Initialize result
+	result := WikiHealthAuditResult{
+		WikiName:  c.config.BaseURL,
+		AuditedAt: time.Now().UTC().Format(time.RFC3339),
+		Errors:    make([]string, 0),
+	}
+
+	// Determine which checks to run
+	checksToRun := args.Checks
+	if len(checksToRun) == 0 {
+		// Default: all except external (which can be slow)
+		checksToRun = []string{"links", "terminology", "orphans", "activity"}
+	}
+
+	// Normalize limit
+	limit := normalizeLimit(args.Limit, 20, 50)
+
+	// Build check set for quick lookup
+	checkSet := make(map[string]bool)
+	for _, check := range checksToRun {
+		checkSet[check] = true
+	}
+
+	// Mutex for thread-safe result updates
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	// Run checks in parallel
+	if checkSet["links"] {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			linksResult, err := c.FindBrokenInternalLinks(ctx, FindBrokenInternalLinksArgs{
+				Pages:    args.Pages,
+				Category: args.Category,
+				Limit:    limit,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("links check failed: %v", err))
+			} else {
+				result.BrokenLinks = &linksResult
+				result.Summary.BrokenLinksCount = linksResult.BrokenCount
+				if linksResult.PagesChecked > result.PagesAudited {
+					result.PagesAudited = linksResult.PagesChecked
+				}
+			}
+		}()
+	}
+
+	if checkSet["terminology"] {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			termResult, err := c.CheckTerminology(ctx, CheckTerminologyArgs{
+				Pages:    args.Pages,
+				Category: args.Category,
+				Limit:    limit,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("terminology check failed: %v", err))
+			} else {
+				result.Terminology = &termResult
+				result.Summary.TerminologyIssues = termResult.IssuesFound
+				if termResult.PagesChecked > result.PagesAudited {
+					result.PagesAudited = termResult.PagesChecked
+				}
+			}
+		}()
+	}
+
+	if checkSet["orphans"] {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			orphanResult, err := c.FindOrphanedPages(ctx, FindOrphanedPagesArgs{
+				Namespace: 0,
+				Limit:     limit,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("orphans check failed: %v", err))
+			} else {
+				result.OrphanedPages = &orphanResult
+				result.Summary.OrphanedPagesCount = orphanResult.OrphanedCount
+			}
+		}()
+	}
+
+	if checkSet["activity"] {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			activityResult, err := c.GetRecentChanges(ctx, RecentChangesArgs{
+				Limit: limit,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("activity check failed: %v", err))
+			} else {
+				// Aggregate by user
+				aggregated := aggregateChanges(activityResult.Changes, "user")
+				result.RecentActivity = aggregated
+			}
+		}()
+	}
+
+	if checkSet["external"] {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Get a sample of pages to check external links
+			var pagesToCheck []string
+			if len(args.Pages) > 0 {
+				pagesToCheck = args.Pages
+				if len(pagesToCheck) > 5 {
+					pagesToCheck = pagesToCheck[:5] // Limit external checks
+				}
+			} else if args.Category != "" {
+				catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+					Category: args.Category,
+					Limit:    5,
+				})
+				if err == nil {
+					for _, p := range catResult.Members {
+						pagesToCheck = append(pagesToCheck, p.Title)
+					}
+				}
+			}
+
+			if len(pagesToCheck) > 0 {
+				// Get external links from first page
+				page, err := c.GetPage(ctx, GetPageArgs{Title: pagesToCheck[0], Format: "wikitext"})
+				if err == nil {
+					// Extract URLs from content (simple regex for external links)
+					urls := extractExternalURLs(page.Content, 10)
+					if len(urls) > 0 {
+						extResult, err := c.CheckLinks(ctx, CheckLinksArgs{URLs: urls})
+						mu.Lock()
+						defer mu.Unlock()
+						if err != nil {
+							result.Errors = append(result.Errors, fmt.Sprintf("external links check failed: %v", err))
+						} else {
+							result.ExternalLinks = &extResult
+							result.Summary.ExternalBrokenCount = extResult.BrokenCount
+						}
+						return
+					}
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			result.Errors = append(result.Errors, "external links check: no pages or URLs found to check")
+		}()
+	}
+
+	// Wait for all checks to complete
+	wg.Wait()
+
+	// Calculate health score
+	// Formula: 100 - (broken_links*5 + terminology*2 + orphans*1 + external*3)
+	score := 100
+	score -= result.Summary.BrokenLinksCount * 5
+	score -= result.Summary.TerminologyIssues * 2
+	score -= result.Summary.OrphanedPagesCount * 1
+	score -= result.Summary.ExternalBrokenCount * 3
+	if score < 0 {
+		score = 0
+	}
+	result.HealthScore = score
+
+	return result, nil
+}
+
+// extractExternalURLs extracts external URLs from wiki content
+func extractExternalURLs(content string, limit int) []string {
+	// Match URLs in external link syntax [http...] or bare URLs
+	urlRegex := regexp.MustCompile(`https?://[^\s\]\[<>\"]+`)
+	matches := urlRegex.FindAllString(content, -1)
+
+	// Deduplicate and limit
+	seen := make(map[string]bool)
+	var urls []string
+	for _, url := range matches {
+		// Clean up URL (remove trailing punctuation)
+		url = strings.TrimRight(url, ".,;:!?)")
+		if !seen[url] && len(urls) < limit {
+			seen[url] = true
+			urls = append(urls, url)
+		}
+	}
+	return urls
 }
