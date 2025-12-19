@@ -35,7 +35,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.17.3" // Fixed enum struct tag crash on Windows
+	ServerVersion = "1.18.0" // Added audit logging for write operations
 )
 
 // =============================================================================
@@ -452,6 +452,17 @@ func main() {
 
 	// Create MediaWiki client
 	client := wiki.NewClient(config, logger)
+
+	// Configure audit logging if MEDIAWIKI_AUDIT_LOG is set
+	if auditLogPath := os.Getenv("MEDIAWIKI_AUDIT_LOG"); auditLogPath != "" {
+		auditLogger, err := wiki.NewFileAuditLogger(auditLogPath, logger)
+		if err != nil {
+			logger.Warn("Failed to create audit logger", "path", auditLogPath, "error", err)
+		} else {
+			client.SetAuditLogger(auditLogger)
+			logger.Info("Audit logging enabled", "path", auditLogPath)
+		}
+	}
 
 	// Get bearer token from flag or environment
 	authToken := *bearerToken

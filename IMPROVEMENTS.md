@@ -2,7 +2,7 @@
 
 This document tracks improvements identified during the code review session on 2025-12-19.
 
-## Completed (v1.17.4 - v1.17.7)
+## Completed (v1.17.4 - v1.18.0)
 
 | Version | Improvement | Description |
 |---------|-------------|-------------|
@@ -11,6 +11,8 @@ This document tracks improvements identified during the code review session on 2
 | v1.17.5 | Structured Error Codes | Added `SSRFError` type with programmatic codes |
 | v1.17.6 | Unicode Normalization | NFC normalization for page titles and content validation |
 | v1.17.7 | Godoc Comments | Added documentation to all 80+ exported types in `types.go` |
+| v1.17.8 | Split methods.go | Refactored 4,235-line file into 9 focused modules |
+| v1.18.0 | Audit Logging | JSON-line logging for all write operations (edits, uploads) |
 
 ## Remaining Improvements
 
@@ -132,15 +134,27 @@ All exported types now have proper documentation. The 34 Client methods in `meth
 
 ### Low Priority
 
-#### 5. Audit Logging for Writes (~3 hours)
-Log all page edits with:
-- Timestamp
-- Page title
-- User (bot account)
-- Content hash (for tracking changes)
-- Edit summary
+#### 5. Audit Logging for Writes (~3 hours) - ✅ COMPLETED (v1.18.0)
 
-Useful for wiki admins to track bot activity.
+**Implemented features:**
+- `AuditLogger` interface with JSON line output
+- `AuditEntry` struct with timestamp, operation type, title, page ID, revision ID, content hash, content size, summary, and success status
+- `NewFileAuditLogger` for file-based logging
+- `NewWriterAuditLogger` for custom output destinations
+- `NullAuditLogger` for disabling audit logging
+- Integration into `EditPage` and `UploadFile` operations
+- Environment variable `MEDIAWIKI_AUDIT_LOG` to configure log path
+
+**Usage:**
+```bash
+export MEDIAWIKI_AUDIT_LOG=/var/log/mediawiki-mcp/audit.jsonl
+./mediawiki-mcp-server
+```
+
+**Example log entry:**
+```json
+{"timestamp":"2024-01-15T10:30:00Z","operation":"edit","title":"Main Page","page_id":123,"revision_id":456,"content_hash":"abc123...","content_size":1024,"summary":"Fixed typo","minor":true,"wiki_url":"https://wiki.example.com/api.php","success":true}
+```
 
 ---
 

@@ -85,6 +85,12 @@ If you want to clear a page, use a single space or redirect instead.`,
 	result := getString(edit["result"])
 
 	if result != "Success" {
+		// Log failed edit attempt
+		c.logAudit(c.buildAuditEntry(
+			AuditOpEdit, args.Title, args.Content, args.Summary,
+			args.Minor, args.Bot, false, 0, 0,
+			fmt.Sprintf("Edit failed: %s", result),
+		))
 		return EditResult{
 			Success: false,
 			Title:   args.Title,
@@ -104,6 +110,16 @@ If you want to clear a page, use a single space or redirect instead.`,
 	if editResult.NewPage {
 		editResult.Message = "Page created successfully"
 	}
+
+	// Log successful edit
+	op := AuditOpEdit
+	if editResult.NewPage {
+		op = AuditOpCreate
+	}
+	c.logAudit(c.buildAuditEntry(
+		op, editResult.Title, args.Content, args.Summary,
+		args.Minor, args.Bot, true, editResult.PageID, editResult.RevisionID, "",
+	))
 
 	return editResult, nil
 }
@@ -516,13 +532,51 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 		return UploadFileResult{}, fmt.Errorf("failed to get edit token: %w", err)
 	}
 
+	var result UploadFileResult
+
 	// If URL provided, use URL upload
 	if args.FileURL != "" {
-		return c.uploadFromURL(ctx, args, token)
+		result, err = c.uploadFromURL(ctx, args, token)
+	} else {
+		// For local file upload, we need multipart form
+		result, err = c.uploadFromFile(ctx, args, token)
 	}
 
-	// For local file upload, we need multipart form
-	return c.uploadFromFile(ctx, args, token)
+	// Log upload attempt (even if error occurred)
+	if err != nil {
+		c.logAudit(AuditEntry{
+			Timestamp:   time.Now().UTC().Format(time.RFC3339),
+			Operation:   AuditOpUpload,
+			Title:       "File:" + args.Filename,
+			ContentHash: hashContent(args.FileURL + args.FilePath), // Hash the source
+			ContentSize: 0,
+			Summary:     args.Comment,
+			WikiURL:     c.config.BaseURL,
+			Success:     false,
+			Error:       err.Error(),
+		})
+		return result, err
+	}
+
+	// Log upload result
+	c.logAudit(AuditEntry{
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Operation:   AuditOpUpload,
+		Title:       "File:" + result.Filename,
+		ContentHash: hashContent(args.FileURL + args.FilePath),
+		ContentSize: result.Size,
+		Summary:     args.Comment,
+		WikiURL:     c.config.BaseURL,
+		Success:     result.Success,
+		Error: func() string {
+			if !result.Success {
+				return result.Message
+			}
+			return ""
+		}(),
+	})
+
+	return result, nil
 }
 
 // uploadFromURL uploads a file from a URL

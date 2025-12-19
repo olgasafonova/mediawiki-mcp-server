@@ -59,6 +59,9 @@ type Client struct {
 	// Graceful shutdown
 	stopCh   chan struct{}
 	stopOnce sync.Once
+
+	// Audit logging for write operations
+	auditLogger AuditLogger
 }
 
 // MaxConcurrentRequests limits parallel API calls to prevent overwhelming the server
@@ -114,6 +117,13 @@ func (c *Client) Close() {
 		close(c.stopCh)
 		c.logger.Debug("Client shutdown initiated")
 	})
+}
+
+// SetAuditLogger configures an audit logger for tracking write operations.
+// Pass nil to disable audit logging. The audit logger records page edits,
+// creations, and file uploads with timestamps, content hashes, and metadata.
+func (c *Client) SetAuditLogger(logger AuditLogger) {
+	c.auditLogger = logger
 }
 
 // cacheCleanupLoop periodically cleans up expired entries and enforces size limits
