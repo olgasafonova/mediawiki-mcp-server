@@ -74,6 +74,38 @@ This allows technical documentation with code examples while blocking actual exe
 | `pattern` | Must be "subpage", "suffix", or "prefix" |
 | `category` | Auto-prefixed with "Category:" |
 
+### 8. SSRF Protection (Server-Side Request Forgery)
+
+The `CheckLinks` tool validates external URLs to prevent SSRF attacks:
+
+**Blocked IP Ranges:**
+- `127.0.0.0/8` - IPv4 loopback
+- `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` - RFC 1918 private
+- `169.254.0.0/16` - Link-local (AWS/cloud metadata)
+- `100.64.0.0/10` - Shared address space (CGN)
+- `224.0.0.0/4`, `240.0.0.0/4` - Multicast/Reserved
+- IPv6 equivalents (`::1/128`, `fe80::/10`, `fc00::/7`, `ff00::/8`)
+
+**DNS Rebinding Protection:**
+
+The server uses a custom `net.Dialer` with a `Control` function that validates the resolved IP address at connection time. This prevents Time-of-Check-Time-of-Use (TOCTOU) attacks where an attacker changes DNS records between validation and connection:
+
+```go
+// IP validation happens AFTER DNS resolution, BEFORE TCP connect
+safeDialer.Control = func(network, address string, c syscall.RawConn) error {
+    host, _, _ := net.SplitHostPort(address)
+    ip := net.ParseIP(host)
+    if isPrivateIP(ip) {
+        return fmt.Errorf("connection to private IP blocked")
+    }
+    return nil
+}
+```
+
+**Redirect Validation:**
+
+Redirects are also validated to prevent SSRF via redirect chains. If a public URL redirects to a private IP, the connection is blocked.
+
 ---
 
 ## Security Recommendations

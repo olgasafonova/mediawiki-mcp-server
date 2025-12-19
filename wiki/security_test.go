@@ -426,3 +426,66 @@ func TestSecurity_SSRFProtectionInURLs(t *testing.T) {
 		_ = u // URLs are validated during CheckLinks, this test confirms the pattern
 	}
 }
+
+func TestSecurity_DNSRebindingProtection(t *testing.T) {
+	// Test that the safeDialer Control function blocks private IPs at connection time
+	// This protects against DNS rebinding attacks (TOCTOU vulnerabilities)
+
+	testCases := []struct {
+		address     string
+		shouldBlock bool
+		description string
+	}{
+		// Private IPs should be blocked
+		{"127.0.0.1:80", true, "IPv4 loopback"},
+		{"10.0.0.1:443", true, "RFC 1918 Class A"},
+		{"172.16.0.1:8080", true, "RFC 1918 Class B"},
+		{"192.168.1.1:80", true, "RFC 1918 Class C"},
+		{"169.254.169.254:80", true, "AWS metadata endpoint"},
+		{"[::1]:80", true, "IPv6 loopback"},
+		{"[fe80::1]:80", true, "IPv6 link-local"},
+		{"[fc00::1]:80", true, "IPv6 unique local"},
+
+		// Public IPs should be allowed
+		{"8.8.8.8:443", false, "Google DNS"},
+		{"1.1.1.1:80", false, "Cloudflare DNS"},
+		{"93.184.216.34:443", false, "example.com IP"},
+		{"[2606:4700:4700::1111]:80", false, "Cloudflare IPv6"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			// The safeDialer.Control function is called with the resolved IP:port
+			err := safeDialer.Control("tcp", tc.address, nil)
+
+			if tc.shouldBlock {
+				if err == nil {
+					t.Errorf("Expected connection to %s to be blocked, but it was allowed", tc.address)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected connection to %s to be allowed, but got error: %v", tc.address, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSecurity_DNSRebindingProtection_InvalidAddresses(t *testing.T) {
+	// Test that malformed addresses are handled safely (fail-closed)
+	invalidAddresses := []string{
+		"not-an-address",
+		"",
+		"127.0.0.1", // Missing port
+		":80",       // Missing host
+	}
+
+	for _, addr := range invalidAddresses {
+		t.Run(addr, func(t *testing.T) {
+			err := safeDialer.Control("tcp", addr, nil)
+			if err == nil {
+				t.Errorf("Expected malformed address %q to be rejected, but it was allowed", addr)
+			}
+		})
+	}
+}

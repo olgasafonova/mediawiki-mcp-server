@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -21,12 +22,39 @@ var (
 	privateIPBlocks []*net.IPNet
 )
 
+// safeDialer prevents DNS rebinding attacks by validating IP at connection time
+// This runs AFTER DNS resolution but BEFORE the TCP connection is established
+var safeDialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+	Control: func(network, address string, c syscall.RawConn) error {
+		// Extract IP from address (format is "ip:port")
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return fmt.Errorf("invalid address format: %w", err)
+		}
+
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return fmt.Errorf("failed to parse IP: %s", host)
+		}
+
+		if isPrivateIP(ip) {
+			return fmt.Errorf("connection to private IP %s blocked (SSRF protection)", host)
+		}
+
+		return nil
+	},
+}
+
 // linkCheckClient is a shared HTTP client for link checking with connection pooling
 // Using a shared client improves performance by reusing TCP connections
+// SECURITY: Uses safeDialer to prevent DNS rebinding attacks
 var linkCheckClient = &http.Client{
 	// Timeout is set per-request via context; this is a fallback max
 	Timeout: 30 * time.Second,
 	Transport: &http.Transport{
+		DialContext:         safeDialer.DialContext,
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     90 * time.Second,
@@ -38,6 +66,16 @@ var linkCheckClient = &http.Client{
 		if len(via) >= 5 {
 			return fmt.Errorf("too many redirects")
 		}
+
+		// Also validate redirect targets to prevent SSRF via redirect
+		lastReq := via[len(via)-1]
+		if hostname := lastReq.URL.Hostname(); hostname != "" {
+			isPrivate, _ := isPrivateHost(hostname)
+			if isPrivate {
+				return fmt.Errorf("redirect to private network blocked")
+			}
+		}
+
 		return nil
 	},
 }
