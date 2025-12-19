@@ -840,17 +840,48 @@ Requires Go 1.23+
 
 ```
 mediawiki-mcp-server/
-├── main.go                    # Server, HTTP transport, security
-├── wiki/
-│   ├── config.go              # Configuration
-│   ├── client.go              # HTTP client
-│   ├── methods.go             # MediaWiki API operations
-│   └── types.go               # Request/response types
-├── converter/                 # Markdown to MediaWiki converter ✨
+├── main.go                    # Server entry point, HTTP transport
+├── main_test.go               # Server tests
+├── wiki_editing_guidelines.go # AI guidance for editing
+│
+├── tools/                     # MCP tool definitions
+│   ├── definitions.go         # Tool schemas and metadata
+│   ├── handlers.go            # Tool request handlers
+│   └── registry.go            # Tool registration
+│
+├── wiki/                      # MediaWiki API client
+│   ├── client.go              # HTTP client with auth
+│   ├── config.go              # Configuration management
+│   ├── types.go               # Request/response types
+│   ├── errors.go              # Error handling
+│   ├── read.go                # Page reading operations
+│   ├── write.go               # Page editing operations
+│   ├── search.go              # Search functionality
+│   ├── methods.go             # Core API methods
+│   ├── history.go             # Revision history
+│   ├── categories.go          # Category operations
+│   ├── users.go               # User management
+│   ├── links.go               # Link analysis
+│   ├── quality.go             # Content quality checks
+│   ├── audit.go               # Wiki health audits
+│   ├── similarity.go          # Content similarity detection
+│   ├── pdf.go                 # PDF text extraction
+│   ├── security.go            # Input sanitization, SSRF protection
+│   └── *_test.go              # Comprehensive test coverage
+│
+├── converter/                 # Markdown to MediaWiki converter
 │   ├── converter.go           # Conversion logic
 │   ├── converter_test.go      # Tests
 │   └── themes.go              # Theme definitions (tieto, neutral, dark)
-├── wiki_editing_guidelines.go # AI guidance for editing
+│
+├── cmd/
+│   └── benchmark/             # Performance benchmarking
+│       └── main.go
+│
+├── ARCHITECTURE.md            # System design documentation
+├── CONTRIBUTING.md            # Contribution guidelines
+├── SECURITY.md                # Security policy
+├── WIKI_USE_CASES.md          # Usage examples by persona
 └── README.md
 ```
 
