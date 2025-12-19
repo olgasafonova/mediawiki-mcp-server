@@ -26,9 +26,9 @@ const (
 	ValidationCodeTooLarge  ErrorCode = "VALIDATION_TOO_LARGE"
 	ValidationCodeDangerous ErrorCode = "VALIDATION_DANGEROUS"
 
-	// Authentication error codes
-	AuthCodeInvalidCredentials ErrorCode = "AUTH_INVALID_CREDENTIALS"
-	AuthCodeTokenExpired       ErrorCode = "AUTH_TOKEN_EXPIRED"
+	// Authentication error codes (not credentials, just error code constants)
+	AuthCodeInvalidCredentials ErrorCode = "AUTH_INVALID_CREDENTIALS" // #nosec G101 -- error code constant, not a credential
+	AuthCodeTokenExpired       ErrorCode = "AUTH_TOKEN_EXPIRED"       // #nosec G101 -- error code constant, not a credential
 	AuthCodePermissionDenied   ErrorCode = "AUTH_PERMISSION_DENIED"
 
 	// Not found error codes

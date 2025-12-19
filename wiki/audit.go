@@ -83,10 +83,12 @@ type JSONAuditLogger struct {
 	logger *slog.Logger
 }
 
-// NewFileAuditLogger creates an audit logger that writes to a file
-// The file is created if it doesn't exist, or appended to if it does
+// NewFileAuditLogger creates an audit logger that writes to a file.
+// The file is created if it doesn't exist, or appended to if it does.
+// The path is expected to come from a trusted source (environment variable).
 func NewFileAuditLogger(path string, logger *slog.Logger) (*JSONAuditLogger, error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	// #nosec G304 -- path comes from trusted MEDIAWIKI_AUDIT_LOG env var set by admin
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audit log file: %w", err)
 	}
