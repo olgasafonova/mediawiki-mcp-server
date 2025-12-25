@@ -19,9 +19,10 @@ func TestDetectCountry(t *testing.T) {
 		{"0112038-9", CountryFinland},
 		{"2331972-7", CountryFinland},
 
-		// Ambiguous cases (8 digits without hyphen could be DK or FI)
-		{"01120389", ""},
-		{"25313763", ""},
+		// Denmark - 8 pure digits (no hyphen)
+		// Finland always uses hyphen format (1234567-8), so 8 pure digits = Denmark
+		{"01120389", CountryDenmark},
+		{"25313763", CountryDenmark},
 
 		// Invalid
 		{"12345", ""},

@@ -42,10 +42,10 @@ func DetectCountry(orgNumber string) Country {
 		return CountrySweden
 	}
 
-	// 8 digits is ambiguous (could be DK or FI)
-	// Return empty - caller should provide country explicitly
+	// 8 pure digits (no hyphen) = Denmark
+	// Finland always uses hyphen format (1234567-8), checked above
 	if len(cleaned) == 8 && isAllDigits(cleaned) {
-		return "" // Ambiguous between DK and FI
+		return CountryDenmark
 	}
 
 	return ""

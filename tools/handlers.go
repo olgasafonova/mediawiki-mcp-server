@@ -558,29 +558,35 @@ func (r *Registry) handleNordicBatchLookup(ctx context.Context, req *mcp.CallToo
 
 	countryCode, _ := args["country"].(string)
 
-	// Split and clean org numbers
-	numbers := splitOrgNumbers(orgNumbers)
-	if len(numbers) == 0 {
+	// Split org numbers (preserve original format for country detection)
+	rawNumbers := splitByComma(orgNumbers)
+	if len(rawNumbers) == 0 {
 		return errorResult("No valid organization numbers provided")
 	}
-	if len(numbers) > 20 {
+	if len(rawNumbers) > 20 {
 		return errorResult("Maximum 20 organization numbers allowed")
 	}
 
 	var results []map[string]any
 	var errors []string
 
-	for _, orgNum := range numbers {
-		result := map[string]any{
-			"org_number": orgNum,
-		}
-
-		// Detect country if not provided
+	for _, rawOrgNum := range rawNumbers {
+		// Detect country BEFORE cleaning (Finnish format needs hyphen)
 		var country registry.Country
 		if countryCode != "" {
 			country = registry.Country(countryCode)
 		} else {
-			country = registry.DetectCountry(orgNum)
+			country = registry.DetectCountry(rawOrgNum)
+		}
+
+		// Now clean for lookup
+		orgNum := registry.CleanOrgNumber(rawOrgNum)
+		if orgNum == "" {
+			continue
+		}
+
+		result := map[string]any{
+			"org_number": rawOrgNum,
 		}
 
 		if country == "" {
@@ -603,7 +609,8 @@ func (r *Registry) handleNordicBatchLookup(ctx context.Context, req *mcp.CallToo
 			}
 		case registry.CountryFinland:
 			if r.finlandClient != nil {
-				company, err = r.finlandClient.GetCompany(ctx, orgNum)
+				// Finland API expects formatted number (with hyphen)
+				company, err = r.finlandClient.GetCompany(ctx, rawOrgNum)
 			} else {
 				err = fmt.Errorf("Finland client not configured")
 			}
@@ -619,7 +626,7 @@ func (r *Registry) handleNordicBatchLookup(ctx context.Context, req *mcp.CallToo
 
 		if err != nil {
 			result["error"] = err.Error()
-			errors = append(errors, fmt.Sprintf("%s: %v", orgNum, err))
+			errors = append(errors, fmt.Sprintf("%s: %v", rawOrgNum, err))
 		} else {
 			result["company"] = company
 		}
@@ -629,8 +636,8 @@ func (r *Registry) handleNordicBatchLookup(ctx context.Context, req *mcp.CallToo
 
 	response := map[string]any{
 		"results":      results,
-		"total":        len(numbers),
-		"success":      len(numbers) - len(errors),
+		"total":        len(rawNumbers),
+		"success":      len(rawNumbers) - len(errors),
 		"failed":       len(errors),
 	}
 	if len(errors) > 0 {
