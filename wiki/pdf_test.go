@@ -260,7 +260,7 @@ func generateRepeatedLines(line string, count int) string {
 
 func TestSearchInPDF_EmptyData(t *testing.T) {
 	matches, found, message, err := SearchInPDF([]byte{}, "test")
-	
+
 	if err != nil {
 		t.Fatalf("SearchInPDF failed: %v", err)
 	}

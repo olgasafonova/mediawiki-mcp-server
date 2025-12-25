@@ -41,7 +41,7 @@ func SearchInPDF(pdfData []byte, query string) ([]FileSearchMatch, bool, string,
 		return nil, false, fmt.Sprintf("Failed to create temp file: %v", err), nil
 	}
 	tmpPDFPath := tmpPDF.Name()
-	defer os.Remove(tmpPDFPath)
+	defer func() { _ = os.Remove(tmpPDFPath) }()
 
 	// Write PDF data to temp file
 	if _, err := tmpPDF.Write(pdfData); err != nil {
@@ -61,7 +61,7 @@ func SearchInPDF(pdfData []byte, query string) ([]FileSearchMatch, bool, string,
 	if err := tmpTXT.Close(); err != nil {
 		return nil, false, fmt.Sprintf("Failed to close temp text file: %v", err), nil
 	}
-	defer os.Remove(tmpTXTPath)
+	defer func() { _ = os.Remove(tmpTXTPath) }()
 
 	// Run pdftotext
 	// -layout preserves the original layout

@@ -518,9 +518,9 @@ func TestFindSimilarPages_EmptyContent(t *testing.T) {
 			"query": map[string]interface{}{
 				"pages": map[string]interface{}{
 					"1": map[string]interface{}{
-						"pageid":  float64(1),
-						"ns":      float64(0),
-						"title":   "Empty Page",
+						"pageid": float64(1),
+						"ns":     float64(0),
+						"title":  "Empty Page",
 						"revisions": []interface{}{
 							map[string]interface{}{
 								"slots": map[string]interface{}{
@@ -574,9 +574,9 @@ func TestSearchInFile_Success(t *testing.T) {
 							"title":  "File:test.txt",
 							"imageinfo": []interface{}{
 								map[string]interface{}{
-									"url":      "https://example.com/test.txt",
-									"mime":     "text/plain",
-									"size":     float64(50),
+									"url":       "https://example.com/test.txt",
+									"mime":      "text/plain",
+									"size":      float64(50),
 									"mediatype": "TEXT",
 								},
 							},
@@ -696,11 +696,14 @@ func TestFindSimilarPages_WithSearch(t *testing.T) {
 				}
 			} else if prop == "revisions" {
 				// Get page content
-				content := "This is test content with keywords programming and development."
-				if titles == "Related Page 1" {
+				var content string
+				switch titles {
+				case "Related Page 1":
 					content = "Related programming content with software development."
-				} else if titles == "Related Page 2" {
+				case "Related Page 2":
 					content = "Different content about unrelated things."
+				default:
+					content = "This is test content with keywords programming and development."
 				}
 				response = map[string]interface{}{
 					"query": map[string]interface{}{

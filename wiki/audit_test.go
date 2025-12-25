@@ -180,8 +180,8 @@ func TestFileAuditLogger(t *testing.T) {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	auditLogger, err := NewFileAuditLogger(tmpPath, logger)
@@ -286,7 +286,7 @@ func TestAuditEntryJSONFormat(t *testing.T) {
 
 func TestNullAuditLogger_Log(t *testing.T) {
 	logger := NullAuditLogger{}
-	
+
 	// Should not panic and should do nothing
 	entry := AuditEntry{
 		Timestamp:   "2024-01-15T10:30:00Z",
@@ -296,10 +296,10 @@ func TestNullAuditLogger_Log(t *testing.T) {
 		WikiURL:     "https://example.com",
 		Success:     true,
 	}
-	
+
 	// This should be a no-op
 	logger.Log(entry)
-	
+
 	// Test Close as well
 	err := logger.Close()
 	if err != nil {
@@ -311,7 +311,7 @@ func TestJSONAuditLogger_Log(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	auditLogger := NewWriterAuditLogger(&buf, logger)
-	
+
 	entry := AuditEntry{
 		Timestamp:   "2024-01-15T10:30:00Z",
 		Operation:   AuditOpEdit,
@@ -320,9 +320,9 @@ func TestJSONAuditLogger_Log(t *testing.T) {
 		WikiURL:     "https://example.com",
 		Success:     true,
 	}
-	
+
 	auditLogger.Log(entry)
-	
+
 	output := buf.String()
 	if !strings.Contains(output, "Test Page") {
 		t.Errorf("Expected output to contain 'Test Page', got: %s", output)
@@ -339,8 +339,8 @@ func TestJSONAuditLogger_Close_WithFile(t *testing.T) {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	auditLogger, err := NewFileAuditLogger(tmpPath, logger)

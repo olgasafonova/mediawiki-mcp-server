@@ -670,7 +670,7 @@ func (c *Client) uploadFromFile(ctx context.Context, args UploadFileArgs, token 
 	if err != nil {
 		return UploadFileResult{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Parse JSON response
 	var result map[string]interface{}
@@ -815,7 +815,7 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)

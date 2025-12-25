@@ -39,14 +39,14 @@ func TestBuildTool(t *testing.T) {
 	registry := NewHandlerRegistry(client, logger)
 
 	tests := []struct {
-		name       string
-		spec       ToolSpec
-		wantName   string
-		wantDesc   string
-		wantRO     bool
-		wantIdem   bool
-		wantDestr  bool
-		wantOpen   bool
+		name      string
+		spec      ToolSpec
+		wantName  string
+		wantDesc  string
+		wantRO    bool
+		wantIdem  bool
+		wantDestr bool
+		wantOpen  bool
 	}{
 		{
 			name: "read-only tool",
@@ -200,7 +200,7 @@ func TestToolSpecMethods(t *testing.T) {
 		"CheckTerminology": true, "CheckTranslations": true, "HealthAudit": true,
 		"FindSimilarPages": true, "CompareTopic": true,
 		"ListUsers": true,
-		"EditPage": true, "FindReplace": true, "ApplyFormatting": true, "BulkReplace": true, "UploadFile": true,
+		"EditPage":  true, "FindReplace": true, "ApplyFormatting": true, "BulkReplace": true, "UploadFile": true,
 	}
 
 	for _, spec := range AllTools {

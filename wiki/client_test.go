@@ -576,8 +576,8 @@ func TestLoginFresh_Success(t *testing.T) {
 		if action == "login" {
 			response := map[string]interface{}{
 				"login": map[string]interface{}{
-					"result":   "Success",
-					"lguserid": float64(123),
+					"result":     "Success",
+					"lguserid":   float64(123),
 					"lgusername": "TestUser",
 				},
 			}
@@ -739,9 +739,9 @@ func TestLogin_Success(t *testing.T) {
 				response := map[string]interface{}{
 					"query": map[string]interface{}{
 						"userinfo": map[string]interface{}{
-							"id":     float64(0),
-							"name":   "",
-							"anon":   "",
+							"id":   float64(0),
+							"name": "",
+							"anon": "",
 						},
 					},
 				}
@@ -759,8 +759,8 @@ func TestLogin_Success(t *testing.T) {
 			}
 			response := map[string]interface{}{
 				"login": map[string]interface{}{
-					"result":   result,
-					"lguserid": float64(1),
+					"result":     result,
+					"lguserid":   float64(1),
 					"lgusername": "TestUser",
 				},
 			}

@@ -189,9 +189,10 @@ func createHistoryMockServer(t *testing.T, handler http.HandlerFunc) *httptest.S
 				},
 			}
 			tokens := response["query"].(map[string]interface{})["tokens"].(map[string]interface{})
-			if tokenType == "login" {
+			switch tokenType {
+			case "login":
 				tokens["logintoken"] = "test-login-token"
-			} else if tokenType == "csrf" {
+			case "csrf":
 				tokens["csrftoken"] = "test-csrf-token"
 			}
 			w.Header().Set("Content-Type", "application/json")

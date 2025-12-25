@@ -331,10 +331,8 @@ func (c *Client) FindSimilarPages(ctx context.Context, args FindSimilarPagesArgs
 
 	for _, candidateTitle := range candidatePages {
 		// Check for context cancellation
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			break
-		default:
 		}
 
 		// Get candidate content
@@ -478,10 +476,8 @@ func (c *Client) CompareTopic(ctx context.Context, args CompareTopicArgs) (Compa
 		}
 
 		// Check for context cancellation
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			break
-		default:
 		}
 
 		// Get page content

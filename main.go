@@ -454,7 +454,7 @@ func main() {
 	if err != nil {
 		logger.Warn("Failed to initialize tracing", "error", err)
 	} else if tracingConfig.Enabled {
-		defer shutdownTracing(context.Background())
+		defer func() { _ = shutdownTracing(context.Background()) }()
 		logger.Info("OpenTelemetry tracing enabled",
 			"endpoint", tracingConfig.OTLPEndpoint,
 			"service", tracingConfig.ServiceName)
@@ -690,7 +690,7 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"healthy","server":"%s","version":"%s"}`, ServerName, ServerVersion)
+		_, _ = fmt.Fprintf(w, `{"status":"healthy","server":"%s","version":"%s"}`, ServerName, ServerVersion)
 	})
 
 	// Readiness endpoint (checks if wiki connection is configured)
@@ -699,11 +699,11 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		w.Header().Set("Cache-Control", "no-store")
 		if wikiURL == "" {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, `{"status":"not_ready","error":"wiki_url_not_configured"}`)
+			_, _ = fmt.Fprintf(w, `{"status":"not_ready","error":"wiki_url_not_configured"}`)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ready","wiki_url":"%s"}`, wikiURL)
+		_, _ = fmt.Fprintf(w, `{"status":"ready","wiki_url":"%s"}`, wikiURL)
 	})
 
 	// Prometheus metrics endpoint (no auth required - for monitoring systems)

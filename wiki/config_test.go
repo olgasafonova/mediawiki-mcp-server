@@ -8,12 +8,12 @@ import (
 
 func TestLoadConfig_RequiredURL(t *testing.T) {
 	// Clear environment
-	os.Unsetenv("MEDIAWIKI_URL")
-	os.Unsetenv("MEDIAWIKI_USERNAME")
-	os.Unsetenv("MEDIAWIKI_PASSWORD")
-	os.Unsetenv("MEDIAWIKI_TIMEOUT")
-	os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
-	os.Unsetenv("MEDIAWIKI_USER_AGENT")
+	_ = os.Unsetenv("MEDIAWIKI_URL")
+	_ = os.Unsetenv("MEDIAWIKI_USERNAME")
+	_ = os.Unsetenv("MEDIAWIKI_PASSWORD")
+	_ = os.Unsetenv("MEDIAWIKI_TIMEOUT")
+	_ = os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
+	_ = os.Unsetenv("MEDIAWIKI_USER_AGENT")
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -30,19 +30,19 @@ func TestLoadConfig_RequiredURL(t *testing.T) {
 }
 
 func TestLoadConfig_ValidConfig(t *testing.T) {
-	os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
-	os.Setenv("MEDIAWIKI_USERNAME", "TestUser")
-	os.Setenv("MEDIAWIKI_PASSWORD", "TestPassword")
-	os.Setenv("MEDIAWIKI_TIMEOUT", "60s")
-	os.Setenv("MEDIAWIKI_MAX_RETRIES", "5")
-	os.Setenv("MEDIAWIKI_USER_AGENT", "TestAgent/1.0")
+	_ = os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
+	_ = os.Setenv("MEDIAWIKI_USERNAME", "TestUser")
+	_ = os.Setenv("MEDIAWIKI_PASSWORD", "TestPassword")
+	_ = os.Setenv("MEDIAWIKI_TIMEOUT", "60s")
+	_ = os.Setenv("MEDIAWIKI_MAX_RETRIES", "5")
+	_ = os.Setenv("MEDIAWIKI_USER_AGENT", "TestAgent/1.0")
 	defer func() {
-		os.Unsetenv("MEDIAWIKI_URL")
-		os.Unsetenv("MEDIAWIKI_USERNAME")
-		os.Unsetenv("MEDIAWIKI_PASSWORD")
-		os.Unsetenv("MEDIAWIKI_TIMEOUT")
-		os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
-		os.Unsetenv("MEDIAWIKI_USER_AGENT")
+		_ = os.Unsetenv("MEDIAWIKI_URL")
+		_ = os.Unsetenv("MEDIAWIKI_USERNAME")
+		_ = os.Unsetenv("MEDIAWIKI_PASSWORD")
+		_ = os.Unsetenv("MEDIAWIKI_TIMEOUT")
+		_ = os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
+		_ = os.Unsetenv("MEDIAWIKI_USER_AGENT")
 	}()
 
 	cfg, err := LoadConfig()
@@ -71,13 +71,13 @@ func TestLoadConfig_ValidConfig(t *testing.T) {
 }
 
 func TestLoadConfig_DefaultValues(t *testing.T) {
-	os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
-	os.Unsetenv("MEDIAWIKI_USERNAME")
-	os.Unsetenv("MEDIAWIKI_PASSWORD")
-	os.Unsetenv("MEDIAWIKI_TIMEOUT")
-	os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
-	os.Unsetenv("MEDIAWIKI_USER_AGENT")
-	defer os.Unsetenv("MEDIAWIKI_URL")
+	_ = os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
+	_ = os.Unsetenv("MEDIAWIKI_USERNAME")
+	_ = os.Unsetenv("MEDIAWIKI_PASSWORD")
+	_ = os.Unsetenv("MEDIAWIKI_TIMEOUT")
+	_ = os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
+	_ = os.Unsetenv("MEDIAWIKI_USER_AGENT")
+	defer func() { _ = os.Unsetenv("MEDIAWIKI_URL") }()
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -97,11 +97,11 @@ func TestLoadConfig_DefaultValues(t *testing.T) {
 }
 
 func TestLoadConfig_InvalidTimeout(t *testing.T) {
-	os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
-	os.Setenv("MEDIAWIKI_TIMEOUT", "invalid")
+	_ = os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
+	_ = os.Setenv("MEDIAWIKI_TIMEOUT", "invalid")
 	defer func() {
-		os.Unsetenv("MEDIAWIKI_URL")
-		os.Unsetenv("MEDIAWIKI_TIMEOUT")
+		_ = os.Unsetenv("MEDIAWIKI_URL")
+		_ = os.Unsetenv("MEDIAWIKI_TIMEOUT")
 	}()
 
 	_, err := LoadConfig()
@@ -119,11 +119,11 @@ func TestLoadConfig_InvalidTimeout(t *testing.T) {
 }
 
 func TestLoadConfig_InvalidMaxRetries(t *testing.T) {
-	os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
-	os.Setenv("MEDIAWIKI_MAX_RETRIES", "-1")
+	_ = os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
+	_ = os.Setenv("MEDIAWIKI_MAX_RETRIES", "-1")
 	defer func() {
-		os.Unsetenv("MEDIAWIKI_URL")
-		os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
+		_ = os.Unsetenv("MEDIAWIKI_URL")
+		_ = os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
 	}()
 
 	_, err := LoadConfig()
@@ -141,11 +141,11 @@ func TestLoadConfig_InvalidMaxRetries(t *testing.T) {
 }
 
 func TestLoadConfig_NonNumericMaxRetries(t *testing.T) {
-	os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
-	os.Setenv("MEDIAWIKI_MAX_RETRIES", "abc")
+	_ = os.Setenv("MEDIAWIKI_URL", "https://wiki.example.com/api.php")
+	_ = os.Setenv("MEDIAWIKI_MAX_RETRIES", "abc")
 	defer func() {
-		os.Unsetenv("MEDIAWIKI_URL")
-		os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
+		_ = os.Unsetenv("MEDIAWIKI_URL")
+		_ = os.Unsetenv("MEDIAWIKI_MAX_RETRIES")
 	}()
 
 	_, err := LoadConfig()

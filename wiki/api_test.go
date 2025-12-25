@@ -59,9 +59,10 @@ func mockMediaWikiServer(t *testing.T, handler http.HandlerFunc) *httptest.Serve
 				},
 			}
 			tokens := response["query"].(map[string]interface{})["tokens"].(map[string]interface{})
-			if tokenType == "login" {
+			switch tokenType {
+			case "login":
 				tokens["logintoken"] = "test-login-token"
-			} else if tokenType == "csrf" {
+			case "csrf":
 				tokens["csrftoken"] = "test-csrf-token"
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -856,16 +857,16 @@ func TestGetPageInfo_WithAllFields(t *testing.T) {
 			"query": map[string]interface{}{
 				"pages": map[string]interface{}{
 					"1": map[string]interface{}{
-						"pageid":        float64(1),
-						"title":         "Test Page",
-						"ns":            float64(0),
-						"touched":       "2024-01-15T12:00:00Z",
-						"lastrevid":     float64(100),
-						"length":        float64(5000),
-						"contentmodel":  "wikitext",
-						"pagelanguage":  "en",
-						"watchers":      float64(10),
-						"protection":    []interface{}{},
+						"pageid":       float64(1),
+						"title":        "Test Page",
+						"ns":           float64(0),
+						"touched":      "2024-01-15T12:00:00Z",
+						"lastrevid":    float64(100),
+						"length":       float64(5000),
+						"contentmodel": "wikitext",
+						"pagelanguage": "en",
+						"watchers":     float64(10),
+						"protection":   []interface{}{},
 					},
 				},
 			},

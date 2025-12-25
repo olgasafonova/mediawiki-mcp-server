@@ -1237,8 +1237,8 @@ func TestUploadFile_FromURL_Success(t *testing.T) {
 			}
 			response := map[string]interface{}{
 				"login": map[string]interface{}{
-					"result":   result,
-					"lguserid": float64(1),
+					"result":     result,
+					"lguserid":   float64(1),
 					"lgusername": "TestUser",
 				},
 			}
@@ -1374,8 +1374,8 @@ func TestUploadFile_FromFile_NotSupported(t *testing.T) {
 			}
 			response := map[string]interface{}{
 				"login": map[string]interface{}{
-					"result":   result,
-					"lguserid": float64(1),
+					"result":     result,
+					"lguserid":   float64(1),
 					"lgusername": "TestUser",
 				},
 			}
