@@ -1,8 +1,10 @@
+version: "2"
+
 run:
   timeout: 5m
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - govet
     - ineffassign
@@ -10,6 +12,5 @@ linters:
     - unused
 
 issues:
-  exclude-use-default: true
   exclude-dirs:
     - vendor
