@@ -250,6 +250,65 @@ RETURNS: Matching company data.`,
 			{Name: "name", Type: "string", Description: "Company name", Required: true},
 		},
 	},
+
+	// =========================================================================
+	// Batch Tools
+	// =========================================================================
+	{
+		Name:     "nordic_batch_lookup",
+		Title:    "Batch Company Lookup",
+		Category: "batch",
+		ReadOnly: true,
+		Description: `Look up multiple companies at once by organization number.
+
+USE WHEN: User provides multiple org numbers, or needs to verify several companies.
+
+PARAMETERS:
+- org_numbers: Comma-separated list of organization numbers (required)
+- country: Country code if all are from same country (optional)
+
+RETURNS: List of company details for each valid org number.`,
+		Parameters: []ParameterSpec{
+			{Name: "org_numbers", Type: "string", Description: "Comma-separated org numbers (max 20)", Required: true},
+			{Name: "country", Type: "string", Description: "Country code if all same country", Required: false, Enum: []string{"NO", "DK", "FI", "SE"}},
+		},
+	},
+
+	// =========================================================================
+	// Ownership Tools
+	// =========================================================================
+	{
+		Name:     "norway_get_ownership",
+		Title:    "Norway: Get Ownership",
+		Category: "ownership",
+		ReadOnly: true,
+		Description: `Get ownership and role information for a Norwegian company.
+Includes board members, CEO, accountant, auditor, and shareholders.
+
+PARAMETERS:
+- orgnr: 9-digit organization number (required)
+
+RETURNS: Full role/ownership data from BRREG.`,
+		Parameters: []ParameterSpec{
+			{Name: "orgnr", Type: "string", Description: "9-digit organization number", Required: true},
+		},
+	},
+
+	{
+		Name:     "norway_get_subsidiaries",
+		Title:    "Norway: Get Subsidiaries",
+		Category: "ownership",
+		ReadOnly: true,
+		Description: `Get sub-units (branches/subsidiaries) for a Norwegian company.
+
+PARAMETERS:
+- orgnr: 9-digit organization number of parent company (required)
+
+RETURNS: List of sub-units registered under this company.`,
+		Parameters: []ParameterSpec{
+			{Name: "orgnr", Type: "string", Description: "9-digit organization number", Required: true},
+		},
+	},
 }
 
 // GetToolByName returns a tool spec by name.

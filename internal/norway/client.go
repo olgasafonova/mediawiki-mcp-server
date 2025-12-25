@@ -378,6 +378,55 @@ func (c *Client) SearchCompanies(ctx context.Context, name string, limit int) (*
 	return result, nil
 }
 
+// GetUnderenheter fetches sub-units (branches/subsidiaries) for an entity.
+func (c *Client) GetUnderenheter(ctx context.Context, orgNumber string) ([]BRREGEnhet, error) {
+	cleaned := registry.CleanOrgNumber(orgNumber)
+
+	// Search for underenheter with this parent org number
+	u, err := url.Parse(c.config.BaseURL + UnderenheterPath)
+	if err != nil {
+		return nil, fmt.Errorf("parsing URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("overordnetEnhet", cleaned)
+	q.Set("size", "100")
+	u.RawQuery = q.Encode()
+
+	c.logger.Debug("Fetching sub-units", "orgNumber", cleaned, "url", u.String())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.config.UserAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Embedded struct {
+			Underenheter []BRREGEnhet `json:"underenheter"`
+		} `json:"_embedded"`
+		Page BRREGPage `json:"page"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Embedded.Underenheter, nil
+}
+
 // GetBoardMembers fetches board members for an entity.
 func (c *Client) GetBoardMembers(ctx context.Context, orgNumber string) ([]registry.BoardMember, error) {
 	roles, err := c.GetRoller(ctx, orgNumber)

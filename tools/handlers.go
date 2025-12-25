@@ -100,6 +100,12 @@ func (r *Registry) getHandler(name string) mcp.ToolHandler {
 		return r.handleDenmarkGetCompany
 	case "denmark_search":
 		return r.handleDenmarkSearch
+	case "nordic_batch_lookup":
+		return r.handleNordicBatchLookup
+	case "norway_get_ownership":
+		return r.handleNorwayGetOwnership
+	case "norway_get_subsidiaries":
+		return r.handleNorwayGetSubsidiaries
 	default:
 		return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return nil, fmt.Errorf("unknown tool: %s", name)
@@ -537,6 +543,210 @@ func (r *Registry) handleDenmarkSearch(ctx context.Context, req *mcp.CallToolReq
 	}
 
 	return jsonResult(company)
+}
+
+func (r *Registry) handleNordicBatchLookup(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := parseArguments(req)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	orgNumbers, _ := args["org_numbers"].(string)
+	if orgNumbers == "" {
+		return errorResult("org_numbers is required")
+	}
+
+	countryCode, _ := args["country"].(string)
+
+	// Split and clean org numbers
+	numbers := splitOrgNumbers(orgNumbers)
+	if len(numbers) == 0 {
+		return errorResult("No valid organization numbers provided")
+	}
+	if len(numbers) > 20 {
+		return errorResult("Maximum 20 organization numbers allowed")
+	}
+
+	var results []map[string]any
+	var errors []string
+
+	for _, orgNum := range numbers {
+		result := map[string]any{
+			"org_number": orgNum,
+		}
+
+		// Detect country if not provided
+		var country registry.Country
+		if countryCode != "" {
+			country = registry.Country(countryCode)
+		} else {
+			country = registry.DetectCountry(orgNum)
+		}
+
+		if country == "" {
+			result["error"] = "Could not detect country"
+			results = append(results, result)
+			continue
+		}
+
+		result["country"] = country
+
+		var company *registry.Company
+		var err error
+
+		switch country {
+		case registry.CountryNorway:
+			if r.norwayClient != nil {
+				company, err = r.norwayClient.GetCompany(ctx, orgNum)
+			} else {
+				err = fmt.Errorf("Norway client not configured")
+			}
+		case registry.CountryFinland:
+			if r.finlandClient != nil {
+				company, err = r.finlandClient.GetCompany(ctx, orgNum)
+			} else {
+				err = fmt.Errorf("Finland client not configured")
+			}
+		case registry.CountryDenmark:
+			if r.denmarkClient != nil {
+				company, err = r.denmarkClient.GetCompany(ctx, orgNum)
+			} else {
+				err = fmt.Errorf("Denmark client not configured")
+			}
+		default:
+			err = fmt.Errorf("Country not supported: %s", country)
+		}
+
+		if err != nil {
+			result["error"] = err.Error()
+			errors = append(errors, fmt.Sprintf("%s: %v", orgNum, err))
+		} else {
+			result["company"] = company
+		}
+
+		results = append(results, result)
+	}
+
+	response := map[string]any{
+		"results":      results,
+		"total":        len(numbers),
+		"success":      len(numbers) - len(errors),
+		"failed":       len(errors),
+	}
+	if len(errors) > 0 {
+		response["errors"] = errors
+	}
+
+	return jsonResult(response)
+}
+
+func (r *Registry) handleNorwayGetOwnership(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := parseArguments(req)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	orgnr, _ := args["orgnr"].(string)
+	if orgnr == "" {
+		return errorResult("orgnr is required")
+	}
+
+	if r.norwayClient == nil {
+		return errorResult("Norway client not configured")
+	}
+
+	roles, err := r.norwayClient.GetRoller(ctx, orgnr)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to get ownership: %v", err))
+	}
+
+	return jsonResult(roles)
+}
+
+func (r *Registry) handleNorwayGetSubsidiaries(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := parseArguments(req)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	orgnr, _ := args["orgnr"].(string)
+	if orgnr == "" {
+		return errorResult("orgnr is required")
+	}
+
+	if r.norwayClient == nil {
+		return errorResult("Norway client not configured")
+	}
+
+	subsidiaries, err := r.norwayClient.GetUnderenheter(ctx, orgnr)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to get subsidiaries: %v", err))
+	}
+
+	// Convert to unified company format
+	var companies []registry.Company
+	for _, sub := range subsidiaries {
+		companies = append(companies, *sub.ToCompany())
+	}
+
+	return jsonResult(map[string]any{
+		"parent_org_number": orgnr,
+		"subsidiaries":      companies,
+		"count":             len(companies),
+	})
+}
+
+// splitOrgNumbers splits a comma-separated list of org numbers and cleans them.
+func splitOrgNumbers(input string) []string {
+	parts := make([]string, 0)
+	for _, part := range splitByComma(input) {
+		cleaned := registry.CleanOrgNumber(part)
+		if cleaned != "" {
+			parts = append(parts, cleaned)
+		}
+	}
+	return parts
+}
+
+// splitByComma splits a string by comma, trimming whitespace.
+func splitByComma(s string) []string {
+	var result []string
+	for _, part := range splitString(s, ',') {
+		trimmed := trimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// splitString splits a string by a delimiter.
+func splitString(s string, delim rune) []string {
+	var result []string
+	var current []rune
+	for _, r := range s {
+		if r == delim {
+			result = append(result, string(current))
+			current = nil
+		} else {
+			current = append(current, r)
+		}
+	}
+	result = append(result, string(current))
+	return result
+}
+
+// trimSpace removes leading and trailing whitespace.
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
+		end--
+	}
+	return s[start:end]
 }
 
 // Helper functions
