@@ -626,6 +626,55 @@ server {
 | Origin Validation | Blocks requests from unauthorized domains |
 | Rate Limiting | 60 requests/minute per IP (configurable) |
 | Security Headers | X-Content-Type-Options, X-Frame-Options |
+| Circuit Breaker | Automatic failover after consecutive API failures |
+
+---
+
+## HTTP Endpoints
+
+When running in HTTP mode, these endpoints are available:
+
+| Endpoint | Description |
+|----------|-------------|
+| `/` | MCP protocol endpoint (tools, resources, prompts) |
+| `/health` | Liveness check (always returns 200 if server is running) |
+| `/ready` | Readiness check (verifies wiki API connectivity) |
+| `/tools` | Tool discovery (lists all 33+ tools by category) |
+| `/status` | Resilience status (circuit breaker state, dedup stats) |
+| `/metrics` | Prometheus metrics (request counts, latencies) |
+
+### Health Checks
+
+Use `/health` and `/ready` for container orchestration:
+
+```yaml
+# Kubernetes example
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+```
+
+### Tool Discovery
+
+Get a list of all available tools:
+
+```bash
+curl http://localhost:8080/tools | jq '.categories | keys'
+```
+
+### Resilience Monitoring
+
+Check circuit breaker and request deduplication status:
+
+```bash
+curl http://localhost:8080/status
+# Returns: {"circuit_breaker":{"state":"closed",...},"inflight_requests":0}
+```
 
 ---
 

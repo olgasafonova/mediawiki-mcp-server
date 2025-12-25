@@ -2,6 +2,37 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [1.23.0] - 2025-12-26
+
+### Added
+- **Circuit breaker** for wiki API resilience (5 failures threshold, 30s reset)
+- **Request deduplication** infrastructure for coalescing in-flight requests
+- **Enhanced error types** with recovery suggestions (`WikiError`)
+- **Cache warming** on startup for improved first-request latency
+- `/tools` endpoint for tool discovery (lists all 33 tools by category)
+- `/status` endpoint for circuit breaker and dedup monitoring
+
+### Changed
+- Updated golangci-lint config to v1 format for CI compatibility
+
+## [1.22.0] - 2025-12-25
+
+### Added
+- **Graceful shutdown** with proper resource cleanup
+- **Health endpoints**: `/health` (liveness) and `/ready` (wiki connectivity)
+- **Request batching** for improved API efficiency
+- **Prometheus metrics** at `/metrics` endpoint
+- **OpenTelemetry tracing** support
+
+### Changed
+- Updated Go version matrix to 1.23 and 1.24 in CI
+
+## [1.21.0] - 2025-12-25
+
+### Added
+- Improved test coverage and code quality
+- Security scan fixes
+
 ## [1.20.0] - 2025-12-19
 
 ### Added
