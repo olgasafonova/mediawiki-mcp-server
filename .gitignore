@@ -1,0 +1,10 @@
+# Binaries
+nordic-registry-mcp-server
+*.exe
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
