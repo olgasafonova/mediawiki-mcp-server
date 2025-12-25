@@ -116,11 +116,11 @@ func TestSecurity_CRLFInjection(t *testing.T) {
 func TestSecurity_UnicodeNormalizationAttacks(t *testing.T) {
 	// Unicode-based attacks
 	maliciousInputs := []string{
-		"test\u202Ereverse",                // Right-to-left override
-		"admin\u0000hidden",                // Null byte injection
-		"test\uFEFFbom",                    // BOM character
-		"\u200Bzero\u200Bwidth",            // Zero-width spaces
-		"scr\u0000ipt",                     // Null byte in tag name
+		"test\u202Ereverse",                  // Right-to-left override
+		"admin\u0000hidden",                  // Null byte injection
+		"test\uFEFFbom",                      // BOM character
+		"\u200Bzero\u200Bwidth",              // Zero-width spaces
+		"scr\u0000ipt",                       // Null byte in tag name
 		"<scr\u0130pt>alert()</scr\u0130pt>", // Turkish I
 	}
 
@@ -282,9 +282,9 @@ func TestSecurity_MixedEncodings(t *testing.T) {
 	// Test mixed encoding attempts
 	mixedInputs := []string{
 		"%3Cscript%3Ealert(1)%3C/script%3E", // URL encoded
-		"\\u003cscript\\u003e",               // Unicode escape
-		"&#x3C;script&#x3E;",                 // Hex entities
-		"&#60;script&#62;",                   // Decimal entities
+		"\\u003cscript\\u003e",              // Unicode escape
+		"&#x3C;script&#x3E;",                // Hex entities
+		"&#60;script&#62;",                  // Decimal entities
 	}
 
 	for _, input := range mixedInputs {

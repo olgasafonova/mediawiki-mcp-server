@@ -4,11 +4,11 @@ package converter
 
 // Theme defines color scheme for MediaWiki output
 type Theme struct {
-	Name        string            // Theme identifier
-	Description string            // Human-readable description
-	Headings    map[int]string    // Heading level -> color (1-6)
-	InlineCode  InlineCodeStyle   // Inline code styling
-	CodeBlock   CodeBlockStyle    // Code block styling
+	Name        string                  // Theme identifier
+	Description string                  // Human-readable description
+	Headings    map[int]string          // Heading level -> color (1-6)
+	InlineCode  InlineCodeStyle         // Inline code styling
+	CodeBlock   CodeBlockStyle          // Code block styling
 	Callouts    map[string]CalloutStyle // Callout type -> styling
 }
 
@@ -53,8 +53,8 @@ var ThemeTieto = Theme{
 		6: "#021e57",
 	},
 	InlineCode: InlineCodeStyle{
-		BackgroundColor: "#f5ff56",  // Bright yellow (Tieto accent)
-		TextColor:       "#021e57",  // Hero Blue
+		BackgroundColor: "#f5ff56", // Bright yellow (Tieto accent)
+		TextColor:       "#021e57", // Hero Blue
 		Padding:         "2px 6px",
 		BorderRadius:    "3px",
 		FontFamily:      "Consolas,Monaco,monospace",

@@ -12,10 +12,10 @@ type ErrorCode string
 
 const (
 	// SSRF error codes
-	SSRFCodePrivateIP    ErrorCode = "SSRF_PRIVATE_IP"
-	SSRFCodeDNSError     ErrorCode = "SSRF_DNS_ERROR"
-	SSRFCodeRedirect     ErrorCode = "SSRF_REDIRECT_BLOCKED"
-	SSRFCodeInvalidURL   ErrorCode = "SSRF_INVALID_URL"
+	SSRFCodePrivateIP  ErrorCode = "SSRF_PRIVATE_IP"
+	SSRFCodeDNSError   ErrorCode = "SSRF_DNS_ERROR"
+	SSRFCodeRedirect   ErrorCode = "SSRF_REDIRECT_BLOCKED"
+	SSRFCodeInvalidURL ErrorCode = "SSRF_INVALID_URL"
 
 	// Rate limit error codes
 	RateLimitCodeExceeded ErrorCode = "RATE_LIMIT_EXCEEDED"
@@ -172,10 +172,10 @@ To fix:
 
 // RateLimitError indicates rate limiting with retry guidance
 type RateLimitError struct {
-	Operation   string
-	RetryAfter  int // seconds
-	Limit       int
-	Current     int
+	Operation  string
+	RetryAfter int // seconds
+	Limit      int
+	Current    int
 }
 
 func (e *RateLimitError) Error() string {

@@ -42,23 +42,23 @@ var multiWhitespaceRegex = regexp.MustCompile(`\s+`)
 
 // Wiki markup patterns to remove
 var wikiMarkupPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\[\[Category:[^\]]+\]\]`),                    // Category links
-	regexp.MustCompile(`\[\[[^\]|]+\|([^\]]+)\]\]`),                  // Links with display text
-	regexp.MustCompile(`\[\[([^\]]+)\]\]`),                           // Simple links
-	regexp.MustCompile(`\{\{[^}]+\}\}`),                              // Templates
-	regexp.MustCompile(`<ref[^>]*>.*?</ref>`),                        // References
-	regexp.MustCompile(`<ref[^/]*/?>`),                               // Self-closing refs
-	regexp.MustCompile(`<[^>]+>`),                                    // All HTML tags
-	regexp.MustCompile(`'''([^']+)'''`),                              // Bold
-	regexp.MustCompile(`''([^']+)''`),                                // Italic
-	regexp.MustCompile(`={2,}([^=]+)={2,}`),                          // Section headers
-	regexp.MustCompile(`\|[^|}\n]+`),                                 // Table cells
-	regexp.MustCompile(`\{\|[^}]*\|\}`),                              // Tables
-	regexp.MustCompile(`^\*+\s*`),                                    // List items
-	regexp.MustCompile(`^#+\s*`),                                     // Numbered lists
-	regexp.MustCompile(`https?://[^\s\]]+`),                          // URLs
-	regexp.MustCompile(`\[https?://[^\s\]]+ ([^\]]+)\]`),             // External links with text
-	regexp.MustCompile(`\[https?://[^\]]+\]`),                        // External links
+	regexp.MustCompile(`\[\[Category:[^\]]+\]\]`),        // Category links
+	regexp.MustCompile(`\[\[[^\]|]+\|([^\]]+)\]\]`),      // Links with display text
+	regexp.MustCompile(`\[\[([^\]]+)\]\]`),               // Simple links
+	regexp.MustCompile(`\{\{[^}]+\}\}`),                  // Templates
+	regexp.MustCompile(`<ref[^>]*>.*?</ref>`),            // References
+	regexp.MustCompile(`<ref[^/]*/?>`),                   // Self-closing refs
+	regexp.MustCompile(`<[^>]+>`),                        // All HTML tags
+	regexp.MustCompile(`'''([^']+)'''`),                  // Bold
+	regexp.MustCompile(`''([^']+)''`),                    // Italic
+	regexp.MustCompile(`={2,}([^=]+)={2,}`),              // Section headers
+	regexp.MustCompile(`\|[^|}\n]+`),                     // Table cells
+	regexp.MustCompile(`\{\|[^}]*\|\}`),                  // Tables
+	regexp.MustCompile(`^\*+\s*`),                        // List items
+	regexp.MustCompile(`^#+\s*`),                         // Numbered lists
+	regexp.MustCompile(`https?://[^\s\]]+`),              // URLs
+	regexp.MustCompile(`\[https?://[^\s\]]+ ([^\]]+)\]`), // External links with text
+	regexp.MustCompile(`\[https?://[^\]]+\]`),            // External links
 }
 
 // removeWikiMarkup strips wiki markup from content, leaving plain text

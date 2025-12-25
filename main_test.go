@@ -108,7 +108,6 @@ func TestRateLimiterRefill(t *testing.T) {
 	}
 }
 
-
 func TestRecoverPanic(t *testing.T) {
 	// This test verifies recoverPanic properly catches panics
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

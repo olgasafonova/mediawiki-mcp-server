@@ -157,7 +157,7 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 	// Refill tokens based on elapsed time
 	elapsed := now.Sub(client.lastCheck)
-	refill := int(elapsed / rl.interval) * rl.rate
+	refill := int(elapsed/rl.interval) * rl.rate
 	client.tokens = min(client.tokens+refill, rl.rate)
 	client.lastCheck = now
 

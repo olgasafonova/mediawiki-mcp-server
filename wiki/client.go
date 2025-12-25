@@ -31,7 +31,7 @@ type CacheEntry struct {
 
 // Cache size limits to prevent unbounded memory growth
 const (
-	MaxCacheEntries = 1000 // Maximum number of cache entries
+	MaxCacheEntries      = 1000            // Maximum number of cache entries
 	CacheCleanupInterval = 5 * time.Minute // How often to run cache cleanup
 )
 
@@ -53,7 +53,7 @@ type Client struct {
 	// Response cache with LRU eviction
 	cache      sync.Map // key (string) -> *CacheEntry
 	cacheTTL   map[string]time.Duration
-	cacheCount int64    // Atomic counter for cache size
+	cacheCount int64      // Atomic counter for cache size
 	cacheMu    sync.Mutex // Protects eviction operations
 
 	// Graceful shutdown
@@ -744,13 +744,13 @@ func normalizePageTitle(title string) string {
 // Note: Go's regexp doesn't support backreferences, so we use separate patterns for each tag
 var (
 	// Patterns for dangerous tags with content (separate patterns since Go doesn't support backrefs)
-	scriptTagRegex  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	styleTagRegex   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	iframeTagRegex  = regexp.MustCompile(`(?is)<iframe[^>]*>.*?</iframe>`)
-	objectTagRegex  = regexp.MustCompile(`(?is)<object[^>]*>.*?</object>`)
-	embedTagRegex   = regexp.MustCompile(`(?is)<embed[^>]*>.*?</embed>`)
-	appletTagRegex  = regexp.MustCompile(`(?is)<applet[^>]*>.*?</applet>`)
-	formTagRegex    = regexp.MustCompile(`(?is)<form[^>]*>.*?</form>`)
+	scriptTagRegex = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	styleTagRegex  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	iframeTagRegex = regexp.MustCompile(`(?is)<iframe[^>]*>.*?</iframe>`)
+	objectTagRegex = regexp.MustCompile(`(?is)<object[^>]*>.*?</object>`)
+	embedTagRegex  = regexp.MustCompile(`(?is)<embed[^>]*>.*?</embed>`)
+	appletTagRegex = regexp.MustCompile(`(?is)<applet[^>]*>.*?</applet>`)
+	formTagRegex   = regexp.MustCompile(`(?is)<form[^>]*>.*?</form>`)
 
 	// Combined pattern for self-closing dangerous tags (single pass for 3 tag types)
 	dangerousSelfClosingTagsRegex = regexp.MustCompile(`(?is)<(?:meta|link|base)[^>]*>`)

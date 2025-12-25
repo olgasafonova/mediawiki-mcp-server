@@ -84,8 +84,8 @@ func TestIsPrivateHost(t *testing.T) {
 // Test the CacheEntry struct
 func TestCacheEntry(t *testing.T) {
 	entry := &CacheEntry{
-		Data:       "test data",
-		Key:        "test:key",
+		Data: "test data",
+		Key:  "test:key",
 	}
 
 	if entry.Data != "test data" {

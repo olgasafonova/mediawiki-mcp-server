@@ -23,11 +23,11 @@ type SearchArgs struct {
 
 // SearchResult contains search results with pagination info.
 type SearchResult struct {
-	Query      string       `json:"query"`
-	TotalHits  int          `json:"total_hits"`
-	Results    []SearchHit  `json:"results"`
-	HasMore    bool         `json:"has_more"`
-	NextOffset int          `json:"next_offset,omitempty"`
+	Query      string      `json:"query"`
+	TotalHits  int         `json:"total_hits"`
+	Results    []SearchHit `json:"results"`
+	HasMore    bool        `json:"has_more"`
+	NextOffset int         `json:"next_offset,omitempty"`
 }
 
 // SearchHit represents a single search result with snippet preview.
@@ -70,12 +70,12 @@ type ListPagesArgs struct {
 
 // ListPagesResult contains a paginated list of wiki pages.
 type ListPagesResult struct {
-	Pages          []PageSummary `json:"pages"`
-	ReturnedCount  int           `json:"returned_count"`
-	TotalCount     int           `json:"total_count,omitempty"` // Deprecated: use returned_count. Shows returned count, not actual total.
-	TotalEstimate  int           `json:"total_estimate,omitempty"` // Estimated total pages in namespace (when available)
-	HasMore        bool          `json:"has_more"`
-	ContinueFrom   string        `json:"continue_from,omitempty"`
+	Pages         []PageSummary `json:"pages"`
+	ReturnedCount int           `json:"returned_count"`
+	TotalCount    int           `json:"total_count,omitempty"`    // Deprecated: use returned_count. Shows returned count, not actual total.
+	TotalEstimate int           `json:"total_estimate,omitempty"` // Estimated total pages in namespace (when available)
+	HasMore       bool          `json:"has_more"`
+	ContinueFrom  string        `json:"continue_from,omitempty"`
 }
 
 // PageSummary contains basic page identification info.
@@ -131,20 +131,20 @@ type PageInfoArgs struct {
 
 // PageInfo contains metadata about a wiki page without its content.
 type PageInfo struct {
-	Title         string     `json:"title"`
-	PageID        int        `json:"page_id"`
-	Namespace     int        `json:"namespace"`
-	ContentModel  string     `json:"content_model"`
-	PageLanguage  string     `json:"page_language"`
-	Length        int        `json:"length"`
-	Touched       string     `json:"touched"`
-	LastRevision  int        `json:"last_revision_id"`
-	Categories    []string   `json:"categories,omitempty"`
-	Links         int        `json:"links_count"`
-	Exists        bool       `json:"exists"`
-	Redirect      bool       `json:"redirect"`
-	RedirectTo    string     `json:"redirect_to,omitempty"`
-	Protection    []string   `json:"protection,omitempty"`
+	Title        string   `json:"title"`
+	PageID       int      `json:"page_id"`
+	Namespace    int      `json:"namespace"`
+	ContentModel string   `json:"content_model"`
+	PageLanguage string   `json:"page_language"`
+	Length       int      `json:"length"`
+	Touched      string   `json:"touched"`
+	LastRevision int      `json:"last_revision_id"`
+	Categories   []string `json:"categories,omitempty"`
+	Links        int      `json:"links_count"`
+	Exists       bool     `json:"exists"`
+	Redirect     bool     `json:"redirect"`
+	RedirectTo   string   `json:"redirect_to,omitempty"`
+	Protection   []string `json:"protection,omitempty"`
 }
 
 // ========== Edit Types ==========
@@ -218,17 +218,17 @@ type AggregateCount struct {
 
 // RecentChange represents a single wiki edit, creation, or log event.
 type RecentChange struct {
-	Type      string    `json:"type"`
-	Title     string    `json:"title"`
-	PageID    int       `json:"page_id"`
-	RevisionID int      `json:"revision_id"`
-	User      string    `json:"user"`
-	Timestamp time.Time `json:"timestamp"`
-	Comment   string    `json:"comment"`
-	SizeDiff  int       `json:"size_diff"`
-	New       bool      `json:"new"`
-	Minor     bool      `json:"minor"`
-	Bot       bool      `json:"bot"`
+	Type       string    `json:"type"`
+	Title      string    `json:"title"`
+	PageID     int       `json:"page_id"`
+	RevisionID int       `json:"revision_id"`
+	User       string    `json:"user"`
+	Timestamp  time.Time `json:"timestamp"`
+	Comment    string    `json:"comment"`
+	SizeDiff   int       `json:"size_diff"`
+	New        bool      `json:"new"`
+	Minor      bool      `json:"minor"`
+	Bot        bool      `json:"bot"`
 }
 
 // ========== Parse Types ==========
@@ -257,16 +257,16 @@ type WikiInfoArgs struct {
 
 // WikiInfo describes the MediaWiki installation and its statistics.
 type WikiInfo struct {
-	SiteName    string `json:"site_name"`
-	MainPage    string `json:"main_page"`
-	Base        string `json:"base_url"`
-	Generator   string `json:"generator"`
-	PHPVersion  string `json:"php_version"`
-	Language    string `json:"language"`
-	ArticlePath string `json:"article_path"`
-	Server      string `json:"server"`
-	Timezone    string `json:"timezone"`
-	WriteAPI    bool   `json:"write_api_enabled"`
+	SiteName    string     `json:"site_name"`
+	MainPage    string     `json:"main_page"`
+	Base        string     `json:"base_url"`
+	Generator   string     `json:"generator"`
+	PHPVersion  string     `json:"php_version"`
+	Language    string     `json:"language"`
+	ArticlePath string     `json:"article_path"`
+	Server      string     `json:"server"`
+	Timezone    string     `json:"timezone"`
+	WriteAPI    bool       `json:"write_api_enabled"`
 	Statistics  *WikiStats `json:"statistics,omitempty"`
 }
 
@@ -360,28 +360,28 @@ type CheckTerminologyArgs struct {
 
 // CheckTerminologyResult contains terminology violations found across pages.
 type CheckTerminologyResult struct {
-	PagesChecked  int                   `json:"pages_checked"`
-	IssuesFound   int                   `json:"issues_found"`
-	GlossaryPage  string                `json:"glossary_page"`
-	TermsLoaded   int                   `json:"terms_loaded"`
-	Pages         []PageTerminologyResult `json:"pages"`
+	PagesChecked int                     `json:"pages_checked"`
+	IssuesFound  int                     `json:"issues_found"`
+	GlossaryPage string                  `json:"glossary_page"`
+	TermsLoaded  int                     `json:"terms_loaded"`
+	Pages        []PageTerminologyResult `json:"pages"`
 }
 
 // PageTerminologyResult contains terminology issues for a single page.
 type PageTerminologyResult struct {
-	Title       string             `json:"title"`
-	IssueCount  int                `json:"issue_count"`
-	Issues      []TerminologyIssue `json:"issues"`
-	Error       string             `json:"error,omitempty"`
+	Title      string             `json:"title"`
+	IssueCount int                `json:"issue_count"`
+	Issues     []TerminologyIssue `json:"issues"`
+	Error      string             `json:"error,omitempty"`
 }
 
 // TerminologyIssue describes a single terminology violation.
 type TerminologyIssue struct {
-	Incorrect   string `json:"incorrect"`
-	Correct     string `json:"correct"`
-	Line        int    `json:"line"`
-	Context     string `json:"context"`
-	Notes       string `json:"notes,omitempty"`
+	Incorrect string `json:"incorrect"`
+	Correct   string `json:"correct"`
+	Line      int    `json:"line"`
+	Context   string `json:"context"`
+	Notes     string `json:"notes,omitempty"`
 }
 
 // GlossaryTerm defines correct terminology with optional pattern matching.
@@ -396,36 +396,36 @@ type GlossaryTerm struct {
 
 // CheckTranslationsArgs contains parameters for checking translation coverage.
 type CheckTranslationsArgs struct {
-	BasePages  []string `json:"base_pages,omitempty" jsonschema_description:"Base page names to check for translations (without language suffix)"`
-	Category   string   `json:"category,omitempty" jsonschema_description:"Category to get base pages from (alternative to base_pages)"`
-	Languages  []string `json:"languages" jsonschema:"required" jsonschema_description:"Language codes to check (e.g., ['en', 'no', 'sv'])"`
-	Pattern    string   `json:"pattern,omitempty" jsonschema_description:"Pattern for language pages: 'subpage' (Page/lang), 'suffix' (Page (lang)), or 'prefix' (lang:Page). Default: 'subpage'"`
-	Limit      int      `json:"limit,omitempty" jsonschema_description:"Max base pages to check (default 20, max 100)"`
+	BasePages []string `json:"base_pages,omitempty" jsonschema_description:"Base page names to check for translations (without language suffix)"`
+	Category  string   `json:"category,omitempty" jsonschema_description:"Category to get base pages from (alternative to base_pages)"`
+	Languages []string `json:"languages" jsonschema:"required" jsonschema_description:"Language codes to check (e.g., ['en', 'no', 'sv'])"`
+	Pattern   string   `json:"pattern,omitempty" jsonschema_description:"Pattern for language pages: 'subpage' (Page/lang), 'suffix' (Page (lang)), or 'prefix' (lang:Page). Default: 'subpage'"`
+	Limit     int      `json:"limit,omitempty" jsonschema_description:"Max base pages to check (default 20, max 100)"`
 }
 
 // CheckTranslationsResult shows which pages have translations in each language.
 type CheckTranslationsResult struct {
-	PagesChecked    int                        `json:"pages_checked"`
-	LanguagesChecked []string                  `json:"languages_checked"`
-	MissingCount    int                        `json:"missing_count"`
-	Pattern         string                     `json:"pattern"`
-	Pages           []PageTranslationResult    `json:"pages"`
+	PagesChecked     int                     `json:"pages_checked"`
+	LanguagesChecked []string                `json:"languages_checked"`
+	MissingCount     int                     `json:"missing_count"`
+	Pattern          string                  `json:"pattern"`
+	Pages            []PageTranslationResult `json:"pages"`
 }
 
 // PageTranslationResult shows translation status for a single base page.
 type PageTranslationResult struct {
-	BasePage    string              `json:"base_page"`
+	BasePage     string                       `json:"base_page"`
 	Translations map[string]TranslationStatus `json:"translations"`
-	MissingLangs []string           `json:"missing_languages,omitempty"`
-	Complete    bool                `json:"complete"`
+	MissingLangs []string                     `json:"missing_languages,omitempty"`
+	Complete     bool                         `json:"complete"`
 }
 
 // TranslationStatus indicates whether a language version exists.
 type TranslationStatus struct {
-	Exists   bool   `json:"exists"`
+	Exists    bool   `json:"exists"`
 	PageTitle string `json:"page_title"`
-	PageID   int    `json:"page_id,omitempty"`
-	Length   int    `json:"length,omitempty"`
+	PageID    int    `json:"page_id,omitempty"`
+	Length    int    `json:"length,omitempty"`
 }
 
 // ========== Broken Internal Links Types ==========
@@ -439,24 +439,24 @@ type FindBrokenInternalLinksArgs struct {
 
 // FindBrokenInternalLinksResult contains broken wiki links found across pages.
 type FindBrokenInternalLinksResult struct {
-	PagesChecked   int                    `json:"pages_checked"`
-	BrokenCount    int                    `json:"broken_count"`
-	Pages          []PageBrokenLinksResult `json:"pages"`
+	PagesChecked int                     `json:"pages_checked"`
+	BrokenCount  int                     `json:"broken_count"`
+	Pages        []PageBrokenLinksResult `json:"pages"`
 }
 
 // PageBrokenLinksResult contains broken links for a single page.
 type PageBrokenLinksResult struct {
-	Title         string        `json:"title"`
-	BrokenLinks   []BrokenLink  `json:"broken_links"`
-	BrokenCount   int           `json:"broken_count"`
-	Error         string        `json:"error,omitempty"`
+	Title       string       `json:"title"`
+	BrokenLinks []BrokenLink `json:"broken_links"`
+	BrokenCount int          `json:"broken_count"`
+	Error       string       `json:"error,omitempty"`
 }
 
 // BrokenLink describes a link pointing to a non-existent page.
 type BrokenLink struct {
-	Target    string `json:"target"`
-	Context   string `json:"context,omitempty"`
-	Line      int    `json:"line,omitempty"`
+	Target  string `json:"target"`
+	Context string `json:"context,omitempty"`
+	Line    int    `json:"line,omitempty"`
 }
 
 // ========== Orphaned Pages Types ==========
@@ -495,10 +495,10 @@ type GetBacklinksArgs struct {
 
 // GetBacklinksResult contains pages that link to the target page.
 type GetBacklinksResult struct {
-	Title       string        `json:"title"`
-	Backlinks   []BacklinkInfo `json:"backlinks"`
-	Count       int           `json:"count"`
-	HasMore     bool          `json:"has_more"`
+	Title     string         `json:"title"`
+	Backlinks []BacklinkInfo `json:"backlinks"`
+	Count     int            `json:"count"`
+	HasMore   bool           `json:"has_more"`
 }
 
 // BacklinkInfo describes a page that links to the target.
@@ -553,13 +553,13 @@ type CompareRevisionsArgs struct {
 
 // CompareRevisionsResult contains the diff between two revisions.
 type CompareRevisionsResult struct {
-	FromTitle    string `json:"from_title"`
-	FromRevID    int    `json:"from_revid"`
-	ToTitle      string `json:"to_title"`
-	ToRevID      int    `json:"to_revid"`
-	Diff         string `json:"diff"`
-	FromUser     string `json:"from_user,omitempty"`
-	ToUser       string `json:"to_user,omitempty"`
+	FromTitle     string `json:"from_title"`
+	FromRevID     int    `json:"from_revid"`
+	ToTitle       string `json:"to_title"`
+	ToRevID       int    `json:"to_revid"`
+	Diff          string `json:"diff"`
+	FromUser      string `json:"from_user,omitempty"`
+	ToUser        string `json:"to_user,omitempty"`
 	FromTimestamp string `json:"from_timestamp,omitempty"`
 	ToTimestamp   string `json:"to_timestamp,omitempty"`
 }
@@ -614,24 +614,24 @@ type FindReplaceArgs struct {
 
 // FindReplaceResult contains the result of a find/replace operation.
 type FindReplaceResult struct {
-	Success       bool             `json:"success"`
-	Title         string           `json:"title"`
-	MatchCount    int              `json:"match_count"`
-	ReplaceCount  int              `json:"replace_count"`
-	Preview       bool             `json:"preview"`
-	Changes       []TextChange     `json:"changes,omitempty"`
-	RevisionID    int              `json:"revision_id,omitempty"`
-	Revision      *EditRevisionInfo `json:"revision,omitempty"`
-	Undo          *UndoInfo        `json:"undo,omitempty"`
-	Message       string           `json:"message"`
+	Success      bool              `json:"success"`
+	Title        string            `json:"title"`
+	MatchCount   int               `json:"match_count"`
+	ReplaceCount int               `json:"replace_count"`
+	Preview      bool              `json:"preview"`
+	Changes      []TextChange      `json:"changes,omitempty"`
+	RevisionID   int               `json:"revision_id,omitempty"`
+	Revision     *EditRevisionInfo `json:"revision,omitempty"`
+	Undo         *UndoInfo         `json:"undo,omitempty"`
+	Message      string            `json:"message"`
 }
 
 // TextChange describes a single text modification with before/after context.
 type TextChange struct {
-	Line       int    `json:"line"`
-	Before     string `json:"before"`
-	After      string `json:"after"`
-	Context    string `json:"context,omitempty"`
+	Line    int    `json:"line"`
+	Before  string `json:"before"`
+	After   string `json:"after"`
+	Context string `json:"context,omitempty"`
 }
 
 // ========== Apply Formatting Types ==========
@@ -648,41 +648,41 @@ type ApplyFormattingArgs struct {
 
 // ApplyFormattingResult contains the result of a formatting operation.
 type ApplyFormattingResult struct {
-	Success      bool              `json:"success"`
-	Title        string            `json:"title"`
-	Format       string            `json:"format_applied"`
-	MatchCount   int               `json:"match_count"`
-	FormatCount  int               `json:"format_count"`
-	Preview      bool              `json:"preview"`
-	Changes      []TextChange      `json:"changes,omitempty"`
-	RevisionID   int               `json:"revision_id,omitempty"`
-	Revision     *EditRevisionInfo `json:"revision,omitempty"`
-	Undo         *UndoInfo         `json:"undo,omitempty"`
-	Message      string            `json:"message"`
+	Success     bool              `json:"success"`
+	Title       string            `json:"title"`
+	Format      string            `json:"format_applied"`
+	MatchCount  int               `json:"match_count"`
+	FormatCount int               `json:"format_count"`
+	Preview     bool              `json:"preview"`
+	Changes     []TextChange      `json:"changes,omitempty"`
+	RevisionID  int               `json:"revision_id,omitempty"`
+	Revision    *EditRevisionInfo `json:"revision,omitempty"`
+	Undo        *UndoInfo         `json:"undo,omitempty"`
+	Message     string            `json:"message"`
 }
 
 // ========== Bulk Replace Types ==========
 
 // BulkReplaceArgs contains parameters for find/replace across multiple pages.
 type BulkReplaceArgs struct {
-	Pages        []string `json:"pages,omitempty" jsonschema_description:"Page titles to process"`
-	Category     string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages)"`
-	Find         string   `json:"find" jsonschema:"required" jsonschema_description:"Text to find"`
-	Replace      string   `json:"replace" jsonschema:"required" jsonschema_description:"Replacement text"`
-	UseRegex     bool     `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as regex"`
-	Preview      bool     `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
-	Summary      string   `json:"summary,omitempty" jsonschema_description:"Edit summary"`
-	Limit        int      `json:"limit,omitempty" jsonschema_description:"Max pages to process (default 10, max 50)"`
+	Pages    []string `json:"pages,omitempty" jsonschema_description:"Page titles to process"`
+	Category string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages)"`
+	Find     string   `json:"find" jsonschema:"required" jsonschema_description:"Text to find"`
+	Replace  string   `json:"replace" jsonschema:"required" jsonschema_description:"Replacement text"`
+	UseRegex bool     `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as regex"`
+	Preview  bool     `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
+	Summary  string   `json:"summary,omitempty" jsonschema_description:"Edit summary"`
+	Limit    int      `json:"limit,omitempty" jsonschema_description:"Max pages to process (default 10, max 50)"`
 }
 
 // BulkReplaceResult summarizes find/replace results across multiple pages.
 type BulkReplaceResult struct {
-	PagesProcessed int                `json:"pages_processed"`
-	PagesModified  int                `json:"pages_modified"`
-	TotalChanges   int                `json:"total_changes"`
-	Preview        bool               `json:"preview"`
+	PagesProcessed int                 `json:"pages_processed"`
+	PagesModified  int                 `json:"pages_modified"`
+	TotalChanges   int                 `json:"total_changes"`
+	Preview        bool                `json:"preview"`
 	Results        []PageReplaceResult `json:"results"`
-	Message        string             `json:"message"`
+	Message        string              `json:"message"`
 }
 
 // PageReplaceResult contains find/replace results for a single page.
@@ -701,26 +701,26 @@ type PageReplaceResult struct {
 
 // SearchInPageArgs contains parameters for searching within a specific page.
 type SearchInPageArgs struct {
-	Title       string `json:"title" jsonschema:"required" jsonschema_description:"Page title to search in"`
-	Query       string `json:"query" jsonschema:"required" jsonschema_description:"Text to search for"`
-	UseRegex    bool   `json:"use_regex,omitempty" jsonschema_description:"Treat query as regex"`
-	ContextLines int   `json:"context_lines,omitempty" jsonschema_description:"Lines of context around matches (default 2)"`
+	Title        string `json:"title" jsonschema:"required" jsonschema_description:"Page title to search in"`
+	Query        string `json:"query" jsonschema:"required" jsonschema_description:"Text to search for"`
+	UseRegex     bool   `json:"use_regex,omitempty" jsonschema_description:"Treat query as regex"`
+	ContextLines int    `json:"context_lines,omitempty" jsonschema_description:"Lines of context around matches (default 2)"`
 }
 
 // SearchInPageResult contains text matches found within a page.
 type SearchInPageResult struct {
-	Title      string        `json:"title"`
-	Query      string        `json:"query"`
-	MatchCount int           `json:"match_count"`
-	Matches    []PageMatch   `json:"matches"`
+	Title      string      `json:"title"`
+	Query      string      `json:"query"`
+	MatchCount int         `json:"match_count"`
+	Matches    []PageMatch `json:"matches"`
 }
 
 // PageMatch represents a single text match with location and context.
 type PageMatch struct {
-	Line       int    `json:"line"`
-	Column     int    `json:"column"`
-	Text       string `json:"text"`
-	Context    string `json:"context"`
+	Line    int    `json:"line"`
+	Column  int    `json:"column"`
+	Text    string `json:"text"`
+	Context string `json:"context"`
 }
 
 // ========== Resolve Title Types ==========
@@ -734,11 +734,11 @@ type ResolveTitleArgs struct {
 
 // ResolveTitleResult contains the resolved page or similar suggestions.
 type ResolveTitleResult struct {
-	ExactMatch    bool            `json:"exact_match"`
-	ResolvedTitle string          `json:"resolved_title,omitempty"`
-	PageID        int             `json:"page_id,omitempty"`
+	ExactMatch    bool              `json:"exact_match"`
+	ResolvedTitle string            `json:"resolved_title,omitempty"`
+	PageID        int               `json:"page_id,omitempty"`
 	Suggestions   []TitleSuggestion `json:"suggestions,omitempty"`
-	Message       string          `json:"message"`
+	Message       string            `json:"message"`
 }
 
 // TitleSuggestion represents a possible title match with similarity score.
@@ -809,18 +809,18 @@ type SectionInfo struct {
 
 // GetRelatedArgs contains parameters for finding related pages.
 type GetRelatedArgs struct {
-	Title    string `json:"title" jsonschema:"required" jsonschema_description:"Page title to find related pages for"`
-	Limit    int    `json:"limit,omitempty" jsonschema_description:"Maximum related pages to return (default 20, max 50)"`
-	Method   string `json:"method,omitempty" jsonschema_description:"Method to find related: 'categories' (default), 'links', 'backlinks', or 'all'"`
+	Title  string `json:"title" jsonschema:"required" jsonschema_description:"Page title to find related pages for"`
+	Limit  int    `json:"limit,omitempty" jsonschema_description:"Maximum related pages to return (default 20, max 50)"`
+	Method string `json:"method,omitempty" jsonschema_description:"Method to find related: 'categories' (default), 'links', 'backlinks', or 'all'"`
 }
 
 // GetRelatedResult contains pages related to the source page.
 type GetRelatedResult struct {
-	Title         string         `json:"title"`
-	RelatedPages  []RelatedPage  `json:"related_pages"`
-	Count         int            `json:"count"`
-	Method        string         `json:"method"`
-	Categories    []string       `json:"categories_used,omitempty"`
+	Title        string        `json:"title"`
+	RelatedPages []RelatedPage `json:"related_pages"`
+	Count        int           `json:"count"`
+	Method       string        `json:"method"`
+	Categories   []string      `json:"categories_used,omitempty"`
 }
 
 // RelatedPage represents a page related by category, link, or backlink.
@@ -836,23 +836,23 @@ type RelatedPage struct {
 
 // UploadFileArgs contains parameters for uploading a file to the wiki.
 type UploadFileArgs struct {
-	Filename    string `json:"filename" jsonschema:"required" jsonschema_description:"Target filename on the wiki (e.g., 'Example.png')"`
-	FilePath    string `json:"file_path,omitempty" jsonschema_description:"Local file path to upload"`
-	FileURL     string `json:"file_url,omitempty" jsonschema_description:"URL to fetch and upload (alternative to file_path)"`
-	Text        string `json:"text,omitempty" jsonschema_description:"File description page content (wikitext)"`
-	Comment     string `json:"comment,omitempty" jsonschema_description:"Upload comment for the log"`
-	IgnoreWarnings bool `json:"ignore_warnings,omitempty" jsonschema_description:"Ignore duplicate/overwrite warnings"`
+	Filename       string `json:"filename" jsonschema:"required" jsonschema_description:"Target filename on the wiki (e.g., 'Example.png')"`
+	FilePath       string `json:"file_path,omitempty" jsonschema_description:"Local file path to upload"`
+	FileURL        string `json:"file_url,omitempty" jsonschema_description:"URL to fetch and upload (alternative to file_path)"`
+	Text           string `json:"text,omitempty" jsonschema_description:"File description page content (wikitext)"`
+	Comment        string `json:"comment,omitempty" jsonschema_description:"Upload comment for the log"`
+	IgnoreWarnings bool   `json:"ignore_warnings,omitempty" jsonschema_description:"Ignore duplicate/overwrite warnings"`
 }
 
 // UploadFileResult contains the result of a file upload operation.
 type UploadFileResult struct {
-	Success    bool   `json:"success"`
-	Filename   string `json:"filename"`
-	PageID     int    `json:"page_id,omitempty"`
-	URL        string `json:"url,omitempty"`
-	Size       int    `json:"size,omitempty"`
-	Message    string `json:"message"`
-	Warnings   []string `json:"warnings,omitempty"`
+	Success  bool     `json:"success"`
+	Filename string   `json:"filename"`
+	PageID   int      `json:"page_id,omitempty"`
+	URL      string   `json:"url,omitempty"`
+	Size     int      `json:"size,omitempty"`
+	Message  string   `json:"message"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ========== Get Images Types ==========
@@ -872,13 +872,13 @@ type GetImagesResult struct {
 
 // ImageInfo describes an image or file used on a page.
 type ImageInfo struct {
-	Title     string `json:"title"`
-	URL       string `json:"url,omitempty"`
-	ThumbURL  string `json:"thumb_url,omitempty"`
-	Width     int    `json:"width,omitempty"`
-	Height    int    `json:"height,omitempty"`
-	Size      int    `json:"size,omitempty"`
-	MimeType  string `json:"mime_type,omitempty"`
+	Title    string `json:"title"`
+	URL      string `json:"url,omitempty"`
+	ThumbURL string `json:"thumb_url,omitempty"`
+	Width    int    `json:"width,omitempty"`
+	Height   int    `json:"height,omitempty"`
+	Size     int    `json:"size,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
 }
 
 // ========== File Search Types ==========
