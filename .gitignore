@@ -1,9 +1,13 @@
 # Binaries
 mediawiki-mcp-server
+mediawiki-mcp-server-*
 *.exe
 *.dll
 *.so
 *.dylib
+
+# Build output
+dist/
 
 # Test binary
 *.test
