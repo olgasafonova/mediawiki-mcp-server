@@ -42,7 +42,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.23.0" // Resilience features and monitoring endpoints
+	ServerVersion = "1.24.0" // MCP evals framework and improved tool descriptions
 )
 
 // =============================================================================
