@@ -142,7 +142,7 @@ type ToolMetrics struct {
 
 // LoadToolSelectionSuite loads tool selection tests from a JSON file
 func LoadToolSelectionSuite(path string) (*ToolSelectionSuite, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is controlled by eval framework
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
@@ -157,7 +157,7 @@ func LoadToolSelectionSuite(path string) (*ToolSelectionSuite, error) {
 
 // LoadConfusionPairSuite loads confusion pair tests from a JSON file
 func LoadConfusionPairSuite(path string) (*ConfusionPairSuite, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is controlled by eval framework
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
@@ -172,7 +172,7 @@ func LoadConfusionPairSuite(path string) (*ConfusionPairSuite, error) {
 
 // LoadArgumentSuite loads argument correctness tests from a JSON file
 func LoadArgumentSuite(path string) (*ArgumentSuite, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is controlled by eval framework
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}

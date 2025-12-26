@@ -424,13 +424,13 @@ func TestLoadAllEvals(t *testing.T) {
 	}
 
 	if toolSelection == nil {
-		t.Error("Tool selection suite should not be nil")
+		t.Fatal("Tool selection suite should not be nil")
 	}
 	if confusionPairs == nil {
-		t.Error("Confusion pairs suite should not be nil")
+		t.Fatal("Confusion pairs suite should not be nil")
 	}
 	if arguments == nil {
-		t.Error("Arguments suite should not be nil")
+		t.Fatal("Arguments suite should not be nil")
 	}
 
 	// Count total tests
