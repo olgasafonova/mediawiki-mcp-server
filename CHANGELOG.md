@@ -2,6 +2,39 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [1.25.0] - 2025-12-29
+
+### Changed
+- **Go 1.24+ required** - minimum Go version bumped from 1.23 to 1.24
+- Updated OpenTelemetry packages from 1.36.0 to 1.39.0
+- Updated Prometheus client from 1.22.0 to 1.23.2
+- Updated semconv to v1.37.0 for OTel SDK compatibility
+
+### CI/CD
+- Upgraded actions/checkout from v4 to v6
+- Upgraded actions/setup-go from v5 to v6
+- Upgraded actions/upload-artifact from v4 to v6
+- Upgraded codecov/codecov-action from v4 to v5
+- Upgraded softprops/action-gh-release from v1 to v2
+- Updated golangci-lint to v2.7.2
+
+## [1.24.1] - 2025-12-26
+
+### Fixed
+- Bumped version for release
+
+## [1.24.0] - 2025-12-26
+
+### Added
+- Docker support with multi-stage build
+- Dependabot configuration for automated dependency updates
+- Makefile for common development tasks
+- QUICKSTART.md guide
+- LICENSE file (MIT)
+
+### Changed
+- Reorganized CI workflows
+
 ## [1.23.0] - 2025-12-26
 
 ### Added
