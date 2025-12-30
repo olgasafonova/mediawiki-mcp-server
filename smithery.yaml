@@ -17,12 +17,4 @@ startCommand:
         type: string
         description: "Bot password for editing. Optional for read-only."
   commandFunction: |-
-    (config) => ({
-      command: './mediawiki-mcp-server',
-      args: [],
-      env: {
-        MEDIAWIKI_URL: config.mediawikiUrl,
-        ...(config.mediawikiUsername && { MEDIAWIKI_USERNAME: config.mediawikiUsername }),
-        ...(config.mediawikiPassword && { MEDIAWIKI_PASSWORD: config.mediawikiPassword })
-      }
-    })
+    (config) => ({ command: './mediawiki-mcp-server', args: [], env: { MEDIAWIKI_URL: config.mediawikiUrl, ...(config.mediawikiUsername && { MEDIAWIKI_USERNAME: config.mediawikiUsername }), ...(config.mediawikiPassword && { MEDIAWIKI_PASSWORD: config.mediawikiPassword }) } })
