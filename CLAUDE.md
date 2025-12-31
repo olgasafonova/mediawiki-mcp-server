@@ -10,6 +10,8 @@ go build .              # Build binary
 ```
 
 ## Project Notes
-- Nordic business registry integration (Norway, Finland, Sweden, Denmark)
-- Each country has different API patterns
-- Caching for repeated lookups
+- MediaWiki API integration for wiki read/write operations
+- Markdown → MediaWiki converter included
+- Wiki editing guidelines embedded in `wiki_editing_guidelines.go`
+- Evals suite in /evals directory
+- Supports both authenticated and anonymous access
