@@ -470,7 +470,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 			defer func() { <-c.semaphore }()
 		case <-ctx.Done():
 			metrics.RateLimitRejections.Inc()
-			return nil, fmt.Errorf("context cancelled while waiting for rate limiter: %w", ctx.Err())
+			return nil, fmt.Errorf("context canceled while waiting for rate limiter: %w", ctx.Err())
 		}
 	}
 
@@ -490,7 +490,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
-				return nil, fmt.Errorf("context cancelled during backoff: %w", ctx.Err())
+				return nil, fmt.Errorf("context canceled during backoff: %w", ctx.Err())
 			}
 		}
 
@@ -540,7 +540,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 						select {
 						case <-time.After(time.Duration(seconds) * time.Second):
 						case <-ctx.Done():
-							return nil, fmt.Errorf("context cancelled during rate limit wait: %w", ctx.Err())
+							return nil, fmt.Errorf("context canceled during rate limit wait: %w", ctx.Err())
 						}
 						continue
 					}

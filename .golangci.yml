@@ -3,13 +3,30 @@ version: "2"
 run:
   timeout: 5m
 
+formatters:
+  enable:
+    - gofmt
+
 linters:
   default: none
   enable:
+    - errcheck
     - govet
     - ineffassign
+    - misspell
     - staticcheck
     - unused
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+    misspell:
+      locale: US
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF*"
+        - "-ST*"  # Disable stylecheck suggestions
   exclusions:
     generated: lax
     presets:

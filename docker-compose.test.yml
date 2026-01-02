@@ -1,0 +1,40 @@
+version: "3.8"
+
+# Integration test environment for MediaWiki MCP Server
+# Usage:
+#   docker-compose -f docker-compose.test.yml up -d
+#   go test -tags=integration ./wiki/...
+#   docker-compose -f docker-compose.test.yml down -v
+
+services:
+  mediawiki:
+    image: mediawiki:1.42
+    container_name: mediawiki-test
+    ports:
+      - "8080:80"
+    environment:
+      MEDIAWIKI_DB_TYPE: sqlite
+      MEDIAWIKI_DB_NAME: mediawiki
+      MEDIAWIKI_SITE_NAME: TestWiki
+      MEDIAWIKI_SITE_SERVER: http://localhost:8080
+      MEDIAWIKI_SCRIPT_PATH: ""
+      MEDIAWIKI_ADMIN_USER: Admin
+      MEDIAWIKI_ADMIN_PASS: adminpassword123
+    volumes:
+      - mediawiki-data:/var/www/html/images
+      - ./scripts/LocalSettings.php:/var/www/html/LocalSettings.php:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api.php?action=query&meta=siteinfo&format=json"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - mediawiki-test-network
+
+networks:
+  mediawiki-test-network:
+    driver: bridge
+
+volumes:
+  mediawiki-data:

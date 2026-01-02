@@ -133,7 +133,7 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 						data: PageExternalLinks{
 							Title: j.title,
 							Links: make([]ExternalLink, 0),
-							Error: "request cancelled",
+							Error: "request canceled",
 						},
 					}
 					continue
