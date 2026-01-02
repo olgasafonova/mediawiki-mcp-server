@@ -902,6 +902,37 @@ go build -o mediawiki-mcp-server .
 
 Requires Go 1.24+
 
+### Running Tests
+
+```bash
+# Unit tests
+make test
+
+# With coverage
+make test-cover
+
+# Lint
+make lint
+```
+
+### Integration Tests
+
+Integration tests run against a real MediaWiki instance:
+
+```bash
+# Start MediaWiki container
+docker-compose -f docker-compose.test.yml up -d
+
+# Wait for MediaWiki to be ready (about 60 seconds)
+# Run integration tests
+go test -tags=integration ./wiki/...
+
+# Stop and clean up
+docker-compose -f docker-compose.test.yml down -v
+```
+
+Integration tests can also be triggered manually via GitHub Actions.
+
 ### Project Structure
 
 ```
@@ -909,6 +940,14 @@ mediawiki-mcp-server/
 ├── main.go                    # Server entry point, HTTP transport
 ├── main_test.go               # Server tests
 ├── wiki_editing_guidelines.go # AI guidance for editing
+├── docker-compose.test.yml    # Integration test environment
+│
+├── .github/workflows/
+│   ├── ci.yml                 # Unit tests, lint, build
+│   └── integration.yml        # Integration tests (manual trigger)
+│
+├── scripts/
+│   └── LocalSettings.php      # MediaWiki config for tests
 │
 ├── tools/                     # MCP tool definitions
 │   ├── definitions.go         # Tool schemas and metadata
@@ -933,7 +972,8 @@ mediawiki-mcp-server/
 │   ├── similarity.go          # Content similarity detection
 │   ├── pdf.go                 # PDF text extraction
 │   ├── security.go            # Input sanitization, SSRF protection
-│   └── *_test.go              # Comprehensive test coverage
+│   ├── integration_test.go    # Integration tests (build tag)
+│   └── *_test.go              # Unit tests
 │
 ├── converter/                 # Markdown to MediaWiki converter
 │   ├── converter.go           # Conversion logic
