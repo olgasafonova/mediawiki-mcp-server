@@ -35,4 +35,7 @@ Thumbs.db
 
 # Internal development notes (keep locally, not in repo)
 notes/
+
+# Claude Code
+.mcp.json
 .mcpregistry_*
