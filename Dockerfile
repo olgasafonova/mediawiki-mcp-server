@@ -19,6 +19,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o mediawiki-mcp-server .
 # Runtime stage
 FROM alpine:3.20
 
+# MCP Registry label for OCI validation
+LABEL io.modelcontextprotocol.server.name="io.github.olgasafonova/mediawiki-mcp-server"
+
 # Install ca-certificates for HTTPS and poppler-utils for PDF support
 RUN apk add --no-cache ca-certificates poppler-utils
 
