@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.olgasafonova/mediawiki-mcp-server",
-  "description": "Connect your AI assistant to any MediaWiki wiki. Search, read, and edit wiki content using natural language.",
+  "description": "Search, read, and edit any MediaWiki wiki. Works with Wikipedia, Fandom, and more.",
   "title": "MediaWiki",
   "repository": {
     "url": "https://github.com/olgasafonova/mediawiki-mcp-server",
