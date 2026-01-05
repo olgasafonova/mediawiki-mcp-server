@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 1.25.0)'
+        description: 'Version to publish (e.g., 1.25.1)'
         required: true
 
 permissions:
   contents: read
-  id-token: write  # Required for GitHub OIDC authentication
+  id-token: write
 
 jobs:
   publish:
@@ -27,17 +27,113 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"  # Remove 'v' prefix
+            VERSION="${VERSION#v}"
           else
             VERSION="${{ github.event.inputs.version }}"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Update server.json version
+      - name: Wait for release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          jq --arg v "$VERSION" --arg img "ghcr.io/olgasafonova/mediawiki-mcp-server:$VERSION" \
-            '.version = $v | .packages[0].identifier = $img' server.json > server.json.tmp
+          echo "Waiting for release assets for v${VERSION}..."
+          for i in {1..30}; do
+            ASSET_COUNT=$(gh release view "v${VERSION}" --json assets --jq '.assets | length')
+            echo "Attempt $i: Found $ASSET_COUNT assets"
+            if [ "$ASSET_COUNT" -ge 4 ]; then
+              echo "All assets available"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Timeout waiting for assets"
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p assets
+          gh release download "v${VERSION}" --pattern "mediawiki-mcp-server-*" --dir assets
+          ls -la assets/
+
+      - name: Calculate SHA256 hashes
+        id: hashes
+        run: |
+          cd assets
+          for f in mediawiki-mcp-server-*; do
+            hash=$(sha256sum "$f" | cut -d' ' -f1)
+            # Create safe output name by replacing special chars
+            safe_name=$(echo "$f" | sed 's/mediawiki-mcp-server-//' | sed 's/\.exe$//' | sed 's/-/_/g')
+            echo "${safe_name}_sha256=${hash}" >> $GITHUB_OUTPUT
+            echo "$f: $hash"
+          done
+
+      - name: Update server.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          REPO="olgasafonova/mediawiki-mcp-server"
+          BASE_URL="https://github.com/${REPO}/releases/download/v${VERSION}"
+
+          # Store env vars template
+          ENV_VARS='[
+            {"name":"MEDIAWIKI_URL","description":"MediaWiki API endpoint URL (e.g., https://en.wikipedia.org/w/api.php)","isRequired":true},
+            {"name":"MEDIAWIKI_USERNAME","description":"Bot username for authenticated operations (format: WikiUser@BotName)","isRequired":false},
+            {"name":"MEDIAWIKI_PASSWORD","description":"Bot password for authenticated operations","isRequired":false,"isSecret":true}
+          ]'
+
+          jq --arg v "$VERSION" \
+             --arg docker_img "ghcr.io/${REPO}:${VERSION}" \
+             --arg base_url "$BASE_URL" \
+             --arg mac_arm64_sha "${{ steps.hashes.outputs.mac_apple_silicon_sha256 }}" \
+             --arg mac_amd64_sha "${{ steps.hashes.outputs.mac_intel_sha256 }}" \
+             --arg linux_sha "${{ steps.hashes.outputs.linux_sha256 }}" \
+             --arg windows_sha "${{ steps.hashes.outputs.windows_sha256 }}" \
+             --argjson env_vars "$ENV_VARS" \
+             '
+             .version = $v |
+             .packages = [
+               {
+                 "registryType": "oci",
+                 "identifier": $docker_img,
+                 "transport": {"type": "stdio"},
+                 "environmentVariables": $env_vars
+               },
+               {
+                 "registryType": "mcpb",
+                 "identifier": ($base_url + "/mediawiki-mcp-server-mac-apple-silicon"),
+                 "fileSha256": $mac_arm64_sha,
+                 "transport": {"type": "stdio"},
+                 "environmentVariables": $env_vars
+               },
+               {
+                 "registryType": "mcpb",
+                 "identifier": ($base_url + "/mediawiki-mcp-server-mac-intel"),
+                 "fileSha256": $mac_amd64_sha,
+                 "transport": {"type": "stdio"},
+                 "environmentVariables": $env_vars
+               },
+               {
+                 "registryType": "mcpb",
+                 "identifier": ($base_url + "/mediawiki-mcp-server-linux"),
+                 "fileSha256": $linux_sha,
+                 "transport": {"type": "stdio"},
+                 "environmentVariables": $env_vars
+               },
+               {
+                 "registryType": "mcpb",
+                 "identifier": ($base_url + "/mediawiki-mcp-server-windows.exe"),
+                 "fileSha256": $windows_sha,
+                 "transport": {"type": "stdio"},
+                 "environmentVariables": $env_vars
+               }
+             ]
+             ' server.json > server.json.tmp
           mv server.json.tmp server.json
           cat server.json
 

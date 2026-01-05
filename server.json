@@ -7,11 +7,115 @@
     "url": "https://github.com/olgasafonova/mediawiki-mcp-server",
     "source": "github"
   },
-  "version": "1.25.0",
+  "version": "1.25.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/olgasafonova/mediawiki-mcp-server:1.25.0",
+      "identifier": "ghcr.io/olgasafonova/mediawiki-mcp-server:1.25.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MEDIAWIKI_URL",
+          "description": "MediaWiki API endpoint URL (e.g., https://en.wikipedia.org/w/api.php)",
+          "isRequired": true
+        },
+        {
+          "name": "MEDIAWIKI_USERNAME",
+          "description": "Bot username for authenticated operations (format: WikiUser@BotName)",
+          "isRequired": false
+        },
+        {
+          "name": "MEDIAWIKI_PASSWORD",
+          "description": "Bot password for authenticated operations",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-mac-apple-silicon",
+      "fileSha256": "PLACEHOLDER",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MEDIAWIKI_URL",
+          "description": "MediaWiki API endpoint URL (e.g., https://en.wikipedia.org/w/api.php)",
+          "isRequired": true
+        },
+        {
+          "name": "MEDIAWIKI_USERNAME",
+          "description": "Bot username for authenticated operations (format: WikiUser@BotName)",
+          "isRequired": false
+        },
+        {
+          "name": "MEDIAWIKI_PASSWORD",
+          "description": "Bot password for authenticated operations",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-mac-intel",
+      "fileSha256": "PLACEHOLDER",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MEDIAWIKI_URL",
+          "description": "MediaWiki API endpoint URL (e.g., https://en.wikipedia.org/w/api.php)",
+          "isRequired": true
+        },
+        {
+          "name": "MEDIAWIKI_USERNAME",
+          "description": "Bot username for authenticated operations (format: WikiUser@BotName)",
+          "isRequired": false
+        },
+        {
+          "name": "MEDIAWIKI_PASSWORD",
+          "description": "Bot password for authenticated operations",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-linux",
+      "fileSha256": "PLACEHOLDER",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MEDIAWIKI_URL",
+          "description": "MediaWiki API endpoint URL (e.g., https://en.wikipedia.org/w/api.php)",
+          "isRequired": true
+        },
+        {
+          "name": "MEDIAWIKI_USERNAME",
+          "description": "Bot username for authenticated operations (format: WikiUser@BotName)",
+          "isRequired": false
+        },
+        {
+          "name": "MEDIAWIKI_PASSWORD",
+          "description": "Bot password for authenticated operations",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-windows.exe",
+      "fileSha256": "PLACEHOLDER",
       "transport": {
         "type": "stdio"
       },
