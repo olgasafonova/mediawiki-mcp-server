@@ -10,8 +10,8 @@
   "version": "1.25.0",
   "packages": [
     {
-      "registryType": "github",
-      "identifier": "olgasafonova/mediawiki-mcp-server",
+      "registryType": "oci",
+      "identifier": "ghcr.io/olgasafonova/mediawiki-mcp-server:1.25.0",
       "transport": {
         "type": "stdio"
       },

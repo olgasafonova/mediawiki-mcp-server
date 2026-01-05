@@ -35,7 +35,9 @@ jobs:
 
       - name: Update server.json version
         run: |
-          jq --arg v "${{ steps.version.outputs.version }}" '.version = $v' server.json > server.json.tmp
+          VERSION="${{ steps.version.outputs.version }}"
+          jq --arg v "$VERSION" --arg img "ghcr.io/olgasafonova/mediawiki-mcp-server:$VERSION" \
+            '.version = $v | .packages[0].identifier = $img' server.json > server.json.tmp
           mv server.json.tmp server.json
           cat server.json
 
