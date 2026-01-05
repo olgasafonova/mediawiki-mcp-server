@@ -2,6 +2,14 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [1.25.1] - 2026-01-05
+
+### Added
+- **MCP Registry publishing** - server now listed on official MCP Registry
+- `server.json` metadata for registry integration
+- GitHub Actions workflow for automatic registry publishing on release
+- MCP label in Docker image for OCI validation
+
 ## [1.25.0] - 2025-12-29
 
 ### Changed
