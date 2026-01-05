@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.olgasafonova/mediawiki-mcp-server",
+  "description": "Connect your AI assistant to any MediaWiki wiki. Search, read, and edit wiki content using natural language.",
+  "title": "MediaWiki",
+  "repository": {
+    "url": "https://github.com/olgasafonova/mediawiki-mcp-server",
+    "source": "github"
+  },
+  "version": "1.25.0",
+  "packages": [
+    {
+      "registryType": "github",
+      "identifier": "olgasafonova/mediawiki-mcp-server",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MEDIAWIKI_URL",
+          "description": "MediaWiki API endpoint URL (e.g., https://en.wikipedia.org/w/api.php)",
+          "isRequired": true
+        },
+        {
+          "name": "MEDIAWIKI_USERNAME",
+          "description": "Bot username for authenticated operations (format: WikiUser@BotName)",
+          "isRequired": false
+        },
+        {
+          "name": "MEDIAWIKI_PASSWORD",
+          "description": "Bot password for authenticated operations",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
