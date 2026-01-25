@@ -15,6 +15,7 @@ Connect your AI assistant to any MediaWiki wiki. Search, read, and edit wiki con
 | Document | Description |
 |----------|-------------|
 | [QUICKSTART.md](QUICKSTART.md) | Get running in 2 minutes |
+| [TIETO_SETUP.md](TIETO_SETUP.md) | Connect to Tieto's Public 360° Wiki (beginner-friendly) |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
@@ -860,8 +861,10 @@ Output: "= Hello =\n'''bold''' and ''italic''"
 
 ## Public 360° Wiki (Tieto)
 
+**New to this?** Check out the **[Tieto Setup Guide](TIETO_SETUP.md)** for step-by-step instructions that assume no technical knowledge.
+
 <details>
-<summary><strong>Setup for wiki.software-innovation.com</strong></summary>
+<summary><strong>Quick setup for wiki.software-innovation.com</strong></summary>
 
 ### Get Your Bot Password
 
