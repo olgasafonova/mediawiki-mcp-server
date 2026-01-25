@@ -1,10 +1,10 @@
-# Connect Claude to Tieto's Public 360° Wiki
+# Connect Claude to Tieto's Public 360° wiki
 
 This guide helps you connect Claude (your AI assistant) to Tieto's wiki at **wiki.software-innovation.com**. Don't worry if you're new to this - we'll walk through everything step by step!
 
 ---
 
-## What You'll Be Able to Do
+## What you'll be able to do
 
 Once connected, you can ask Claude things like:
 - "What does the wiki say about eFormidling?"
@@ -14,7 +14,7 @@ Once connected, you can ask Claude things like:
 
 ---
 
-## Before You Start
+## Before you start
 
 You'll need:
 1. **Claude Desktop** installed on your computer ([Download here](https://claude.ai/download))
@@ -23,11 +23,11 @@ You'll need:
 
 ---
 
-## Step 1: Download the Connection Tool
+## Step 1: Download the connection tool
 
 Think of this as a bridge that lets Claude talk to the wiki.
 
-### For Mac Users:
+### For Mac users:
 
 1. Go to the [Releases page](https://github.com/olgasafonova/mediawiki-mcp-server/releases)
 2. Download the file that says **macOS** (it will be named something like `mediawiki-mcp-server-darwin-amd64` or `mediawiki-mcp-server-darwin-arm64`)
@@ -40,7 +40,7 @@ Think of this as a bridge that lets Claude talk to the wiki.
    ```
    This makes the file usable by your computer.
 
-### For Windows Users:
+### For Windows users:
 
 1. Go to the [Releases page](https://github.com/olgasafonova/mediawiki-mcp-server/releases)
 2. Download the file that says **Windows** (it will be named something like `mediawiki-mcp-server-windows-amd64.exe`)
@@ -49,11 +49,11 @@ Think of this as a bridge that lets Claude talk to the wiki.
 
 ---
 
-## Step 2: Set Up Your Wiki Access
+## Step 2: Set up your wiki access
 
 To edit pages on the wiki (optional - you can skip this if you only want to read), you need a special password.
 
-### Creating a Bot Password (Optional - Only if You Want to Edit Pages):
+### Creating a bot password (optional, only if you want to edit pages):
 
 1. Open your web browser and go to: [https://wiki.software-innovation.com/wiki/Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
 2. Log in with your Tieto account (your.email@tieto.com)
@@ -67,11 +67,11 @@ To edit pages on the wiki (optional - you can skip this if you only want to read
 
 ---
 
-## Step 3: Connect Claude to the Wiki
+## Step 3: Connect Claude to the wiki
 
 Now we'll tell Claude how to connect to the wiki. Don't worry about the technical terms - just follow along!
 
-### For Mac Users:
+### For Mac users:
 
 1. **Quit Claude Desktop** completely (click Claude in the menu bar, then Quit)
 2. Open **Terminal** (press Cmd+Space, type "Terminal", press Enter)
@@ -121,7 +121,7 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
 7. Save the file (press Cmd+S) and close it
 8. Open Claude Desktop again
 
-### For Windows Users:
+### For Windows users:
 
 1. **Quit Claude Desktop** completely (right-click Claude in the taskbar, click Quit)
 2. Press **Windows key + R** on your keyboard
@@ -173,7 +173,7 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
 
 ---
 
-## Step 4: Test the Connection
+## Step 4: Test the connection
 
 Let's make sure everything works!
 
@@ -184,7 +184,7 @@ Let's make sure everything works!
 
 ---
 
-## Understanding What You Just Did
+## Understanding what you just did
 
 Here's what happened in simple terms:
 
@@ -224,7 +224,7 @@ Here's what happened in simple terms:
 
 ---
 
-## What to Try Next
+## What to try next
 
 Now that you're connected, try asking Claude:
 
@@ -249,7 +249,7 @@ Now that you're connected, try asking Claude:
 
 ---
 
-## Need Help?
+## Need help?
 
 - **Main documentation:** [README.md](README.md)
 - **Questions or issues:** [GitHub Issues](https://github.com/olgasafonova/mediawiki-mcp-server/issues)
