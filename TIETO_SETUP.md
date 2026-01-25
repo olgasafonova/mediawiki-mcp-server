@@ -56,14 +56,14 @@ To edit pages on the wiki (optional - you can skip this if you only want to read
 ### Creating a Bot Password (Optional - Only if You Want to Edit Pages):
 
 1. Open your web browser and go to: [https://wiki.software-innovation.com/wiki/Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
-2. Log in with your Tieto account (your.email@tietoevry.com)
+2. Log in with your Tieto account (your.email@tieto.com)
 3. You'll see a page asking for a "Bot name" - type: **wiki-MCP**
 4. Check these two boxes:
    - ✅ **Basic rights**
    - ✅ **Edit existing pages**
 5. Click the **Create** button
 6. **IMPORTANT:** You'll see a password - copy it and save it somewhere safe! You won't be able to see it again.
-7. Your username will be: **your.email@tietoevry.com#wiki-MCP** (remember this!)
+7. Your username will be: **your.email@tieto.com#wiki-MCP** (remember this!)
 
 ---
 
@@ -105,7 +105,7 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
          "command": "/Users/YOUR-USERNAME/Downloads/mediawiki-mcp-server",
          "env": {
            "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
-           "MEDIAWIKI_USERNAME": "your.email@tietoevry.com#wiki-MCP",
+           "MEDIAWIKI_USERNAME": "your.email@tieto.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
          }
        }
@@ -115,7 +115,7 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
 
    Replace:
    - `YOUR-USERNAME` with your Mac username
-   - `your.email@tietoevry.com` with your actual Tieto email
+   - `your.email@tieto.com` with your actual Tieto email
    - `paste-your-bot-password-here` with the bot password you saved
 
 7. Save the file (press Cmd+S) and close it
@@ -155,7 +155,7 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
          "command": "C:\\Users\\YOUR-USERNAME\\Downloads\\mediawiki-mcp-server.exe",
          "env": {
            "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
-           "MEDIAWIKI_USERNAME": "your.email@tietoevry.com#wiki-MCP",
+           "MEDIAWIKI_USERNAME": "your.email@tieto.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
          }
        }
@@ -165,7 +165,7 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
 
    Replace:
    - `YOUR-USERNAME` with your Windows username
-   - `your.email@tietoevry.com` with your actual Tieto email
+   - `your.email@tieto.com` with your actual Tieto email
    - `paste-your-bot-password-here` with the bot password you saved
 
 7. Save the file (press Ctrl+S) and close it
@@ -208,7 +208,7 @@ Here's what happened in simple terms:
 - Try copying the example text again - sometimes invisible characters get in the way
 
 **Claude says "authentication failed"**
-- Check that your username is exactly: `your.email@tietoevry.com#wiki-MCP`
+- Check that your username is exactly: `your.email@tieto.com#wiki-MCP`
 - Make sure you copied the bot password correctly (no extra spaces)
 - The bot password might have expired - try creating a new one
 
