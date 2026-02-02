@@ -384,7 +384,7 @@ wiki_tools = MCPToolset(
 
 ## Need to Edit Wiki Pages?
 
-Reading works without login. **Editing requires a bot password.**
+Reading works without login on public wikis. **Private/corporate wikis often require authentication for all operations, including reading.** Editing always requires a bot password.
 
 ### Create a Bot Password
 
@@ -878,9 +878,30 @@ Your username: `your.email@tietoevry.com#wiki-MCP`
 
 ### Configuration
 
-Use this URL in your config:
+This wiki requires authentication for all operations (including reading).
+
+**Claude Code CLI:**
+```bash
+claude mcp add mediawiki /path/to/mediawiki-mcp-server \
+  -e MEDIAWIKI_URL="https://wiki.software-innovation.com/api.php" \
+  -e MEDIAWIKI_USERNAME="your.email@tietoevry.com#wiki-MCP" \
+  -e MEDIAWIKI_PASSWORD="your-bot-password-here"
 ```
-MEDIAWIKI_URL=https://wiki.software-innovation.com/api.php
+
+**Claude Desktop / Cursor:**
+```json
+{
+  "mcpServers": {
+    "mediawiki": {
+      "command": "/path/to/mediawiki-mcp-server",
+      "env": {
+        "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+        "MEDIAWIKI_USERNAME": "your.email@tietoevry.com#wiki-MCP",
+        "MEDIAWIKI_PASSWORD": "your-bot-password-here"
+      }
+    }
+  }
+}
 ```
 
 ### Example Prompts

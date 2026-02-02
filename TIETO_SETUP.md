@@ -51,9 +51,9 @@ Think of this as a bridge that lets Claude talk to the wiki.
 
 ## Step 2: Set up your wiki access
 
-To edit pages on the wiki (optional - you can skip this if you only want to read), you need a special password.
+The Tieto wiki requires authentication for all operations, including reading. You'll need to create a bot password.
 
-### Creating a bot password (optional, only if you want to edit pages):
+### Creating a bot password (required):
 
 1. Open your web browser and go to: [https://wiki.software-innovation.com/wiki/Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
 2. Log in with your Tieto account (your.email@tieto.com)
@@ -88,22 +88,6 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
        "tieto-wiki": {
          "command": "/Users/YOUR-USERNAME/Downloads/mediawiki-mcp-server",
          "env": {
-           "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php"
-         }
-       }
-     }
-   }
-   ```
-
-   **IMPORTANT:** Replace `YOUR-USERNAME` with your actual Mac username. To find it, type `whoami` in Terminal and press Enter - that's your username!
-
-6. **If you created a bot password** (for editing), use this version instead:
-   ```json
-   {
-     "mcpServers": {
-       "tieto-wiki": {
-         "command": "/Users/YOUR-USERNAME/Downloads/mediawiki-mcp-server",
-         "env": {
            "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
            "MEDIAWIKI_USERNAME": "your.email@tieto.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
@@ -114,12 +98,12 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
    ```
 
    Replace:
-   - `YOUR-USERNAME` with your Mac username
+   - `YOUR-USERNAME` with your Mac username (type `whoami` in Terminal to find it)
    - `your.email@tieto.com` with your actual Tieto email
-   - `paste-your-bot-password-here` with the bot password you saved
+   - `paste-your-bot-password-here` with the bot password you saved in Step 2
 
-7. Save the file (press Cmd+S) and close it
-8. Open Claude Desktop again
+6. Save the file (press Cmd+S) and close it
+7. Open Claude Desktop again
 
 ### For Windows users:
 
@@ -138,22 +122,6 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
        "tieto-wiki": {
          "command": "C:\\Users\\YOUR-USERNAME\\Downloads\\mediawiki-mcp-server.exe",
          "env": {
-           "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php"
-         }
-       }
-     }
-   }
-   ```
-
-   **IMPORTANT:** Replace `YOUR-USERNAME` with your actual Windows username. To find it, press Windows key + R, type `cmd`, press Enter, then type `echo %USERNAME%` and press Enter - that's your username!
-
-6. **If you created a bot password** (for editing), use this version instead:
-   ```json
-   {
-     "mcpServers": {
-       "tieto-wiki": {
-         "command": "C:\\Users\\YOUR-USERNAME\\Downloads\\mediawiki-mcp-server.exe",
-         "env": {
            "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
            "MEDIAWIKI_USERNAME": "your.email@tieto.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
@@ -164,12 +132,12 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
    ```
 
    Replace:
-   - `YOUR-USERNAME` with your Windows username
+   - `YOUR-USERNAME` with your Windows username (press Win+R, type `cmd`, then `echo %USERNAME%` to find it)
    - `your.email@tieto.com` with your actual Tieto email
-   - `paste-your-bot-password-here` with the bot password you saved
+   - `paste-your-bot-password-here` with the bot password you saved in Step 2
 
-7. Save the file (press Ctrl+S) and close it
-8. Open Claude Desktop again
+6. Save the file (press Ctrl+S) and close it
+7. Open Claude Desktop again
 
 ---
 
@@ -191,7 +159,7 @@ Here's what happened in simple terms:
 - **The config file** is like a phonebook for Claude - it tells Claude where to find tools and how to use them
 - **JSON** is just a way of writing settings that computers can understand (those curly braces `{}` and quotes)
 - **MEDIAWIKI_URL** tells the tool where the wiki lives on the internet
-- **MEDIAWIKI_USERNAME** and **MEDIAWIKI_PASSWORD** are like your ID card - they prove you're allowed to edit pages
+- **MEDIAWIKI_USERNAME** and **MEDIAWIKI_PASSWORD** are like your ID card - they prove you're allowed to access the wiki
 
 ---
 
@@ -242,7 +210,7 @@ Now that you're connected, try asking Claude:
 - "Who edited [page name] recently?"
 - "Show me the history of [page name]"
 
-**Edit pages (if you set up bot password):**
+**Edit pages:**
 - "Strike out [text] on [page name]"
 - "Make [text] bold on [page name]"
 - "Replace '[old text]' with '[new text]' on [page name]"
