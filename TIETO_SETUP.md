@@ -146,9 +146,10 @@ Now we'll tell Claude how to connect to the wiki. Don't worry about the technica
 Let's make sure everything works!
 
 1. Open Claude Desktop
-2. Look for a small hammer icon (🔨) at the bottom of the chat window - this shows Claude has access to tools
-3. Try asking Claude: **"Search the Tieto wiki for getting started"**
-4. If it works, Claude will search the wiki and show you results!
+2. Try asking Claude: **"Search the Tieto wiki for getting started"**
+3. If it works, Claude will search the wiki and show you results!
+
+To verify the MCP server is connected, go to **Settings** (gear icon) → **Developer** → you should see "tieto-wiki" listed with a green status.
 
 ---
 
@@ -165,10 +166,10 @@ Here's what happened in simple terms:
 
 ## Troubleshooting
 
-**I don't see the hammer icon in Claude**
+**MCP server not showing in Settings → Developer**
 - Make sure you completely quit Claude and reopened it (not just closed the window)
 - Check that the config file is saved in the right location
-- Make sure the config file has no typos
+- Make sure the config file has no typos (matching quotes, commas between items)
 
 **Claude says "MEDIAWIKI_URL environment variable is required"**
 - Check that the config file has the correct format
