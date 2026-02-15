@@ -18,16 +18,26 @@ import (
 // HandlerRegistry provides type-safe tool registration by mapping
 // tool names to their concrete handler implementations.
 type HandlerRegistry struct {
-	client *wiki.Client
-	logger *slog.Logger
+	client      *wiki.Client
+	logger      *slog.Logger
+	auditLogger ToolAuditLogger
 }
 
 // NewHandlerRegistry creates a new handler registry.
 func NewHandlerRegistry(client *wiki.Client, logger *slog.Logger) *HandlerRegistry {
 	return &HandlerRegistry{
-		client: client,
-		logger: logger,
+		client:      client,
+		logger:      logger,
+		auditLogger: NullToolAuditLogger{},
 	}
+}
+
+// WithAuditLogger sets the handler-level audit logger.
+func (h *HandlerRegistry) WithAuditLogger(l ToolAuditLogger) *HandlerRegistry {
+	if l != nil {
+		h.auditLogger = l
+	}
+	return h
 }
 
 // RegisterAll registers all tools with the MCP server.
@@ -193,6 +203,7 @@ func register[Args, Result any](
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			metrics.RecordRequest(spec.Name, duration, false)
+			h.auditLogger.Log(newToolCallEntry(spec, args, err, start))
 			var zero Result
 			return nil, zero, fmt.Errorf("%s failed: %w", spec.Name, err)
 		}
@@ -200,6 +211,7 @@ func register[Args, Result any](
 		span.SetStatus(codes.Ok, "")
 		metrics.RecordRequest(spec.Name, duration, true)
 		h.logExecution(spec, args, result)
+		h.auditLogger.Log(newToolCallEntry(spec, args, nil, start))
 		return nil, result, nil
 	})
 }

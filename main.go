@@ -620,6 +620,19 @@ Read operations work without authentication.`,
 
 	// Register all wiki tools using the registry
 	registry := tools.NewHandlerRegistry(client, logger)
+
+	// Configure handler-level audit logging (covers all tool calls, not just writes)
+	if auditLogPath := os.Getenv("MEDIAWIKI_AUDIT_LOG"); auditLogPath != "" {
+		toolAuditLogger, err := tools.NewFileToolAuditLogger(auditLogPath, logger)
+		if err != nil {
+			logger.Warn("Failed to create tool audit logger", "path", auditLogPath, "error", err)
+		} else {
+			registry.WithAuditLogger(toolAuditLogger)
+			defer toolAuditLogger.Close()
+			logger.Info("Tool audit logging enabled", "path", auditLogPath)
+		}
+	}
+
 	registry.RegisterAll(server)
 
 	// Register the Markdown converter tool (not a wiki.Client method)
