@@ -109,7 +109,7 @@ RETURNS: Suggested correct page titles with confidence scores.`,
 
 USE WHEN: User says "show me the X page", "what's on the Main Page", "read the FAQ".
 
-NOT FOR: Getting page structure/TOC (use mediawiki_get_sections). Not for searching content (use mediawiki_search_in_page).
+NOT FOR: Getting page structure/TOC (use mediawiki_get_sections). Not for searching content (use mediawiki_search_in_page). Not for metadata only (use mediawiki_get_page_info). If title not found, use mediawiki_resolve_title to handle typos and case sensitivity.
 
 PARAMETERS:
 - title: Page name (required)
@@ -360,7 +360,7 @@ RETURNS: Revision list with timestamps, users, sizes, and edit summaries.`,
 
 USE WHEN: User asks "what changed between versions", "show the diff", "compare old and new".
 
-NOT FOR: Just listing revisions (use mediawiki_get_revisions).
+NOT FOR: Just listing revisions (use mediawiki_get_revisions). Not for comparing a topic across pages (use mediawiki_compare_topic).
 
 PARAMETERS:
 - from_rev: Source revision ID, OR
