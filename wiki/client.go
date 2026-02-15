@@ -505,7 +505,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 		// Note: Don't set Accept-Encoding manually - Go's http.Transport handles
 		// compression automatically when DisableCompression is false
 
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.httpClient.Do(req) // #nosec G704 -- URL is the configured wiki API endpoint, not user-controlled
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
 			c.logger.Warn("API request failed, retrying",

@@ -66,7 +66,7 @@ func SearchInPDF(pdfData []byte, query string) ([]FileSearchMatch, bool, string,
 	// Run pdftotext
 	// -layout preserves the original layout
 	// -enc UTF-8 ensures proper encoding
-	// #nosec G204 -- paths are from os.CreateTemp, not user input
+	// #nosec G204 G702 -- paths are from os.CreateTemp, not user input
 	cmd := exec.Command("pdftotext", "-layout", "-enc", "UTF-8", tmpPDFPath, tmpTXTPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -80,7 +80,7 @@ func SearchInPDF(pdfData []byte, query string) ([]FileSearchMatch, bool, string,
 	}
 
 	// Read extracted text
-	// #nosec G304 -- path is from os.CreateTemp, not user input
+	// #nosec G304 G703 -- path is from os.CreateTemp, not user input
 	textBytes, err := os.ReadFile(tmpTXTPath)
 	if err != nil {
 		return nil, false, fmt.Sprintf("Failed to read extracted text: %v", err), nil

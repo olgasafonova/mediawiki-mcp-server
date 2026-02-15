@@ -18,7 +18,7 @@ type Config struct {
 	Username string
 
 	// Password for bot password authentication (optional, for editing)
-	Password string
+	Password string // #nosec G117 -- config field name, not a hardcoded secret
 
 	// Timeout for API requests
 	Timeout time.Duration

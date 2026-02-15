@@ -187,7 +187,7 @@ type SecurityMiddleware struct {
 
 // SecurityConfig holds configuration for the security middleware
 type SecurityConfig struct {
-	BearerToken    string   // Required token for authentication (empty = no auth)
+	BearerToken    string   // #nosec G117 -- config field name, not a hardcoded secret
 	AllowedOrigins []string // Allowed Origin headers (empty = allow all)
 	RateLimit      int      // Requests per minute per IP (0 = unlimited)
 	MaxBodySize    int64    // Maximum request body size in bytes (0 = default 2MB)
@@ -749,13 +749,13 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		health := client.Ping(ctx)
 		if !health.Connected {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = fmt.Fprintf(w, `{"status":"not_ready","wiki_url":"%s","error":"%s","response_time_ms":%d}`,
+			_, _ = fmt.Fprintf(w, `{"status":"not_ready","wiki_url":"%s","error":"%s","response_time_ms":%d}`, // #nosec G705 -- health endpoint returns server config, not user input
 				health.WikiURL, health.Error, health.ResponseTime.Milliseconds())
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, `{"status":"ready","wiki_url":"%s","site_name":"%s","generator":"%s","authenticated":%t,"response_time_ms":%d}`,
+		_, _ = fmt.Fprintf(w, `{"status":"ready","wiki_url":"%s","site_name":"%s","generator":"%s","authenticated":%t,"response_time_ms":%d}`, // #nosec G705 -- health endpoint returns server config, not user input
 			health.WikiURL, health.SiteName, health.Generator, health.Authenticated, health.ResponseTime.Milliseconds())
 	})
 
