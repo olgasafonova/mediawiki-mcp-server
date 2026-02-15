@@ -2,6 +2,21 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [1.26.0] - 2026-02-15
+
+### Added
+- **Tieto setup guide** - beginner-friendly `TIETO_SETUP.md` for Public 360 Wiki users
+- Clarified that Tieto wiki requires authentication for all operations including reading
+
+### Improved
+- **Tool descriptions** - `mediawiki_get_page` now cross-references `mediawiki_resolve_title` for case-sensitivity recovery
+- `mediawiki_compare_revisions` now cross-references `mediawiki_compare_topic` for disambiguation
+
+### CI/CD
+- Bumped `actions/checkout` from v4 to v6
+- Bumped Go dependency group (7 updates)
+- Added Claude GitHub Action workflow
+
 ## [1.25.1] - 2026-01-05
 
 ### Added
