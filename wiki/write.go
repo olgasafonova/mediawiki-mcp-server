@@ -666,7 +666,7 @@ func (c *Client) uploadFromFile(ctx context.Context, args UploadFileArgs, token 
 	req.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
 
 	// Use HTTP client to make request
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) // #nosec G704 -- URL is the configured wiki API endpoint, not user-controlled
 	if err != nil {
 		return UploadFileResult{}, err
 	}
@@ -811,7 +811,7 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 
 	req.Header.Set("User-Agent", c.config.UserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) // #nosec G704 -- fileURL validated by validateFileURL in security.go before reaching here
 	if err != nil {
 		return nil, fmt.Errorf("failed to download: %w", err)
 	}

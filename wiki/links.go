@@ -259,12 +259,12 @@ func (c *Client) CheckLinks(ctx context.Context, args CheckLinksArgs) (CheckLink
 					req, _ := http.NewRequestWithContext(reqCtx, "HEAD", checkURL, nil)
 					req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
 
-					resp, err := linkCheckClient.Do(req)
+					resp, err := linkCheckClient.Do(req) // #nosec G704 -- link checker intentionally fetches external URLs
 					if err != nil {
 						// Try GET if HEAD fails (some servers don't support HEAD)
 						req, _ = http.NewRequestWithContext(reqCtx, "GET", checkURL, nil)
 						req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
-						resp, err = linkCheckClient.Do(req)
+						resp, err = linkCheckClient.Do(req) // #nosec G704 -- link checker intentionally fetches external URLs to verify they're alive
 					}
 
 					cancel() // Release context resources
