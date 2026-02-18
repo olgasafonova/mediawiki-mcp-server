@@ -164,6 +164,13 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 
 ## Cursor
 
+**Cursor Marketplace (easiest):**
+```bash
+/add-plugin mediawiki
+```
+
+**Manual setup:**
+
 <details open>
 <summary><strong>Mac</strong></summary>
 

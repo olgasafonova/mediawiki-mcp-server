@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mediawiki": {
+      "command": "mediawiki-mcp-server",
+      "env": {
+        "MEDIAWIKI_URL": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+# Wiki editing safety guardrails
+
+1. Always use `preview=true` before executing `mediawiki_find_replace`, `mediawiki_bulk_replace`, or `mediawiki_apply_formatting`. Show the preview and get user confirmation.
+2. Don't guess page titles; they are case-sensitive. Use `mediawiki_resolve_title` when the exact title is uncertain.
+3. Use internal wiki links `[[Page Title]]` or `[[Page Title|Display Text]]`, never full URLs for internal wiki pages.
+4. Provide clear edit summaries explaining what changed and why.
+5. Use `mediawiki_search_in_page` to find text within a known page instead of fetching the entire page.
+6. Don't create names as email links (`[[mailto:...|Name]]`); wiki doesn't render these properly. Use "Name (email)" format instead.
+7. For outdated content, add `{{Expired}}` at the top and `[[Category:Expired]]` at the bottom rather than deleting.

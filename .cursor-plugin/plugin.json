@@ -1,0 +1,26 @@
+{
+  "name": "mediawiki",
+  "displayName": "MediaWiki",
+  "version": "1.26.0",
+  "description": "Connect AI to any MediaWiki wiki. Search, read, edit pages, check link quality, track revisions, and convert Markdown to wiki format. Works with Wikipedia, Fandom, and corporate wikis.",
+  "author": {
+    "name": "Olga Safonova"
+  },
+  "homepage": "https://github.com/olgasafonova/mediawiki-mcp-server",
+  "repository": "https://github.com/olgasafonova/mediawiki-mcp-server",
+  "license": "MIT",
+  "logo": "assets/logo.png",
+  "keywords": [
+    "mediawiki",
+    "wiki",
+    "wikipedia",
+    "documentation",
+    "knowledge-base"
+  ],
+  "category": "productivity",
+  "tags": [
+    "wiki",
+    "documentation",
+    "knowledge"
+  ]
+}
