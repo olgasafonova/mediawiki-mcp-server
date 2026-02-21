@@ -11,6 +11,7 @@ linters:
   default: none
   enable:
     - errcheck
+    - gosec
     - govet
     - ineffassign
     - misspell
@@ -20,6 +21,12 @@ linters:
     errcheck:
       check-type-assertions: false
       check-blank: false
+    gosec:
+      excludes:
+        - G104  # Covered by errcheck
+        - G101  # False positives on URL constants and test fixtures
+        - G115  # Integer overflow: bounded by constants
+        - G304  # File paths from config/env, not user input
     misspell:
       locale: US
     staticcheck:
@@ -32,5 +39,9 @@ linters:
     presets:
       - comments
       - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
     paths:
       - vendor
