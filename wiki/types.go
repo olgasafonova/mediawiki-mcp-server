@@ -648,7 +648,7 @@ type FindReplaceArgs struct {
 	Title    string `json:"title" jsonschema:"required" jsonschema_description:"Page title to edit"`
 	Find     string `json:"find" jsonschema:"required" jsonschema_description:"Text to find (exact match or regex if use_regex=true)"`
 	Replace  string `json:"replace" jsonschema:"required" jsonschema_description:"Replacement text"`
-	UseRegex bool   `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as a regular expression"`
+	UseRegex bool   `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as a Go RE2 regex. Characters like . [ ] * + ? ( ) have special meaning; escape with backslash for literal match. Max 500 chars."`
 	All      bool   `json:"all,omitempty" jsonschema_description:"Replace all occurrences (default: first only)"`
 	Preview  bool   `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
 	Summary  string `json:"summary,omitempty" jsonschema_description:"Edit summary"`
@@ -712,7 +712,7 @@ type BulkReplaceArgs struct {
 	Category string   `json:"category,omitempty" jsonschema_description:"Category to get pages from (alternative to pages)"`
 	Find     string   `json:"find" jsonschema:"required" jsonschema_description:"Text to find"`
 	Replace  string   `json:"replace" jsonschema:"required" jsonschema_description:"Replacement text"`
-	UseRegex bool     `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as regex"`
+	UseRegex bool     `json:"use_regex,omitempty" jsonschema_description:"Treat 'find' as a Go RE2 regex. Characters like . [ ] * + ? ( ) have special meaning; escape with backslash for literal match. Max 500 chars."`
 	Preview  bool     `json:"preview,omitempty" jsonschema_description:"Preview changes without saving"`
 	Summary  string   `json:"summary,omitempty" jsonschema_description:"Edit summary"`
 	Limit    int      `json:"limit,omitempty" jsonschema_description:"Max pages to process (default 10, max 50)"`
@@ -746,7 +746,7 @@ type PageReplaceResult struct {
 type SearchInPageArgs struct {
 	Title        string `json:"title" jsonschema:"required" jsonschema_description:"Page title to search in"`
 	Query        string `json:"query" jsonschema:"required" jsonschema_description:"Text to search for"`
-	UseRegex     bool   `json:"use_regex,omitempty" jsonschema_description:"Treat query as regex"`
+	UseRegex     bool   `json:"use_regex,omitempty" jsonschema_description:"Treat query as a Go RE2 regex. Characters like . [ ] * + ? ( ) have special meaning; escape with backslash for literal match. Max 500 chars."`
 	ContextLines int    `json:"context_lines,omitempty" jsonschema_description:"Lines of context around matches (default 2)"`
 }
 

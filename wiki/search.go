@@ -105,6 +105,21 @@ func (c *Client) SearchInPage(ctx context.Context, args SearchInPageArgs) (Searc
 		return SearchInPageResult{}, fmt.Errorf("query is required")
 	}
 
+	// Validate regex upfront before fetching the page
+	var re *regexp.Regexp
+	if args.UseRegex {
+		if len(args.Query) > 500 {
+			return SearchInPageResult{}, fmt.Errorf("regex pattern too long (max 500 characters)")
+		}
+		var err error
+		re, err = regexp.Compile("(?i)" + args.Query)
+		if err != nil {
+			return SearchInPageResult{}, fmt.Errorf("invalid regex: %w", err)
+		}
+	} else {
+		re = regexp.MustCompile("(?i)" + regexp.QuoteMeta(args.Query))
+	}
+
 	// Get page content
 	page, err := c.GetPage(ctx, GetPageArgs{Title: args.Title, Format: "wikitext"})
 	if err != nil {
@@ -115,17 +130,6 @@ func (c *Client) SearchInPage(ctx context.Context, args SearchInPageArgs) (Searc
 		Title:   page.Title,
 		Query:   args.Query,
 		Matches: make([]PageMatch, 0),
-	}
-
-	// Build regex
-	var re *regexp.Regexp
-	if args.UseRegex {
-		re, err = regexp.Compile("(?i)" + args.Query)
-		if err != nil {
-			return SearchInPageResult{}, fmt.Errorf("invalid regex: %w", err)
-		}
-	} else {
-		re = regexp.MustCompile("(?i)" + regexp.QuoteMeta(args.Query))
 	}
 
 	contextLines := args.ContextLines

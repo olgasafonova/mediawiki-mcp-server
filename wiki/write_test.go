@@ -497,6 +497,26 @@ func TestFindReplace_InvalidRegex(t *testing.T) {
 	}
 }
 
+func TestFindReplace_RegexTooLong(t *testing.T) {
+	client := createTestClient(t)
+	defer client.Close()
+
+	longPattern := strings.Repeat("a", 501)
+	_, err := client.FindReplace(context.Background(), FindReplaceArgs{
+		Title:    "Test Page",
+		Find:     longPattern,
+		Replace:  "test",
+		UseRegex: true,
+	})
+
+	if err == nil {
+		t.Fatal("Expected error for regex pattern exceeding 500 chars")
+	}
+	if !strings.Contains(err.Error(), "regex pattern too long") {
+		t.Errorf("Expected 'regex pattern too long' error, got: %v", err)
+	}
+}
+
 func TestApplyFormatting_Success(t *testing.T) {
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		action := r.FormValue("action")

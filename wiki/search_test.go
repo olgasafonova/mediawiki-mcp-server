@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -175,6 +176,25 @@ func TestSearchInPage_RegexMode(t *testing.T) {
 	}
 	if result.MatchCount < 2 {
 		t.Errorf("MatchCount = %d, want >= 2", result.MatchCount)
+	}
+}
+
+func TestSearchInPage_RegexTooLong(t *testing.T) {
+	client := createTestClient(t)
+	defer client.Close()
+
+	longPattern := strings.Repeat("a", 501)
+	_, err := client.SearchInPage(context.Background(), SearchInPageArgs{
+		Title:    "Test Page",
+		Query:    longPattern,
+		UseRegex: true,
+	})
+
+	if err == nil {
+		t.Fatal("Expected error for regex pattern exceeding 500 chars")
+	}
+	if !strings.Contains(err.Error(), "regex pattern too long") {
+		t.Errorf("Expected 'regex pattern too long' error, got: %v", err)
 	}
 }
 

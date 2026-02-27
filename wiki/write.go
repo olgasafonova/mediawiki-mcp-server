@@ -133,6 +133,21 @@ func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindRep
 		return FindReplaceResult{}, fmt.Errorf("find text is required")
 	}
 
+	// Validate regex upfront before fetching the page
+	var re *regexp.Regexp
+	if args.UseRegex {
+		if len(args.Find) > 500 {
+			return FindReplaceResult{}, fmt.Errorf("regex pattern too long (max 500 characters)")
+		}
+		var err error
+		re, err = regexp.Compile(args.Find)
+		if err != nil {
+			return FindReplaceResult{}, fmt.Errorf("invalid regex pattern: %w", err)
+		}
+	} else {
+		re = regexp.MustCompile(regexp.QuoteMeta(args.Find))
+	}
+
 	// Get current page content
 	page, err := c.GetPage(ctx, GetPageArgs{Title: args.Title, Format: "wikitext"})
 	if err != nil {
@@ -142,17 +157,6 @@ func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindRep
 	result := FindReplaceResult{
 		Title:   page.Title,
 		Preview: args.Preview,
-	}
-
-	// Build regex pattern
-	var re *regexp.Regexp
-	if args.UseRegex {
-		re, err = regexp.Compile(args.Find)
-		if err != nil {
-			return FindReplaceResult{}, fmt.Errorf("invalid regex pattern: %w", err)
-		}
-	} else {
-		re = regexp.MustCompile(regexp.QuoteMeta(args.Find))
 	}
 
 	// Find all matches with line context
