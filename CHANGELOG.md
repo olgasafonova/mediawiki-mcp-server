@@ -2,6 +2,22 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [1.27.0] - 2026-02-27
+
+### Security
+- **go-sdk v1.3.1** security patch
+- **Regex pattern length limit** - user-provided regex capped at 500 characters to prevent CPU abuse
+- Regex validation now runs before page fetch (fail fast, no wasted API calls)
+- Added gosec security linter to golangci-lint config
+
+### Added
+- **Handler-level audit logging** for all tool calls
+- **Cursor marketplace plugin** support
+- Improved `use_regex` parameter descriptions to warn about metacharacter behavior
+
+### Fixed
+- Suppressed gosec false positives on intentional HTTP calls and type conversions
+
 ## [1.26.0] - 2026-02-15
 
 ### Added
