@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.11
 
 require (
-	github.com/modelcontextprotocol/go-sdk v1.3.1
+	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	go.opentelemetry.io/otel v1.40.0
