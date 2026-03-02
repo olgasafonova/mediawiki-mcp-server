@@ -60,7 +60,7 @@ jobs:
 
           for i in {1..20}; do
             COUNT=$(gh release view "v${VERSION}" --json assets --jq '.assets | length')
-            if [ "$COUNT" -ge 5 ]; then
+            if [ "$COUNT" -ge 4 ]; then
               echo "Release has $COUNT assets, ready!"
               exit 0
             fi
