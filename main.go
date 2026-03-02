@@ -52,19 +52,19 @@ const (
 // ConvertMarkdownArgs holds parameters for the mediawiki_convert_markdown tool
 type ConvertMarkdownArgs struct {
 	// Markdown is the source text to convert (required)
-	Markdown string `json:"markdown" jsonschema:"required" jsonschema_description:"The Markdown text to convert to MediaWiki markup"`
+	Markdown string `json:"markdown" jsonschema:"The Markdown text to convert to MediaWiki markup"`
 
 	// Theme selects the color scheme: "tieto", "neutral" (default), or "dark"
-	Theme string `json:"theme,omitempty" jsonschema_description:"Color theme: 'tieto' (brand colors), 'neutral' (no styling, default), or 'dark' (dark mode)"`
+	Theme string `json:"theme,omitempty" jsonschema:"Color theme: 'tieto' (brand colors), 'neutral' (no styling, default), or 'dark' (dark mode)"`
 
 	// AddCSS includes CSS styling block in output for branded appearance
-	AddCSS *bool `json:"add_css,omitempty" jsonschema_description:"Include CSS styling block for branded appearance"`
+	AddCSS *bool `json:"add_css,omitempty" jsonschema:"Include CSS styling block for branded appearance"`
 
 	// ReverseChangelog reorders changelog entries newest-first
-	ReverseChangelog *bool `json:"reverse_changelog,omitempty" jsonschema_description:"Reorder changelog entries with newest first"`
+	ReverseChangelog *bool `json:"reverse_changelog,omitempty" jsonschema:"Reorder changelog entries with newest first"`
 
 	// PrettifyChecks replaces plain checkmarks (✓) with emoji (✅)
-	PrettifyChecks *bool `json:"prettify_checks,omitempty" jsonschema_description:"Replace plain checkmarks with emoji ✅"`
+	PrettifyChecks *bool `json:"prettify_checks,omitempty" jsonschema:"Replace plain checkmarks with emoji ✅"`
 }
 
 // ConvertMarkdownResult contains the conversion output
