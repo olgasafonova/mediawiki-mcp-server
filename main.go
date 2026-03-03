@@ -42,7 +42,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.24.1" // Fix gofmt and linter warnings
+	ServerVersion = "1.27.2"
 )
 
 // =============================================================================
