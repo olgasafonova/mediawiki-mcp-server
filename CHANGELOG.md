@@ -2,6 +2,14 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [Unreleased]
+
+## [1.27.2] - 2026-03-03
+
+### Fixed
+- Suppress pre-initialize `notifications/tools/list_changed` from go-sdk, preventing intermittent connection failures when many MCP servers start simultaneously
+- Correct release asset count in MCP Registry publish workflow
+
 ## [1.27.0] - 2026-02-27
 
 ### Security
