@@ -103,7 +103,7 @@ func TestRequestDeduplicator_DifferentKeysRunIndependently(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			key := string(rune('a' + idx))
-			d.Do(context.Background(), key, func() (interface{}, error) {
+			_, _, _ = d.Do(context.Background(), key, func() (interface{}, error) {
 				callCount.Add(1)
 				return idx, nil
 			})
@@ -121,18 +121,20 @@ func TestRequestDeduplicator_ContextCancellation(t *testing.T) {
 	gate := make(chan struct{})
 
 	// Start a slow request
-	go d.Do(context.Background(), "slow", func() (interface{}, error) {
-		<-gate
-		return "done", nil
-	})
+	go func() {
+		_, _, _ = d.Do(context.Background(), "slow", func() (interface{}, error) {
+			<-gate
+			return "done", nil
+		})
+	}()
 	time.Sleep(20 * time.Millisecond)
 
-	// Second request with a cancelled context
+	// Second request with a canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	_, _, err := d.Do(ctx, "slow", func() (interface{}, error) {
-		t.Fatal("fn should not be called for cancelled waiter")
+		t.Fatal("fn should not be called for canceled waiter")
 		return nil, nil
 	})
 
@@ -146,7 +148,7 @@ func TestRequestDeduplicator_ContextCancellation(t *testing.T) {
 func TestRequestDeduplicator_CleansUpAfterCompletion(t *testing.T) {
 	d := NewRequestDeduplicator()
 
-	d.Do(context.Background(), "key1", func() (interface{}, error) {
+	_, _, _ = d.Do(context.Background(), "key1", func() (interface{}, error) {
 		return "v", nil
 	})
 
@@ -159,14 +161,18 @@ func TestRequestDeduplicator_StatsCountsInflight(t *testing.T) {
 	d := NewRequestDeduplicator()
 	gate := make(chan struct{})
 
-	go d.Do(context.Background(), "a", func() (interface{}, error) {
-		<-gate
-		return nil, nil
-	})
-	go d.Do(context.Background(), "b", func() (interface{}, error) {
-		<-gate
-		return nil, nil
-	})
+	go func() {
+		_, _, _ = d.Do(context.Background(), "a", func() (interface{}, error) {
+			<-gate
+			return nil, nil
+		})
+	}()
+	go func() {
+		_, _, _ = d.Do(context.Background(), "b", func() (interface{}, error) {
+			<-gate
+			return nil, nil
+		})
+	}()
 
 	time.Sleep(30 * time.Millisecond)
 	if stats := d.Stats(); stats != 2 {
