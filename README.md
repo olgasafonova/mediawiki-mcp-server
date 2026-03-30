@@ -1051,3 +1051,8 @@ MIT License
 
 - Built with [Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk)
 - Powered by [MediaWiki API](https://www.mediawiki.org/wiki/API:Main_page)
+
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/olgasafonova-mediawiki-mcp-server).
+
