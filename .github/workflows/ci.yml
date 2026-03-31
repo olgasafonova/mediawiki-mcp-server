@@ -78,6 +78,11 @@ jobs:
         with:
           args: -exclude-generated ./...
 
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
   go-mod-tidy:
     name: Go Mod Tidy Check
     runs-on: ubuntu-latest
