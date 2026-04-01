@@ -78,7 +78,7 @@ Your wiki's API URL is usually:
 | Cursor | [Setup instructions](#cursor) |
 | ChatGPT | [Setup instructions](#chatgpt) |
 | n8n | [Setup instructions](#n8n) |
-| VS Code + Cline | [Setup instructions](#vs-code) |
+| VS Code | [Setup instructions](#vs-code) |
 | Google ADK (Go/Python) | [Setup instructions](#google-adk) |
 
 ---
@@ -164,19 +164,14 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 
 ## Cursor
 
-**Cursor Marketplace (easiest):**
-```bash
-/add-plugin mediawiki
-```
-
-**Manual setup:**
+Cursor has built-in MCP support. Open **Cursor Settings** > **MCP** and add a new server, or edit the config file directly:
 
 <details open>
 <summary><strong>Mac</strong></summary>
 
 1. **Open the config file:**
    ```
-   ~/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+   ~/.cursor/mcp.json
    ```
 
 2. **Add this configuration:**
@@ -202,7 +197,7 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 
 1. **Open the config file:**
    ```
-   %APPDATA%\Cursor\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json
+   %USERPROFILE%\.cursor\mcp.json
    ```
 
 2. **Add this configuration:**
@@ -288,7 +283,32 @@ n8n connects via HTTP using the MCP Client Tool node.
 
 ## VS Code
 
-Install the **Cline** extension, then configure it the same way as [Cursor](#cursor).
+VS Code has built-in MCP support via Copilot Chat.
+
+1. Open the Command Palette: **Ctrl+Shift+P** (Windows) or **Cmd+Shift+P** (Mac)
+2. Type **"MCP: Add Server"** and select it
+3. Choose **"Stdio"** as the transport type
+4. Enter the path to the binary when prompted
+5. Name the server: `mediawiki`
+
+This creates a `.vscode/mcp.json` file. Add the environment variables:
+
+```json
+{
+  "servers": {
+    "mediawiki": {
+      "command": "/path/to/mediawiki-mcp-server",
+      "env": {
+        "MEDIAWIKI_URL": "https://your-wiki.com/api.php"
+      }
+    }
+  }
+}
+```
+
+On Windows, use the `.exe` path with double backslashes.
+
+Reload VS Code, then use the wiki tools through Copilot Chat.
 
 ---
 
@@ -553,7 +573,7 @@ pdftotext -v
 | Claude Desktop (Windows) | stdio | ✅ Supported |
 | Claude Code CLI | stdio | ✅ Supported |
 | Cursor | stdio | ✅ Supported |
-| VS Code + Cline | stdio | ✅ Supported |
+| VS Code | stdio | ✅ Supported |
 | ChatGPT | HTTP | ✅ Supported |
 | n8n | HTTP | ✅ Supported |
 | Google ADK | stdio / HTTP | ✅ Supported |
