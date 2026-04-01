@@ -7,11 +7,11 @@
     "url": "https://github.com/olgasafonova/mediawiki-mcp-server",
     "source": "github"
   },
-  "version": "1.25.1",
+  "version": "1.28.0",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/olgasafonova/mediawiki-mcp-server:1.25.1",
+      "identifier": "ghcr.io/olgasafonova/mediawiki-mcp-server:1.28.0",
       "transport": {
         "type": "stdio"
       },
@@ -36,7 +36,7 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-mac-apple-silicon",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.28.0/mediawiki-mcp-server-mac-apple-silicon",
       "fileSha256": "PLACEHOLDER",
       "transport": {
         "type": "stdio"
@@ -62,7 +62,7 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-mac-intel",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.28.0/mediawiki-mcp-server-mac-intel",
       "fileSha256": "PLACEHOLDER",
       "transport": {
         "type": "stdio"
@@ -88,7 +88,7 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-linux",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.28.0/mediawiki-mcp-server-linux",
       "fileSha256": "PLACEHOLDER",
       "transport": {
         "type": "stdio"
@@ -114,7 +114,7 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.25.1/mediawiki-mcp-server-windows.exe",
+      "identifier": "https://github.com/olgasafonova/mediawiki-mcp-server/releases/download/v1.28.0/mediawiki-mcp-server-windows.exe",
       "fileSha256": "PLACEHOLDER",
       "transport": {
         "type": "stdio"

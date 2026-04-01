@@ -4,6 +4,30 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-04-01
+
+### Added
+- **7 new tools** bringing total from 33 to 40:
+  - `mediawiki_batch_get_pages` — Fetch content from multiple pages in one API call (max 50)
+  - `mediawiki_batch_get_pages_info` — Get metadata for multiple pages at once
+  - `mediawiki_search_and_read` — Search + read top results in one call, eliminating the most common two-call pattern
+  - `mediawiki_get_page_summary` — Lead section + metadata without loading full page content
+  - `mediawiki_move_page` — Move (rename) pages with redirect, talk page, and subpage support
+  - `mediawiki_manage_categories` — Add/remove categories without full page edit
+  - `mediawiki_get_stale_pages` — Find pages not edited in N days for wiki hygiene
+
+### Changed
+- **Go 1.25 required** — minimum Go version bumped from 1.24 to 1.25
+
+### Security
+- Upgraded `google.golang.org/grpc` to v1.79.3 (CVE-2026-33186)
+
+### CI/CD
+- Added `go.sum` integrity check and `govulncheck` to CI pipeline
+- Made `govulncheck` advisory (warn, don't fail) to avoid blocking on upstream advisories
+- Bumped `codecov/codecov-action` from 5 to 6
+- Bumped Docker actions (login v4, setup-buildx v4, build-push v7, metadata v6)
+
 ## [1.27.2] - 2026-03-03
 
 ### Fixed
