@@ -440,6 +440,8 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 - *"Find all pages mentioning the API"*
 - *"Show me the Getting Started guide"*
 - *"List all pages in the Documentation category"*
+- *"Give me a quick overview of the Configuration page"* ✨
+- *"Get the content of Main Page, FAQ, and Setup all at once"* ✨
 
 ### Sections & Related Content ✨
 - *"Show me the sections of the Installation Guide"*
@@ -460,6 +462,12 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 - *"Check terminology consistency in the Product category"*
 - *"Find pages similar to the Installation Guide"* ✨
 - *"Compare how 'API version' is documented across pages"* ✨
+- *"Find pages not updated in the last 90 days"* ✨
+
+### Page Management (requires auth) ✨
+- *"Rename 'Old Guide' to 'Updated Guide'"*
+- *"Add category 'API' to the Integration page"*
+- *"Remove the 'Deprecated' category from this page"*
 
 ### Quick Edits (requires auth)
 - *"Strike out John Smith on the Team page"*
@@ -647,7 +655,7 @@ When running in HTTP mode, these endpoints are available:
 | `/` | MCP protocol endpoint (tools, resources, prompts) |
 | `/health` | Liveness check (always returns 200 if server is running) |
 | `/ready` | Readiness check (verifies wiki API connectivity) |
-| `/tools` | Tool discovery (lists all 33+ tools by category) |
+| `/tools` | Tool discovery (lists all 40+ tools by category) |
 | `/status` | Resilience status (circuit breaker state, dedup stats) |
 | `/metrics` | Prometheus metrics (request counts, latencies) |
 
@@ -717,6 +725,28 @@ curl http://localhost:8080/status
 | `mediawiki_get_wiki_info` | Wiki statistics |
 | `mediawiki_list_users` | List users by group |
 | `mediawiki_parse` | Preview wikitext |
+| `mediawiki_get_page_summary` | Lead section + metadata without full page load ✨ |
+| `mediawiki_batch_get_pages` | Fetch multiple page contents in one API call ✨ |
+| `mediawiki_batch_get_pages_info` | Get metadata for multiple pages at once ✨ |
+| `mediawiki_search_and_read` | Search + read top results in one call ✨ |
+
+**search_and_read ✨** — Eliminates the most common two-call pattern (search then read):
+```
+"What does the wiki say about deployment?"
+→ Searches, reads top result, returns content + remaining hits as summaries
+```
+
+**get_page_summary ✨** — Quick overview without loading full page content:
+```
+"What is the API Reference page about?"
+→ Returns intro section, categories, section list, and metadata
+```
+
+**batch_get_pages ✨** — Fetch up to 50 pages in one call:
+```
+"Get the content of Main Page, FAQ, and Getting Started"
+→ Returns all three pages in a single API request
+```
 
 </details>
 
@@ -742,6 +772,13 @@ curl http://localhost:8080/status
 | `mediawiki_check_translations` | Find missing translations |
 | `mediawiki_find_orphaned_pages` | Find unlinked pages |
 | `mediawiki_audit` | Comprehensive health audit (parallel checks, health score) |
+| `mediawiki_get_stale_pages` | Find pages not edited in N days ✨ |
+
+**get_stale_pages ✨** — Wiki hygiene: find outdated content that needs review:
+```
+"Find pages not updated in 90 days"
+→ Returns stale pages sorted oldest-first with days since last edit
+```
 
 </details>
 
@@ -819,6 +856,20 @@ curl http://localhost:8080/status
 |------|-------------|
 | `mediawiki_edit_page` | Create or edit pages |
 | `mediawiki_upload_file` | Upload files from URL ✨ |
+| `mediawiki_move_page` | Move (rename) pages with redirect ✨ |
+| `mediawiki_manage_categories` | Add/remove categories without full edit ✨ |
+
+**move_page ✨** — Rename pages properly (don't delete and recreate):
+```
+"Rename 'Old Guide' to 'Updated Guide'"
+→ Moves page, creates redirect, optionally moves talk page
+```
+
+**manage_categories ✨** — Quick category management:
+```
+"Add category 'API' and remove category 'Deprecated' from this page"
+→ Modifies categories without touching page content
+```
 
 </details>
 
