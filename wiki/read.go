@@ -1393,3 +1393,140 @@ func (c *Client) GetPagesInfoBatch(ctx context.Context, args GetPagesInfoBatchAr
 
 	return result, nil
 }
+
+// SearchAndRead searches the wiki and reads the top result(s) in one operation.
+// This eliminates the most common two-call pattern: search then get_page.
+func (c *Client) SearchAndRead(ctx context.Context, args SearchAndReadArgs) (SearchAndReadResult, error) {
+	if args.Query == "" {
+		return SearchAndReadResult{}, fmt.Errorf("query is required")
+	}
+
+	readCount := args.ReadCount
+	if readCount <= 0 {
+		readCount = 1
+	}
+	if readCount > 5 {
+		readCount = 5
+	}
+
+	format := args.Format
+	if format == "" {
+		format = "wikitext"
+	}
+
+	// Step 1: Search
+	searchResult, err := c.Search(ctx, SearchArgs{
+		Query: args.Query,
+		Limit: 10,
+	})
+	if err != nil {
+		return SearchAndReadResult{}, fmt.Errorf("search failed: %w", err)
+	}
+
+	result := SearchAndReadResult{
+		Query:     args.Query,
+		TotalHits: searchResult.TotalHits,
+	}
+
+	if len(searchResult.Results) == 0 {
+		result.Message = fmt.Sprintf("No pages found for '%s'", args.Query)
+		return result, nil
+	}
+
+	// Step 2: Read top N results
+	toRead := readCount
+	if toRead > len(searchResult.Results) {
+		toRead = len(searchResult.Results)
+	}
+
+	result.Pages = make([]SearchAndReadPage, 0, toRead)
+	for i := 0; i < toRead; i++ {
+		hit := searchResult.Results[i]
+
+		page, err := c.GetPage(ctx, GetPageArgs{Title: hit.Title, Format: format})
+		if err != nil {
+			// Include the hit but without content
+			result.Pages = append(result.Pages, SearchAndReadPage{
+				Title:   hit.Title,
+				PageID:  hit.PageID,
+				Snippet: hit.Snippet,
+			})
+			continue
+		}
+
+		result.Pages = append(result.Pages, SearchAndReadPage{
+			Title:     page.Title,
+			PageID:    page.PageID,
+			Snippet:   hit.Snippet,
+			Content:   page.Content,
+			Format:    page.Format,
+			Revision:  page.Revision,
+			Timestamp: page.Timestamp,
+			Truncated: page.Truncated,
+		})
+	}
+
+	// Step 3: Include remaining search hits as summaries
+	if len(searchResult.Results) > toRead {
+		result.OtherHits = searchResult.Results[toRead:]
+	}
+
+	result.Message = fmt.Sprintf("Read %d of %d results for '%s'", len(result.Pages), searchResult.TotalHits, args.Query)
+	return result, nil
+}
+
+// GetPageSummary returns the lead section and key metadata for a page.
+// This is much lighter than GetPage for large pages when you only need an overview.
+func (c *Client) GetPageSummary(ctx context.Context, args GetPageSummaryArgs) (PageSummaryResult, error) {
+	if args.Title == "" {
+		return PageSummaryResult{}, fmt.Errorf("title is required")
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return PageSummaryResult{}, err
+	}
+
+	normalizedTitle := normalizePageTitle(args.Title)
+
+	// Get section 0 (lead/intro) content
+	leadResult, err := c.getSectionContent(ctx, normalizedTitle, 0, "wikitext")
+	if err != nil {
+		return PageSummaryResult{}, fmt.Errorf("failed to get lead section: %w", err)
+	}
+
+	// Get page info (metadata)
+	info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: normalizedTitle})
+	if err != nil {
+		return PageSummaryResult{}, fmt.Errorf("failed to get page info: %w", err)
+	}
+
+	// Get section list for overview
+	sections, err := c.GetSections(ctx, GetSectionsArgs{Title: normalizedTitle})
+	sectionNames := make([]string, 0)
+	if err == nil {
+		for _, s := range sections.Sections {
+			sectionNames = append(sectionNames, s.Title)
+		}
+	}
+
+	result := PageSummaryResult{
+		Title:        info.Title,
+		PageID:       info.PageID,
+		LeadContent:  leadResult.SectionContent,
+		Format:       "wikitext",
+		Length:       info.Length,
+		Revision:     info.LastRevision,
+		LastEdited:   info.Touched,
+		Categories:   info.Categories,
+		SectionCount: len(sectionNames),
+		Sections:     sectionNames,
+		Redirect:     info.Redirect,
+		RedirectTo:   info.RedirectTo,
+	}
+
+	if info.Length > CharacterLimit {
+		result.Message = "This is a large page. Use mediawiki_get_sections with a section number to read specific sections."
+	}
+
+	return result, nil
+}

@@ -199,8 +199,12 @@ func TestToolSpecMethods(t *testing.T) {
 		"FindBrokenInternalLinks": true, "FindOrphanedPages": true,
 		"CheckTerminology": true, "CheckTranslations": true, "HealthAudit": true,
 		"FindSimilarPages": true, "CompareTopic": true,
-		"ListUsers": true,
-		"EditPage":  true, "FindReplace": true, "ApplyFormatting": true, "BulkReplace": true, "UploadFile": true,
+		"ListUsers":     true,
+		"GetPagesBatch": true, "GetPagesInfoBatch": true,
+		"SearchAndRead": true, "GetPageSummary": true,
+		"MovePage": true, "ManageCategories": true,
+		"GetStalePages": true,
+		"EditPage":      true, "FindReplace": true, "ApplyFormatting": true, "BulkReplace": true, "UploadFile": true,
 	}
 
 	for _, spec := range AllTools {

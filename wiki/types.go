@@ -1045,3 +1045,136 @@ type WikiHealthAuditSummary struct {
 	OrphanedPagesCount  int `json:"orphaned_pages_count"`
 	ExternalBrokenCount int `json:"external_broken_count"`
 }
+
+// ========== Move Page Types ==========
+
+// MovePageArgs contains parameters for moving (renaming) a wiki page.
+type MovePageArgs struct {
+	From         string `json:"from" jsonschema:"Current page title"`
+	To           string `json:"to" jsonschema:"New page title"`
+	Reason       string `json:"reason,omitempty" jsonschema:"Reason for the move"`
+	NoRedirect   bool   `json:"no_redirect,omitempty" jsonschema:"Don't create a redirect from the old title (requires suppressredirect right)"`
+	MoveTalk     bool   `json:"move_talk,omitempty" jsonschema:"Also move the talk page if it exists (default true)"`
+	MoveSubpages bool   `json:"move_subpages,omitempty" jsonschema:"Also move subpages if they exist"`
+}
+
+// MovePageResult contains the result of a page move operation.
+type MovePageResult struct {
+	Success     bool   `json:"success"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+	Reason      string `json:"reason,omitempty"`
+	RedirectURL string `json:"redirect_url,omitempty"`
+	TalkMoved   bool   `json:"talk_moved,omitempty"`
+	Message     string `json:"message"`
+}
+
+// ========== Search and Read Types ==========
+
+// SearchAndReadArgs contains parameters for searching and reading top results in one call.
+type SearchAndReadArgs struct {
+	Query     string `json:"query" jsonschema:"Search query text"`
+	ReadCount int    `json:"read_count,omitempty" jsonschema:"Number of top results to read (default 1, max 5)"`
+	Format    string `json:"format,omitempty" jsonschema:"Content format: 'wikitext' (default) or 'html'"`
+}
+
+// SearchAndReadResult contains search results with page content for top hits.
+type SearchAndReadResult struct {
+	Query     string              `json:"query"`
+	TotalHits int                 `json:"total_hits"`
+	Pages     []SearchAndReadPage `json:"pages"`
+	OtherHits []SearchHit         `json:"other_hits,omitempty"`
+	Message   string              `json:"message"`
+}
+
+// SearchAndReadPage contains a search hit with its full page content.
+type SearchAndReadPage struct {
+	Title     string `json:"title"`
+	PageID    int    `json:"page_id"`
+	Snippet   string `json:"snippet"`
+	Content   string `json:"content"`
+	Format    string `json:"format"`
+	Revision  int    `json:"revision_id"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// ========== Page Summary Types ==========
+
+// GetPageSummaryArgs contains parameters for retrieving a page summary.
+type GetPageSummaryArgs struct {
+	Title string `json:"title" jsonschema:"Page title to get summary for"`
+}
+
+// PageSummaryResult contains the lead section and key metadata for a page.
+type PageSummaryResult struct {
+	Title        string   `json:"title"`
+	PageID       int      `json:"page_id"`
+	LeadContent  string   `json:"lead_content"`
+	Format       string   `json:"format"`
+	Length       int      `json:"length"`
+	Revision     int      `json:"revision_id"`
+	LastEdited   string   `json:"last_edited"`
+	Categories   []string `json:"categories,omitempty"`
+	SectionCount int      `json:"section_count"`
+	Sections     []string `json:"sections,omitempty"`
+	Redirect     bool     `json:"redirect,omitempty"`
+	RedirectTo   string   `json:"redirect_to,omitempty"`
+	Message      string   `json:"message,omitempty"`
+}
+
+// ========== Manage Categories Types ==========
+
+// ManageCategoriesArgs contains parameters for adding or removing categories.
+type ManageCategoriesArgs struct {
+	Title   string   `json:"title" jsonschema:"Page title to manage categories for"`
+	Add     []string `json:"add,omitempty" jsonschema:"Category names to add (without 'Category:' prefix)"`
+	Remove  []string `json:"remove,omitempty" jsonschema:"Category names to remove (without 'Category:' prefix)"`
+	Summary string   `json:"summary,omitempty" jsonschema:"Edit summary"`
+	Preview bool     `json:"preview,omitempty" jsonschema:"Preview changes without saving"`
+}
+
+// ManageCategoriesResult contains the result of category management.
+type ManageCategoriesResult struct {
+	Success           bool              `json:"success"`
+	Title             string            `json:"title"`
+	Added             []string          `json:"added,omitempty"`
+	Removed           []string          `json:"removed,omitempty"`
+	AlreadyPresent    []string          `json:"already_present,omitempty"`
+	NotFound          []string          `json:"not_found,omitempty"`
+	CurrentCategories []string          `json:"current_categories"`
+	Preview           bool              `json:"preview"`
+	RevisionID        int               `json:"revision_id,omitempty"`
+	Revision          *EditRevisionInfo `json:"revision,omitempty"`
+	Undo              *UndoInfo         `json:"undo,omitempty"`
+	Message           string            `json:"message"`
+}
+
+// ========== Stale Pages Types ==========
+
+// GetStalePagesArgs contains parameters for finding pages not recently updated.
+type GetStalePagesArgs struct {
+	Days      int    `json:"days,omitempty" jsonschema:"Pages not edited in this many days (default 90)"`
+	Category  string `json:"category,omitempty" jsonschema:"Limit to pages in this category"`
+	Namespace int    `json:"namespace,omitempty" jsonschema:"Namespace to check (default 0 = main)"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"Max pages to return (default 50, max 200)"`
+}
+
+// GetStalePagesResult contains pages that haven't been updated recently.
+type GetStalePagesResult struct {
+	Days         int         `json:"days_threshold"`
+	StalePages   []StalePage `json:"stale_pages"`
+	StaleCount   int         `json:"stale_count"`
+	TotalScanned int         `json:"total_scanned"`
+	Message      string      `json:"message"`
+}
+
+// StalePage represents a page that hasn't been edited recently.
+type StalePage struct {
+	Title      string `json:"title"`
+	PageID     int    `json:"page_id"`
+	LastEdited string `json:"last_edited"`
+	DaysStale  int    `json:"days_stale"`
+	Length     int    `json:"length"`
+	Editor     string `json:"last_editor,omitempty"`
+}

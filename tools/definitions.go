@@ -773,6 +773,172 @@ RETURNS: Changes per page. Set preview=false to apply all changes.`,
 		Idempotent:  false,
 		OpenWorld:   true,
 	},
+	// ==========================================================================
+	// BATCH TOOLS (Performance)
+	// ==========================================================================
+	{
+		Name:     "mediawiki_batch_get_pages",
+		Method:   "GetPagesBatch",
+		Title:    "Batch Get Pages",
+		Category: "read",
+		Description: `Retrieve content from MULTIPLE pages in a single API call.
+
+USE WHEN: You need content from 2+ pages. Much faster than individual mediawiki_get_page calls.
+
+NOT FOR: Single page (use mediawiki_get_page). Not for metadata only (use mediawiki_batch_get_pages_info).
+
+PARAMETERS:
+- titles: Array of page titles (required, max 50)
+- format: "wikitext" (default) or "html"
+
+RETURNS: Page content for each title, with exists/missing status. Missing pages are reported, not errors.`,
+		ReadOnly:   true,
+		Idempotent: true,
+		OpenWorld:  true,
+	},
+	{
+		Name:     "mediawiki_batch_get_pages_info",
+		Method:   "GetPagesInfoBatch",
+		Title:    "Batch Get Pages Info",
+		Category: "read",
+		Description: `Get metadata for MULTIPLE pages in a single API call.
+
+USE WHEN: You need info (last edit, size, categories) for 2+ pages without their content.
+
+NOT FOR: Single page (use mediawiki_get_page_info). Not for content (use mediawiki_batch_get_pages).
+
+PARAMETERS:
+- titles: Array of page titles (required, max 50)
+
+RETURNS: Metadata (size, last edit, categories, protection) per page. Missing pages reported with exists=false.`,
+		ReadOnly:   true,
+		Idempotent: true,
+		OpenWorld:  true,
+	},
+
+	// ==========================================================================
+	// COMPOSITE TOOLS (UX)
+	// ==========================================================================
+	{
+		Name:     "mediawiki_search_and_read",
+		Method:   "SearchAndRead",
+		Title:    "Search and Read",
+		Category: "search",
+		Description: `Search wiki AND read the top result(s) in a single call.
+
+USE WHEN: User asks a question about wiki content. This is the fastest path from question to answer — eliminates the search-then-read round trip.
+
+NOT FOR: Known page titles (use mediawiki_get_page directly). Not for listing search results without reading (use mediawiki_search).
+
+PARAMETERS:
+- query: Search text (required)
+- read_count: How many top results to read (default 1, max 5)
+- format: "wikitext" (default) or "html"
+
+RETURNS: Full content of top result(s) plus remaining search hits as summaries.`,
+		ReadOnly:   true,
+		Idempotent: true,
+		OpenWorld:  true,
+	},
+	{
+		Name:     "mediawiki_get_page_summary",
+		Method:   "GetPageSummary",
+		Title:    "Get Page Summary",
+		Category: "read",
+		Description: `Get lead section + key metadata without loading the full page.
+
+USE WHEN: User asks "what is X about", "quick overview of X", "summarize the X page". Much lighter than mediawiki_get_page for large pages.
+
+NOT FOR: Full page content (use mediawiki_get_page). Not for specific sections (use mediawiki_get_sections with section parameter).
+
+PARAMETERS:
+- title: Page name (required)
+
+RETURNS: Lead section (intro before first heading), page size, categories, section list, last edit timestamp.`,
+		ReadOnly:   true,
+		Idempotent: true,
+		OpenWorld:  true,
+	},
+
+	// ==========================================================================
+	// PAGE MANAGEMENT TOOLS
+	// ==========================================================================
+	{
+		Name:     "mediawiki_move_page",
+		Method:   "MovePage",
+		Title:    "Move Page",
+		Category: "write",
+		Description: `Move (rename) a wiki page. Creates a redirect from the old title.
+
+USE WHEN: User says "rename the page", "move X to Y", "change the page title".
+
+NOT FOR: Editing page content (use mediawiki_edit_page or mediawiki_find_replace).
+
+PARAMETERS:
+- from: Current page title (required)
+- to: New page title (required)
+- reason: Reason for the move (optional)
+- no_redirect: Don't create redirect from old title (default false)
+- move_talk: Also move the talk page (default true)
+- move_subpages: Also move subpages (default false)
+
+WARNING: Requires move permissions. Creates a redirect from the old title by default.`,
+		ReadOnly:    false,
+		Destructive: true,
+		Idempotent:  false,
+		OpenWorld:   true,
+	},
+	{
+		Name:     "mediawiki_manage_categories",
+		Method:   "ManageCategories",
+		Title:    "Manage Categories",
+		Category: "write",
+		Description: `Add or remove categories from a page without editing the full content.
+
+USE WHEN: User says "add category X to this page", "remove this from category Y", "categorize this page".
+
+NOT FOR: Listing categories (use mediawiki_list_categories). Not for viewing category members (use mediawiki_get_category_members).
+
+PARAMETERS:
+- title: Page name (required)
+- add: Array of category names to add (without "Category:" prefix)
+- remove: Array of category names to remove (without "Category:" prefix)
+- preview: Preview changes without saving (default false)
+- summary: Edit summary
+
+RETURNS: Which categories were added, removed, already present, or not found.`,
+		ReadOnly:    false,
+		Destructive: false,
+		Idempotent:  false,
+		OpenWorld:   true,
+	},
+
+	// ==========================================================================
+	// WIKI HYGIENE TOOLS
+	// ==========================================================================
+	{
+		Name:     "mediawiki_get_stale_pages",
+		Method:   "GetStalePages",
+		Title:    "Get Stale Pages",
+		Category: "quality",
+		Description: `Find pages that haven't been edited in a specified number of days.
+
+USE WHEN: User asks "find outdated pages", "which pages need review", "show stale content", "wiki hygiene check".
+
+NOT FOR: Recent activity (use mediawiki_get_recent_changes). Not for orphaned pages (use mediawiki_find_orphaned_pages).
+
+PARAMETERS:
+- days: Staleness threshold in days (default 90)
+- category: Limit to pages in this category (optional)
+- namespace: Namespace to check (default 0 = main)
+- limit: Max pages to return (default 50, max 200)
+
+RETURNS: Stale pages sorted by last edit (oldest first), with days since edit and last editor.`,
+		ReadOnly:   true,
+		Idempotent: true,
+		OpenWorld:  true,
+	},
+
 	{
 		Name:     "mediawiki_upload_file",
 		Method:   "UploadFile",

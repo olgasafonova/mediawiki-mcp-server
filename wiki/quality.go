@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -606,4 +607,121 @@ func extractExternalURLs(content string, limit int) []string {
 		}
 	}
 	return urls
+}
+
+// GetStalePages finds pages that haven't been edited in a specified number of days.
+func (c *Client) GetStalePages(ctx context.Context, args GetStalePagesArgs) (GetStalePagesResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return GetStalePagesResult{}, err
+	}
+
+	days := args.Days
+	if days <= 0 {
+		days = 90
+	}
+
+	limit := normalizeLimit(args.Limit, 50, 200)
+	cutoff := time.Now().AddDate(0, 0, -days)
+
+	var pageTitles []string
+
+	if args.Category != "" {
+		// Get pages from category
+		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+			Category: args.Category,
+			Limit:    limit * 2, // Get more to filter
+			Type:     "page",
+		})
+		if err != nil {
+			return GetStalePagesResult{}, fmt.Errorf("failed to get category members: %w", err)
+		}
+		for _, m := range catResult.Members {
+			pageTitles = append(pageTitles, m.Title)
+		}
+	} else {
+		// Get pages from namespace via allpages
+		listResult, err := c.ListPages(ctx, ListPagesArgs{
+			Namespace: args.Namespace,
+			Limit:     limit * 3, // Get more since we'll filter
+		})
+		if err != nil {
+			return GetStalePagesResult{}, fmt.Errorf("failed to list pages: %w", err)
+		}
+		for _, p := range listResult.Pages {
+			pageTitles = append(pageTitles, p.Title)
+		}
+	}
+
+	if len(pageTitles) == 0 {
+		return GetStalePagesResult{
+			Days:       days,
+			StalePages: []StalePage{},
+			Message:    "No pages found to check",
+		}, nil
+	}
+
+	// Get info for all pages in batches
+	result := GetStalePagesResult{
+		Days:         days,
+		StalePages:   make([]StalePage, 0),
+		TotalScanned: len(pageTitles),
+	}
+
+	// Process in batches of 50
+	for i := 0; i < len(pageTitles); i += MaxBatchSize {
+		if ctx.Err() != nil {
+			break
+		}
+
+		end := i + MaxBatchSize
+		if end > len(pageTitles) {
+			end = len(pageTitles)
+		}
+		batch := pageTitles[i:end]
+
+		batchInfo, err := c.GetPagesInfoBatch(ctx, GetPagesInfoBatchArgs{Titles: batch})
+		if err != nil {
+			continue
+		}
+
+		for _, info := range batchInfo.Pages {
+			if !info.Exists || info.Touched == "" {
+				continue
+			}
+
+			// Parse the timestamp
+			touched, err := time.Parse("2006-01-02T15:04:05Z", info.Touched)
+			if err != nil {
+				continue
+			}
+
+			if touched.Before(cutoff) {
+				daysStale := int(time.Since(touched).Hours() / 24)
+				stalePage := StalePage{
+					Title:      info.Title,
+					PageID:     info.PageID,
+					LastEdited: info.Touched,
+					DaysStale:  daysStale,
+					Length:     info.Length,
+				}
+				result.StalePages = append(result.StalePages, stalePage)
+			}
+		}
+	}
+
+	// Sort by last edited (oldest first)
+	sort.Slice(result.StalePages, func(i, j int) bool {
+		return result.StalePages[i].LastEdited < result.StalePages[j].LastEdited
+	})
+
+	// Limit results
+	if len(result.StalePages) > limit {
+		result.StalePages = result.StalePages[:limit]
+	}
+
+	result.StaleCount = len(result.StalePages)
+	result.Message = fmt.Sprintf("Found %d pages not edited in the last %d days (scanned %d pages)",
+		result.StaleCount, days, result.TotalScanned)
+
+	return result, nil
 }

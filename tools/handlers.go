@@ -129,6 +129,28 @@ func (h *HandlerRegistry) registerByName(server *mcp.Server, spec ToolSpec) {
 	case "ListUsers":
 		h.register(server, tool, spec, h.client.ListUsers)
 
+	// Batch tools
+	case "GetPagesBatch":
+		h.register(server, tool, spec, h.client.GetPagesBatch)
+	case "GetPagesInfoBatch":
+		h.register(server, tool, spec, h.client.GetPagesInfoBatch)
+
+	// Composite tools
+	case "SearchAndRead":
+		h.register(server, tool, spec, h.client.SearchAndRead)
+	case "GetPageSummary":
+		h.register(server, tool, spec, h.client.GetPageSummary)
+
+	// Page management tools
+	case "MovePage":
+		h.register(server, tool, spec, h.client.MovePage)
+	case "ManageCategories":
+		h.register(server, tool, spec, h.client.ManageCategories)
+
+	// Wiki hygiene tools
+	case "GetStalePages":
+		h.register(server, tool, spec, h.client.GetStalePages)
+
 	// Write tools
 	case "EditPage":
 		h.register(server, tool, spec, h.client.EditPage)
@@ -247,6 +269,18 @@ func (h *HandlerRegistry) logExecution(spec ToolSpec, args, result any) {
 		attrs = append(attrs, "title", a.Title, "preview", a.Preview)
 	case wiki.BulkReplaceArgs:
 		attrs = append(attrs, "pages_count", len(a.Pages), "preview", a.Preview)
+	case wiki.GetPagesBatchArgs:
+		attrs = append(attrs, "titles_count", len(a.Titles))
+	case wiki.SearchAndReadArgs:
+		attrs = append(attrs, "query", a.Query, "read_count", a.ReadCount)
+	case wiki.GetPageSummaryArgs:
+		attrs = append(attrs, "title", a.Title)
+	case wiki.MovePageArgs:
+		attrs = append(attrs, "from", a.From, "to", a.To)
+	case wiki.ManageCategoriesArgs:
+		attrs = append(attrs, "title", a.Title, "add", len(a.Add), "remove", len(a.Remove))
+	case wiki.GetStalePagesArgs:
+		attrs = append(attrs, "days", a.Days, "category", a.Category)
 	}
 
 	switch r := result.(type) {
@@ -260,6 +294,18 @@ func (h *HandlerRegistry) logExecution(spec ToolSpec, args, result any) {
 		attrs = append(attrs, "matches", r.MatchCount, "replaced", r.ReplaceCount)
 	case wiki.BulkReplaceResult:
 		attrs = append(attrs, "pages_modified", r.PagesModified, "total_changes", r.TotalChanges)
+	case wiki.GetPagesBatchResult:
+		attrs = append(attrs, "found", r.FoundCount, "missing", r.MissingCount)
+	case wiki.SearchAndReadResult:
+		attrs = append(attrs, "total_hits", r.TotalHits, "pages_read", len(r.Pages))
+	case wiki.PageSummaryResult:
+		attrs = append(attrs, "sections", r.SectionCount, "length", r.Length)
+	case wiki.MovePageResult:
+		attrs = append(attrs, "success", r.Success, "from", r.From, "to", r.To)
+	case wiki.ManageCategoriesResult:
+		attrs = append(attrs, "added", len(r.Added), "removed", len(r.Removed))
+	case wiki.GetStalePagesResult:
+		attrs = append(attrs, "stale_count", r.StaleCount, "scanned", r.TotalScanned)
 	}
 
 	h.logger.Info("Tool executed", attrs...)
@@ -340,6 +386,28 @@ func (h *HandlerRegistry) register(server *mcp.Server, tool *mcp.Tool, spec Tool
 
 	// User tools
 	case func(context.Context, wiki.ListUsersArgs) (wiki.ListUsersResult, error):
+		register(h, server, tool, spec, m)
+
+	// Batch tools
+	case func(context.Context, wiki.GetPagesBatchArgs) (wiki.GetPagesBatchResult, error):
+		register(h, server, tool, spec, m)
+	case func(context.Context, wiki.GetPagesInfoBatchArgs) (wiki.GetPagesInfoBatchResult, error):
+		register(h, server, tool, spec, m)
+
+	// Composite tools
+	case func(context.Context, wiki.SearchAndReadArgs) (wiki.SearchAndReadResult, error):
+		register(h, server, tool, spec, m)
+	case func(context.Context, wiki.GetPageSummaryArgs) (wiki.PageSummaryResult, error):
+		register(h, server, tool, spec, m)
+
+	// Page management tools
+	case func(context.Context, wiki.MovePageArgs) (wiki.MovePageResult, error):
+		register(h, server, tool, spec, m)
+	case func(context.Context, wiki.ManageCategoriesArgs) (wiki.ManageCategoriesResult, error):
+		register(h, server, tool, spec, m)
+
+	// Wiki hygiene tools
+	case func(context.Context, wiki.GetStalePagesArgs) (wiki.GetStalePagesResult, error):
 		register(h, server, tool, spec, m)
 
 	// Write tools

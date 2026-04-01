@@ -840,3 +840,222 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 
 	return data, nil
 }
+
+// MovePage moves (renames) a wiki page
+func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResult, error) {
+	if args.From == "" {
+		return MovePageResult{}, &ValidationError{
+			Field:   "from",
+			Message: "source page title is required",
+		}
+	}
+	if args.To == "" {
+		return MovePageResult{}, &ValidationError{
+			Field:   "to",
+			Message: "target page title is required",
+		}
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return MovePageResult{}, fmt.Errorf("authentication required for page moves: %w", err)
+	}
+
+	token, err := c.getCSRFToken(ctx)
+	if err != nil {
+		return MovePageResult{}, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	params := url.Values{}
+	params.Set("action", "move")
+	params.Set("from", args.From)
+	params.Set("to", args.To)
+	params.Set("token", token)
+
+	if args.Reason != "" {
+		params.Set("reason", args.Reason)
+	}
+
+	if args.NoRedirect {
+		params.Set("noredirect", "1")
+	}
+
+	// Default: move talk page
+	if !args.MoveTalk {
+		// MediaWiki moves talk by default, so we only set movetalk=0 if explicitly disabled
+	} else {
+		params.Set("movetalk", "1")
+	}
+
+	if args.MoveSubpages {
+		params.Set("movesubpages", "1")
+	}
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return MovePageResult{}, err
+	}
+
+	// Check for errors
+	if errInfo, ok := resp["error"].(map[string]interface{}); ok {
+		return MovePageResult{
+			Success: false,
+			From:    args.From,
+			To:      args.To,
+			Message: fmt.Sprintf("Move failed: %s", getString(errInfo["info"])),
+		}, nil
+	}
+
+	moveData, ok := resp["move"].(map[string]interface{})
+	if !ok {
+		return MovePageResult{
+			Success: false,
+			From:    args.From,
+			To:      args.To,
+			Message: "Unexpected response format",
+		}, nil
+	}
+
+	result := MovePageResult{
+		Success: true,
+		From:    getString(moveData["from"]),
+		To:      getString(moveData["to"]),
+		Reason:  args.Reason,
+		Message: fmt.Sprintf("Page moved from '%s' to '%s'", getString(moveData["from"]), getString(moveData["to"])),
+	}
+
+	// Check if talk page was moved
+	if _, hasTalkFrom := moveData["talkfrom"]; hasTalkFrom {
+		result.TalkMoved = true
+	}
+
+	// Build redirect URL
+	wikiBaseURL := strings.TrimSuffix(c.config.BaseURL, "api.php") + "index.php"
+	encodedFrom := url.QueryEscape(strings.ReplaceAll(result.From, " ", "_"))
+	result.RedirectURL = fmt.Sprintf("%s?title=%s&redirect=no", wikiBaseURL, encodedFrom)
+
+	// Log the move
+	c.logAudit(AuditEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Operation: "move",
+		Title:     result.From + " → " + result.To,
+		Summary:   args.Reason,
+		WikiURL:   c.config.BaseURL,
+		Success:   true,
+	})
+
+	return result, nil
+}
+
+// ManageCategories adds or removes categories from a page
+func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs) (ManageCategoriesResult, error) {
+	if args.Title == "" {
+		return ManageCategoriesResult{}, fmt.Errorf("title is required")
+	}
+	if len(args.Add) == 0 && len(args.Remove) == 0 {
+		return ManageCategoriesResult{}, fmt.Errorf("at least one category to add or remove is required")
+	}
+
+	// Get current page content
+	page, err := c.GetPage(ctx, GetPageArgs{Title: args.Title, Format: "wikitext"})
+	if err != nil {
+		return ManageCategoriesResult{}, fmt.Errorf("failed to get page: %w", err)
+	}
+
+	result := ManageCategoriesResult{
+		Title:   page.Title,
+		Preview: args.Preview,
+	}
+
+	content := page.Content
+
+	// Parse existing categories
+	existingCats := make(map[string]bool)
+	catRegex := regexp.MustCompile(`\[\[Category:([^\]|]+)(?:\|[^\]]*)?\]\]`)
+	matches := catRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range matches {
+		existingCats[strings.TrimSpace(match[1])] = true
+	}
+
+	result.CurrentCategories = make([]string, 0, len(existingCats))
+	for cat := range existingCats {
+		result.CurrentCategories = append(result.CurrentCategories, cat)
+	}
+
+	newContent := content
+
+	// Remove categories
+	for _, cat := range args.Remove {
+		cat = strings.TrimSpace(cat)
+		if !existingCats[cat] {
+			result.NotFound = append(result.NotFound, cat)
+			continue
+		}
+		// Remove the category tag (with optional sort key and surrounding newline)
+		removeRegex := regexp.MustCompile(`\n?\[\[Category:` + regexp.QuoteMeta(cat) + `(?:\|[^\]]*)?\]\]\n?`)
+		newContent = removeRegex.ReplaceAllString(newContent, "\n")
+		result.Removed = append(result.Removed, cat)
+		delete(existingCats, cat)
+	}
+
+	// Add categories
+	for _, cat := range args.Add {
+		cat = strings.TrimSpace(cat)
+		if existingCats[cat] {
+			result.AlreadyPresent = append(result.AlreadyPresent, cat)
+			continue
+		}
+		newContent = strings.TrimRight(newContent, "\n") + "\n[[Category:" + cat + "]]\n"
+		result.Added = append(result.Added, cat)
+		existingCats[cat] = true
+	}
+
+	// Update current categories
+	result.CurrentCategories = make([]string, 0, len(existingCats))
+	for cat := range existingCats {
+		result.CurrentCategories = append(result.CurrentCategories, cat)
+	}
+
+	// Check if anything changed
+	if len(result.Added) == 0 && len(result.Removed) == 0 {
+		result.Success = true
+		result.Message = "No changes needed"
+		return result, nil
+	}
+
+	if args.Preview {
+		result.Success = true
+		result.Message = fmt.Sprintf("Preview: would add %d and remove %d categories", len(result.Added), len(result.Removed))
+		return result, nil
+	}
+
+	// Apply the edit
+	oldRevision := page.Revision
+	summary := args.Summary
+	if summary == "" {
+		parts := make([]string, 0, 2)
+		if len(result.Added) > 0 {
+			parts = append(parts, fmt.Sprintf("Added categories: %s", strings.Join(result.Added, ", ")))
+		}
+		if len(result.Removed) > 0 {
+			parts = append(parts, fmt.Sprintf("Removed categories: %s", strings.Join(result.Removed, ", ")))
+		}
+		summary = strings.Join(parts, ". ")
+	}
+
+	editResult, err := c.EditPage(ctx, EditPageArgs{
+		Title:   page.Title,
+		Content: newContent,
+		Summary: summary,
+		Minor:   true,
+	})
+	if err != nil {
+		return ManageCategoriesResult{}, fmt.Errorf("failed to save changes: %w", err)
+	}
+
+	result.Success = editResult.Success
+	result.RevisionID = editResult.RevisionID
+	result.Message = fmt.Sprintf("Added %d, removed %d categories", len(result.Added), len(result.Removed))
+	result.Revision, result.Undo = c.buildEditRevisionInfo(page.Title, oldRevision, editResult.RevisionID)
+
+	return result, nil
+}
