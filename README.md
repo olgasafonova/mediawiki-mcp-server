@@ -678,7 +678,7 @@ When running in HTTP mode, these endpoints are available:
 | `/tools` | Tool discovery (lists all 40+ tools by category) |
 | `/status` | Resilience status (circuit breaker state, dedup stats) |
 | `/metrics` | Prometheus metrics (request counts, latencies) |
-| `/.well-known/mcp-server-card` | SEP-2127 Server Card (pre-connect discovery) |
+| `/.well-known/mcp-server-card` | [SEP-2127](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2127) Server Card (pre-connect discovery) via [mcp-servercard-go](https://github.com/olgasafonova/mcp-servercard-go) |
 
 ### Health Checks
 
