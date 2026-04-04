@@ -674,7 +674,10 @@ Read operations work without authentication.`,
 			URL:  "https://github.com/olgasafonova",
 		},
 	}
-	serverCard := servercard.Build(cardOpts)
+	serverCard, err := servercard.Build(cardOpts)
+	if err != nil {
+		log.Fatalf("Server card error: %v", err)
+	}
 	servercard.RegisterResource(server, serverCard)
 	logger.Debug("Registered Server Card resource", "uri", servercard.ResourceURI)
 

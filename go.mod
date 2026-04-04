@@ -6,7 +6,7 @@ toolchain go1.25.7
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.4.1
-	github.com/olgasafonova/mcp-servercard-go v0.1.0
+	github.com/olgasafonova/mcp-servercard-go v0.1.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	go.opentelemetry.io/otel v1.42.0

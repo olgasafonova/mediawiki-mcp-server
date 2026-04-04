@@ -35,8 +35,8 @@ github.com/modelcontextprotocol/go-sdk v1.4.1 h1:M4x9GyIPj+HoIlHNGpK2hq5o3BFhC+7
 github.com/modelcontextprotocol/go-sdk v1.4.1/go.mod h1:Bo/mS87hPQqHSRkMv4dQq1XCu6zv4INdXnFZabkNU6s=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/olgasafonova/mcp-servercard-go v0.1.0 h1:9YdMlg7NFSDaFoQqS8tmdXiN+tRzh43JmcwglEqutBQ=
-github.com/olgasafonova/mcp-servercard-go v0.1.0/go.mod h1:aQgcesDlMJePRiukmK1dm0V8txea/sWsW1q8dmQv0ec=
+github.com/olgasafonova/mcp-servercard-go v0.1.1 h1:+5A0mLNlwUqmzssEm9OoPHp0Gh9qN07JzuyMeGT+esU=
+github.com/olgasafonova/mcp-servercard-go v0.1.1/go.mod h1:aQgcesDlMJePRiukmK1dm0V8txea/sWsW1q8dmQv0ec=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/prometheus/client_golang v1.23.2 h1:Je96obch5RDVy3FDMndoUsjAhG5Edi49h0RJWRi/o0o=
