@@ -678,6 +678,7 @@ When running in HTTP mode, these endpoints are available:
 | `/tools` | Tool discovery (lists all 40+ tools by category) |
 | `/status` | Resilience status (circuit breaker state, dedup stats) |
 | `/metrics` | Prometheus metrics (request counts, latencies) |
+| `/.well-known/mcp-server-card` | SEP-2127 Server Card (pre-connect discovery) |
 
 ### Health Checks
 
@@ -1111,6 +1112,7 @@ Check out my other MCP servers:
 | [miro-mcp-server](https://github.com/olgasafonova/miro-mcp-server) | Control Miro whiteboards with AI. Boards, diagrams, mindmaps, and more. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/miro-mcp-server?style=flat) |
 | [nordic-registry-mcp-server](https://github.com/olgasafonova/nordic-registry-mcp-server) | Access Nordic business registries. Look up companies across Norway, Denmark, Finland, Sweden. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/nordic-registry-mcp-server?style=flat) |
 | [productplan-mcp-server](https://github.com/olgasafonova/productplan-mcp-server) | Talk to your ProductPlan roadmaps. Query OKRs, ideas, launches. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/productplan-mcp-server?style=flat) |
+| [mcp-servercard-go](https://github.com/olgasafonova/mcp-servercard-go) | Go library for SEP-2127 Server Cards. Pre-connect discovery for MCP servers. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/mcp-servercard-go?style=flat) |
 
 ---
 
