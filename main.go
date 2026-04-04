@@ -23,12 +23,21 @@ import (
 	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/olgasafonova/mcp-servercard-go/servercard"
 	"github.com/olgasafonova/mediawiki-mcp-server/converter"
 	"github.com/olgasafonova/mediawiki-mcp-server/tools"
 	"github.com/olgasafonova/mediawiki-mcp-server/tracing"
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// authSchemes returns the auth schemes list for the Server Card.
+func authSchemes(token string) []string {
+	if token != "" {
+		return []string{"bearer"}
+	}
+	return []string{}
+}
 
 // recoverPanic wraps a function with panic recovery and returns an error instead of crashing
 func recoverPanic(logger *slog.Logger, operation string) {
@@ -645,12 +654,36 @@ Read operations work without authentication.`,
 	// Register resources for direct wiki page access
 	registerResources(server, client, logger)
 
+	// Register SEP-2127 Server Card as MCP resource
+	cardOpts := servercard.Options{
+		Name:        "io.github.olgasafonova/mediawiki-mcp-server",
+		Version:     ServerVersion,
+		Description: "MCP server for MediaWiki wikis. Search, read, edit, and analyze wiki content with 40+ tools.",
+		Title:       "MediaWiki MCP Server",
+		WebsiteURL:  "https://github.com/olgasafonova/mediawiki-mcp-server",
+		Repository: &servercard.Repository{
+			URL:    "https://github.com/olgasafonova/mediawiki-mcp-server",
+			Source: "github",
+		},
+		Capabilities: &servercard.Capabilities{
+			Tools:   &servercard.ToolsCap{},
+			Logging: &servercard.LoggingCap{},
+		},
+		Provider: &servercard.Provider{
+			Name: "Olga Safonova",
+			URL:  "https://github.com/olgasafonova",
+		},
+	}
+	serverCard := servercard.Build(cardOpts)
+	servercard.RegisterResource(server, serverCard)
+	logger.Debug("Registered Server Card resource", "uri", servercard.ResourceURI)
+
 	ctx := context.Background()
 
 	// Choose transport based on flags
 	if *httpAddr != "" {
 		// HTTP transport mode (for ChatGPT, n8n, and remote clients)
-		runHTTPServer(server, logger, *httpAddr, authToken, *allowedOrigins, *rateLimit, *trustedProxies, config.BaseURL, client)
+		runHTTPServer(server, logger, *httpAddr, authToken, *allowedOrigins, *rateLimit, *trustedProxies, config.BaseURL, client, serverCard)
 	} else {
 		// stdio transport mode (default, for Claude Desktop, Cursor, etc.)
 		logger.Info("Starting MediaWiki MCP Server (stdio mode)",
@@ -697,7 +730,7 @@ Read operations work without authentication.`,
 }
 
 // runHTTPServer starts the MCP server with HTTP transport and graceful shutdown
-func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, origins string, rateLimit int, trustedProxies, wikiURL string, client *wiki.Client) {
+func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, origins string, rateLimit int, trustedProxies, wikiURL string, client *wiki.Client, card *servercard.ServerCard) {
 	// Parse allowed origins
 	var allowedOriginsList []string
 	if origins != "" {
@@ -778,6 +811,15 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 
 	// Prometheus metrics endpoint (no auth required - for monitoring systems)
 	mux.Handle("/metrics", promhttp.Handler())
+
+	// SEP-2127 Server Card endpoint (no auth required - for pre-connect discovery)
+	card.Remotes = []servercard.Remote{{
+		Type:                      "streamable-http",
+		URL:                       "/",
+		SupportedProtocolVersions: []string{"2025-06-18"},
+		Authentication:            &servercard.Auth{Required: authToken != "", Schemes: authSchemes(authToken)},
+	}}
+	mux.Handle(servercard.WellKnownPath, servercard.Handler(card))
 
 	// Tools discovery endpoint (no auth required - for tool introspection)
 	mux.HandleFunc("/tools", func(w http.ResponseWriter, r *http.Request) {
