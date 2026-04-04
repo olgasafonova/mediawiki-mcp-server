@@ -51,7 +51,7 @@ func recoverPanic(logger *slog.Logger, operation string) {
 
 const (
 	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.27.2"
+	ServerVersion = "1.28.1"
 )
 
 // =============================================================================
@@ -473,10 +473,16 @@ func main() {
 			"service", tracingConfig.ServiceName)
 	}
 
-	// Load configuration from environment
-	config, err := wiki.LoadConfig()
+	// Load configuration from environment.
+	// Uses LoadConfigOrUnconfigured so the server starts even without MEDIAWIKI_URL,
+	// allowing MCP registries (Glama, Smithery) to inspect tool definitions.
+	// Tool calls will return a clear error if the wiki URL is not configured.
+	config, err := wiki.LoadConfigOrUnconfigured()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
+	}
+	if !config.IsConfigured() {
+		logger.Warn("MEDIAWIKI_URL not set. Server will start in inspection mode: tools are listed but calls will fail until configured.")
 	}
 
 	// Create MediaWiki client
@@ -695,16 +701,18 @@ Read operations work without authentication.`,
 			"wiki_url", config.BaseURL,
 		)
 
-		// Warm cache in background (don't block startup)
-		go func() {
-			warmCtx, warmCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer warmCancel()
-			if err := client.WarmCacheWithDefaults(warmCtx); err != nil {
-				logger.Warn("Cache warming failed", "error", err)
-			} else {
-				logger.Info("Cache warming completed")
-			}
-		}()
+		// Warm cache in background (don't block startup); skip if unconfigured
+		if config.IsConfigured() {
+			go func() {
+				warmCtx, warmCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer warmCancel()
+				if err := client.WarmCacheWithDefaults(warmCtx); err != nil {
+					logger.Warn("Cache warming failed", "error", err)
+				} else {
+					logger.Info("Cache warming completed")
+				}
+			}()
+		}
 
 		// Set up signal handling for graceful shutdown in stdio mode
 		sigChan := make(chan os.Signal, 1)

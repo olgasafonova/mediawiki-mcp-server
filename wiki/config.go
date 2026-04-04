@@ -161,7 +161,35 @@ Example:  https://wiki.example.com/api.php
 	return nil
 }
 
+// IsConfigured returns true if the wiki URL is set and the server can make API calls.
+// When false, tool listing works but tool calls return an error prompting the user to configure MEDIAWIKI_URL.
+func (c *Config) IsConfigured() bool {
+	return c.BaseURL != ""
+}
+
 // HasCredentials returns true if authentication credentials are configured
 func (c *Config) HasCredentials() bool {
 	return c.Username != "" && c.Password != ""
+}
+
+// LoadConfigOrUnconfigured loads configuration from environment variables.
+// Unlike LoadConfig, it does not fail when MEDIAWIKI_URL is missing; instead it returns
+// an unconfigured Config that allows tool registration but rejects tool calls.
+// Other invalid config (bad URL format, bad timeout) still returns an error.
+func LoadConfigOrUnconfigured() (*Config, error) {
+	config, err := LoadConfig()
+	if err == nil {
+		return config, nil
+	}
+
+	// If the only problem is a missing URL, return an unconfigured config
+	if configErr, ok := err.(*ConfigError); ok && configErr.Field == "MEDIAWIKI_URL" && configErr.Message == "environment variable is required but not set" {
+		return &Config{
+			Timeout:    30 * time.Second,
+			UserAgent:  "MediaWikiMCPServer/1.0 (https://github.com/olgasafonova/mediawiki-mcp-server)",
+			MaxRetries: 3,
+		}, nil
+	}
+
+	return nil, err
 }

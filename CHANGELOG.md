@@ -4,6 +4,12 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.28.1] - 2026-04-04
+
+### Fixed
+- Server now starts in inspection mode when `MEDIAWIKI_URL` is not set, allowing MCP registries (Glama, Smithery) to enumerate tool definitions. Tool calls return a clear configuration error instead of crashing at startup.
+- `mediawiki_audit` tool was silently failing to register due to a missing type case in the handler dispatch. Now registers correctly.
+
 ## [1.28.0] - 2026-04-01
 
 ### Added

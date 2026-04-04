@@ -445,6 +445,10 @@ func (c *Client) InvalidateCachePrefix(prefix string) {
 
 // apiRequest makes a request to the MediaWiki API with rate limiting and circuit breaker
 func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]interface{}, error) {
+	if !c.config.IsConfigured() {
+		return nil, fmt.Errorf("MEDIAWIKI_URL is not configured. Set the MEDIAWIKI_URL environment variable to your wiki's API endpoint (e.g. https://wiki.example.com/api.php)")
+	}
+
 	action := params.Get("action")
 	start := time.Now()
 

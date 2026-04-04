@@ -406,6 +406,10 @@ func (h *HandlerRegistry) register(server *mcp.Server, tool *mcp.Tool, spec Tool
 	case func(context.Context, wiki.ManageCategoriesArgs) (wiki.ManageCategoriesResult, error):
 		register(h, server, tool, spec, m)
 
+	// Quality tools
+	case func(context.Context, wiki.WikiHealthAuditArgs) (wiki.WikiHealthAuditResult, error):
+		register(h, server, tool, spec, m)
+
 	// Wiki hygiene tools
 	case func(context.Context, wiki.GetStalePagesArgs) (wiki.GetStalePagesResult, error):
 		register(h, server, tool, spec, m)
