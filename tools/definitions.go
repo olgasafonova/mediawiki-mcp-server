@@ -24,7 +24,7 @@ NOT FOR: Searching within a specific known page (use mediawiki_search_in_page in
 
 PARAMETERS:
 - query: Search text (required)
-- limit: Max results (default 10)
+- limit: Max results (default 20)
 
 RETURNS: Page titles, snippets with highlights, and relevance scores.`,
 		ReadOnly:   true,
@@ -493,7 +493,7 @@ NOT FOR: Checking external HTTP URLs (use mediawiki_check_links).
 PARAMETERS:
 - pages: Array of pages to scan (optional)
 - category: Scan all pages in category (optional)
-- limit: Max pages to scan (default 50)
+- limit: Max pages to scan (default 20)
 
 RETURNS: Broken links with source page, line number, and context.`,
 		ReadOnly:   true,
@@ -537,7 +537,7 @@ PARAMETERS:
 - category: Check all pages in category (optional)
 - glossary_page: Wiki page with term mappings (default "Brand Terminology Glossary")
 - exclude_code_blocks: Skip code blocks (default true)
-- limit: Max pages (default 50)
+- limit: Max pages (default 10)
 
 RETURNS: Violations with page, line, wrong term, and correct term.`,
 		ReadOnly:   true,
@@ -606,7 +606,7 @@ NOT FOR: Finding related pages by links (use mediawiki_get_related).
 PARAMETERS:
 - page: Source page name (required)
 - category: Limit search to category (optional)
-- min_score: Minimum similarity threshold 0-1 (default 0.5)
+- min_score: Minimum similarity threshold 0-1 (default 0.1)
 - limit: Max similar pages (default 10)
 
 RETURNS: Similar pages with similarity scores and linking recommendations.`,
@@ -682,6 +682,8 @@ PARAMETERS:
 - minor: Mark as minor edit (default false)
 - bot: Mark as bot edit (default false)
 
+RETURNS: Includes revision ID, diff URL, and undo instructions.
+
 WARNING: This overwrites entire page content unless section is specified.`,
 		ReadOnly:    false,
 		Destructive: true,
@@ -708,7 +710,7 @@ PARAMETERS:
 - preview: Preview changes without saving (default true for safety)
 - summary: Edit summary
 
-RETURNS: Match count and preview of changes. Set preview=false to apply.`,
+RETURNS: Match count and preview of changes. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -738,7 +740,7 @@ PARAMETERS:
 - preview: Preview changes (default true)
 - summary: Edit summary
 
-RETURNS: Preview of formatting applied. Set preview=false to apply.`,
+RETURNS: Preview of formatting applied. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -767,7 +769,7 @@ PARAMETERS:
 
 WARNING: Always use preview=true first to verify matches before applying.
 
-RETURNS: Changes per page. Set preview=false to apply all changes.`,
+RETURNS: Changes per page. Set preview=false to apply all changes. Includes revision ID, diff URL, and undo instructions.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -882,6 +884,8 @@ PARAMETERS:
 - move_talk: Also move the talk page (default true)
 - move_subpages: Also move subpages (default false)
 
+RETURNS: Includes revision ID, diff URL, and undo instructions.
+
 WARNING: Requires move permissions. Creates a redirect from the old title by default.`,
 		ReadOnly:    false,
 		Destructive: true,
@@ -906,7 +910,7 @@ PARAMETERS:
 - preview: Preview changes without saving (default false)
 - summary: Edit summary
 
-RETURNS: Which categories were added, removed, already present, or not found.`,
+RETURNS: Which categories were added, removed, already present, or not found. Includes revision ID, diff URL, and undo instructions.`,
 		ReadOnly:    false,
 		Destructive: false,
 		Idempotent:  false,
@@ -944,18 +948,19 @@ RETURNS: Stale pages sorted by last edit (oldest first), with days since edit an
 		Method:   "UploadFile",
 		Title:    "Upload File",
 		Category: "write",
-		Description: `Upload a file to the wiki from a URL.
+		Description: `Upload a file to the wiki from a URL or local path.
 
 USE WHEN: User says "upload this image", "add file to wiki", "import document".
 
 PARAMETERS:
 - filename: Target filename on wiki (required)
-- file_url: Source URL to fetch file from (required)
+- file_url: Source URL to fetch file from (one of file_url or file_path required)
+- file_path: Local file path (alternative to file_url)
 - text: File description page content (optional)
 - comment: Upload comment (optional)
 - ignore_warnings: Overwrite existing file (default false)
 
-RETURNS: Upload status and file page URL.
+RETURNS: Upload status and file page URL. Includes revision ID, diff URL, and undo instructions.
 
 NOTE: Requires authentication. URL must be publicly accessible.`,
 		ReadOnly:    false,
