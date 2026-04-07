@@ -848,6 +848,12 @@ func (c *Client) invalidateCSRFToken() {
 
 // EnsureLoggedIn ensures the client is logged in (for wikis requiring auth for read)
 func (c *Client) EnsureLoggedIn(ctx context.Context) error {
+	// Anonymous access: no credentials configured, skip authentication.
+	// Public wikis allow read operations without login.
+	if !c.config.HasCredentials() {
+		return nil
+	}
+
 	c.mu.RLock()
 	loggedIn := c.loggedIn && time.Now().Before(c.tokenExpiry)
 	c.mu.RUnlock()

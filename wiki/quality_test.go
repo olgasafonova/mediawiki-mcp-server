@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -926,22 +927,27 @@ func TestExtractExternalURLs(t *testing.T) {
 	}
 }
 
-func TestHealthAudit_RequiresLogin(t *testing.T) {
-	// HealthAudit requires login - this tests the validation path
+func TestHealthAudit_AnonymousAccess(t *testing.T) {
+	// HealthAudit without credentials proceeds (anonymous access).
+	// It does not error at the credentials check; it proceeds to
+	// API calls and handles failures internally.
 	config := &Config{
 		BaseURL: "https://test.wiki.com/api.php",
-		Timeout: 30 * time.Second,
+		Timeout: 2 * time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	client := NewClient(config, logger)
 	defer client.Close()
 
 	ctx := context.Background()
-	_, err := client.HealthAudit(ctx, WikiHealthAuditArgs{})
+	result, err := client.HealthAudit(ctx, WikiHealthAuditArgs{})
 
-	if err == nil {
-		t.Fatal("Expected error for missing credentials")
+	// HealthAudit is resilient: it may return a result with failures
+	// rather than an error. Either way, it should NOT fail with "no credentials".
+	if err != nil && strings.Contains(err.Error(), "no credentials") {
+		t.Fatalf("Should not get credentials error for anonymous access, got: %v", err)
 	}
+	_ = result
 }
 
 func TestCheckTerminology_WithCategory(t *testing.T) {
