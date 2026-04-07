@@ -535,7 +535,7 @@ func TestEnsureLoggedIn_AlreadyLoggedIn(t *testing.T) {
 	}
 }
 
-func TestEnsureLoggedIn_NoCredentials(t *testing.T) {
+func TestEnsureLoggedIn_NoCredentials_AnonymousAccess(t *testing.T) {
 	config := &Config{
 		BaseURL: "https://test.wiki.com/api.php",
 		Timeout: 30 * time.Second,
@@ -547,11 +547,10 @@ func TestEnsureLoggedIn_NoCredentials(t *testing.T) {
 	ctx := context.Background()
 	err := client.EnsureLoggedIn(ctx)
 
-	if err == nil {
-		t.Fatal("Expected error for missing credentials")
-	}
-	if !strings.Contains(err.Error(), "no credentials") {
-		t.Errorf("Expected 'no credentials' error, got: %v", err)
+	// Anonymous access: EnsureLoggedIn is a no-op without credentials.
+	// Public wikis allow read operations without login.
+	if err != nil {
+		t.Fatalf("Expected no error for anonymous access, got: %v", err)
 	}
 }
 
