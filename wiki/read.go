@@ -374,11 +374,20 @@ func (c *Client) GetPageInfo(ctx context.Context, args PageInfoArgs) (PageInfo, 
 		return PageInfo{}, err
 	}
 
-	query := resp["query"].(map[string]interface{})
-	pages := query["pages"].(map[string]interface{})
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return PageInfo{}, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return PageInfo{}, fmt.Errorf("unexpected API response: missing 'pages' object")
+	}
 
 	for _, pageData := range pages {
-		page := pageData.(map[string]interface{})
+		page, ok := pageData.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		// Check if page exists
 		if _, missing := page["missing"]; missing {
@@ -389,22 +398,25 @@ func (c *Client) GetPageInfo(ctx context.Context, args PageInfoArgs) (PageInfo, 
 		}
 
 		info := PageInfo{
-			Title:        page["title"].(string),
-			PageID:       int(page["pageid"].(float64)),
-			Namespace:    int(page["ns"].(float64)),
+			Title:        getString(page["title"]),
+			PageID:       getInt(page["pageid"]),
+			Namespace:    getInt(page["ns"]),
 			ContentModel: getString(page["contentmodel"]),
 			PageLanguage: getString(page["pagelanguage"]),
-			Length:       int(page["length"].(float64)),
+			Length:       getInt(page["length"]),
 			Touched:      getString(page["touched"]),
-			LastRevision: int(page["lastrevid"].(float64)),
+			LastRevision: getInt(page["lastrevid"]),
 			Exists:       true,
 		}
 
 		// Categories
 		if cats, ok := page["categories"].([]interface{}); ok {
 			for _, cat := range cats {
-				c := cat.(map[string]interface{})
-				info.Categories = append(info.Categories, c["title"].(string))
+				c, ok := cat.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				info.Categories = append(info.Categories, getString(c["title"]))
 			}
 		}
 
@@ -421,7 +433,10 @@ func (c *Client) GetPageInfo(ctx context.Context, args PageInfoArgs) (PageInfo, 
 		// Protection
 		if protection, ok := page["protection"].([]interface{}); ok {
 			for _, p := range protection {
-				prot := p.(map[string]interface{})
+				prot, ok := p.(map[string]interface{})
+				if !ok {
+					continue
+				}
 				info.Protection = append(info.Protection, fmt.Sprintf("%s: %s", prot["type"], prot["level"]))
 			}
 		}
@@ -461,9 +476,15 @@ func (c *Client) Parse(ctx context.Context, args ParseArgs) (ParseResult, error)
 		return ParseResult{}, err
 	}
 
-	parse := resp["parse"].(map[string]interface{})
-	text := parse["text"].(map[string]interface{})
-	htmlContent := text["*"].(string)
+	parse, ok := resp["parse"].(map[string]interface{})
+	if !ok {
+		return ParseResult{}, fmt.Errorf("unexpected API response: missing 'parse' object")
+	}
+	text, ok := parse["text"].(map[string]interface{})
+	if !ok {
+		return ParseResult{}, fmt.Errorf("unexpected API response: missing 'text' object")
+	}
+	htmlContent := getString(text["*"])
 
 	// Sanitize HTML to prevent XSS
 	htmlContent = sanitizeHTML(htmlContent)
@@ -481,16 +502,22 @@ func (c *Client) Parse(ctx context.Context, args ParseArgs) (ParseResult, error)
 	// Categories
 	if cats, ok := parse["categories"].([]interface{}); ok {
 		for _, cat := range cats {
-			c := cat.(map[string]interface{})
-			result.Categories = append(result.Categories, c["*"].(string))
+			c, ok := cat.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			result.Categories = append(result.Categories, getString(c["*"]))
 		}
 	}
 
 	// Links
 	if links, ok := parse["links"].([]interface{}); ok {
 		for _, link := range links {
-			l := link.(map[string]interface{})
-			result.Links = append(result.Links, l["*"].(string))
+			l, ok := link.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			result.Links = append(result.Links, getString(l["*"]))
 		}
 	}
 
@@ -524,8 +551,14 @@ func (c *Client) GetWikiInfo(ctx context.Context, args WikiInfoArgs) (WikiInfo, 
 		return WikiInfo{}, err
 	}
 
-	query := resp["query"].(map[string]interface{})
-	general := query["general"].(map[string]interface{})
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return WikiInfo{}, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	general, ok := query["general"].(map[string]interface{})
+	if !ok {
+		return WikiInfo{}, fmt.Errorf("unexpected API response: missing 'general' object")
+	}
 
 	info := WikiInfo{
 		SiteName:    getString(general["sitename"]),
@@ -709,17 +742,23 @@ func (c *Client) GetSections(ctx context.Context, args GetSectionsArgs) (GetSect
 		return GetSectionsResult{}, fmt.Errorf("%s", errInfo["info"])
 	}
 
-	parse := resp["parse"].(map[string]interface{})
-	pageID := int(parse["pageid"].(float64))
-	title := parse["title"].(string)
+	parse, ok := resp["parse"].(map[string]interface{})
+	if !ok {
+		return GetSectionsResult{}, fmt.Errorf("unexpected API response: missing 'parse' object")
+	}
+	pageID := getInt(parse["pageid"])
+	title := getString(parse["title"])
 
-	sectionsRaw := parse["sections"].([]interface{})
+	sectionsRaw, _ := parse["sections"].([]interface{})
 	sections := make([]SectionInfo, 0, len(sectionsRaw))
 
 	for _, s := range sectionsRaw {
-		sec := s.(map[string]interface{})
-		index, _ := strconv.Atoi(sec["index"].(string))
-		level, _ := strconv.Atoi(sec["level"].(string))
+		sec, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		index, _ := strconv.Atoi(getString(sec["index"]))
+		level, _ := strconv.Atoi(getString(sec["level"]))
 		lineNum := 0
 		if line, ok := sec["line"].(float64); ok {
 			lineNum = int(line)
@@ -728,8 +767,8 @@ func (c *Client) GetSections(ctx context.Context, args GetSectionsArgs) (GetSect
 		sections = append(sections, SectionInfo{
 			Index:   index,
 			Level:   level,
-			Title:   stripHTMLTags(sec["line"].(string)),
-			Anchor:  sec["anchor"].(string),
+			Title:   stripHTMLTags(getString(sec["line"])),
+			Anchor:  getString(sec["anchor"]),
 			LineNum: lineNum,
 		})
 	}
@@ -771,20 +810,23 @@ func (c *Client) getSectionContent(ctx context.Context, title string, section in
 		return GetSectionsResult{}, fmt.Errorf("%s", errInfo["info"])
 	}
 
-	parse := resp["parse"].(map[string]interface{})
-	pageID := int(parse["pageid"].(float64))
-	pageTitle := parse["title"].(string)
+	parse, ok := resp["parse"].(map[string]interface{})
+	if !ok {
+		return GetSectionsResult{}, fmt.Errorf("unexpected API response: missing 'parse' object")
+	}
+	pageID := getInt(parse["pageid"])
+	pageTitle := getString(parse["title"])
 
 	var content string
 	var sectionTitle string
 
 	if format == "html" {
 		if text, ok := parse["text"].(map[string]interface{}); ok {
-			content = text["*"].(string)
+			content = getString(text["*"])
 		}
 	} else {
 		if wikitext, ok := parse["wikitext"].(map[string]interface{}); ok {
-			content = wikitext["*"].(string)
+			content = getString(wikitext["*"])
 		}
 	}
 
@@ -950,16 +992,28 @@ func (c *Client) getPageCategories(ctx context.Context, title string) ([]string,
 		return nil, err
 	}
 
-	query := resp["query"].(map[string]interface{})
-	pages := query["pages"].(map[string]interface{})
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected API response: missing 'pages' object")
+	}
 
 	var categories []string
 	for _, p := range pages {
-		page := p.(map[string]interface{})
+		page, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		if cats, ok := page["categories"].([]interface{}); ok {
 			for _, cat := range cats {
-				c := cat.(map[string]interface{})
-				catTitle := c["title"].(string)
+				c, ok := cat.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				catTitle := getString(c["title"])
 				// Remove "Category:" prefix
 				catTitle = strings.TrimPrefix(catTitle, "Category:")
 				categories = append(categories, catTitle)
@@ -984,17 +1038,29 @@ func (c *Client) getPageLinks(ctx context.Context, title string, limit int) ([]P
 		return nil, err
 	}
 
-	query := resp["query"].(map[string]interface{})
-	pages := query["pages"].(map[string]interface{})
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected API response: missing 'pages' object")
+	}
 
 	var links []PageSummary
 	for _, p := range pages {
-		page := p.(map[string]interface{})
+		page, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		if linksList, ok := page["links"].([]interface{}); ok {
 			for _, l := range linksList {
-				link := l.(map[string]interface{})
+				link, ok := l.(map[string]interface{})
+				if !ok {
+					continue
+				}
 				links = append(links, PageSummary{
-					Title: link["title"].(string),
+					Title: getString(link["title"]),
 				})
 			}
 		}
@@ -1028,16 +1094,28 @@ func (c *Client) GetImages(ctx context.Context, args GetImagesArgs) (GetImagesRe
 		return GetImagesResult{}, err
 	}
 
-	query := resp["query"].(map[string]interface{})
-	pages := query["pages"].(map[string]interface{})
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return GetImagesResult{}, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	pages, ok := query["pages"].(map[string]interface{})
+	if !ok {
+		return GetImagesResult{}, fmt.Errorf("unexpected API response: missing 'pages' object")
+	}
 
 	var imageTitles []string
 	for _, p := range pages {
-		page := p.(map[string]interface{})
+		page, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		if images, ok := page["images"].([]interface{}); ok {
 			for _, img := range images {
-				i := img.(map[string]interface{})
-				imageTitles = append(imageTitles, i["title"].(string))
+				i, ok := img.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				imageTitles = append(imageTitles, getString(i["title"]))
 			}
 		}
 	}
@@ -1101,17 +1179,30 @@ func (c *Client) getImageInfo(ctx context.Context, titles []string) ([]ImageInfo
 			continue
 		}
 
-		query := resp["query"].(map[string]interface{})
-		pages := query["pages"].(map[string]interface{})
+		query, ok := resp["query"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		pages, ok := query["pages"].(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		for _, p := range pages {
-			page := p.(map[string]interface{})
+			page, ok := p.(map[string]interface{})
+			if !ok {
+				continue
+			}
 			title := getString(page["title"])
 
 			imgInfo := ImageInfo{Title: title}
 
 			if imageinfo, ok := page["imageinfo"].([]interface{}); ok && len(imageinfo) > 0 {
-				info := imageinfo[0].(map[string]interface{})
+				info, ok := imageinfo[0].(map[string]interface{})
+				if !ok {
+					allImages = append(allImages, imgInfo)
+					continue
+				}
 				imgInfo.URL = getString(info["url"])
 				imgInfo.ThumbURL = getString(info["thumburl"])
 				imgInfo.Width = getInt(info["width"])

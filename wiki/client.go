@@ -186,7 +186,10 @@ func (c *Client) WarmCache(ctx context.Context, titles []string) error {
 		if query, ok := resp["query"].(map[string]interface{}); ok {
 			if pages, ok := query["pages"].(map[string]interface{}); ok {
 				for _, pageData := range pages {
-					page := pageData.(map[string]interface{})
+					page, ok := pageData.(map[string]interface{})
+					if !ok {
+						continue
+					}
 					title := getString(page["title"])
 					if title != "" {
 						cacheKey := "page:" + normalizePageTitle(title)
@@ -204,16 +207,9 @@ func (c *Client) WarmCache(ctx context.Context, titles []string) error {
 // WarmCacheWithDefaults pre-loads common wiki pages like Main_Page and help pages.
 // This is a convenience method that fetches typical high-traffic pages.
 func (c *Client) WarmCacheWithDefaults(ctx context.Context) error {
-	// First, get site info (often needed)
-	params := url.Values{}
-	params.Set("action", "query")
-	params.Set("meta", "siteinfo")
-	params.Set("siprop", "general|namespaces|statistics")
-
-	resp, err := c.apiRequest(ctx, params)
-	if err == nil {
-		c.setCache("wiki_info", resp, "wiki_info")
-	}
+	// Pre-warm wiki info cache via GetWikiInfo so the cached value
+	// is a WikiInfo struct, not a raw map[string]interface{}.
+	_, _ = c.GetWikiInfo(ctx, WikiInfoArgs{})
 
 	// Try to warm cache with common pages (best effort)
 	defaultPages := []string{"Main_Page", "Main Page"}
@@ -343,8 +339,9 @@ func (c *Client) evictLRU(count int) {
 		ce.mu.Lock()
 		accessedAt := ce.AccessedAt
 		ce.mu.Unlock()
+		k, _ := key.(string)
 		entries = append(entries, entryInfo{
-			key:        key.(string),
+			key:        k,
 			accessedAt: accessedAt,
 		})
 		return true
@@ -430,7 +427,8 @@ func (c *Client) setCache(key string, data interface{}, ttlKey string) {
 func (c *Client) InvalidateCachePrefix(prefix string) {
 	var deletedCount int64
 	c.cache.Range(func(key, value interface{}) bool {
-		if strings.HasPrefix(key.(string), prefix) {
+		k, _ := key.(string)
+		if strings.HasPrefix(k, prefix) {
 			c.cache.Delete(key)
 			deletedCount++
 		}

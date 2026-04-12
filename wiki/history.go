@@ -49,14 +49,23 @@ func (c *Client) GetRecentChanges(ctx context.Context, args RecentChangesArgs) (
 		return RecentChangesResult{}, err
 	}
 
-	query := resp["query"].(map[string]interface{})
-	rcList := query["recentchanges"].([]interface{})
+	query, ok := resp["query"].(map[string]interface{})
+	if !ok {
+		return RecentChangesResult{}, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	rcList, ok := query["recentchanges"].([]interface{})
+	if !ok {
+		return RecentChangesResult{}, fmt.Errorf("unexpected API response: missing 'recentchanges' list")
+	}
 
 	changes := make([]RecentChange, 0, len(rcList))
 	for _, rc := range rcList {
-		change := rc.(map[string]interface{})
+		change, ok := rc.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
-		ts, _ := time.Parse(time.RFC3339, change["timestamp"].(string))
+		ts, _ := time.Parse(time.RFC3339, getString(change["timestamp"]))
 
 		changes = append(changes, RecentChange{
 			Type:       getString(change["type"]),
@@ -152,7 +161,10 @@ func (c *Client) GetRevisions(ctx context.Context, args GetRevisionsArgs) (GetRe
 			return GetRevisionsResult{}, fmt.Errorf("page '%s' not found", args.Title)
 		}
 
-		page := pageData.(map[string]interface{})
+		page, ok := pageData.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		result.PageID = pageID
 		result.Title = getString(page["title"])
 
@@ -163,7 +175,10 @@ func (c *Client) GetRevisions(ctx context.Context, args GetRevisionsArgs) (GetRe
 
 		var prevSize int
 		for i, rev := range revisions {
-			r := rev.(map[string]interface{})
+			r, ok := rev.(map[string]interface{})
+			if !ok {
+				continue
+			}
 			info := RevisionInfo{
 				RevID:     getInt(r["revid"]),
 				ParentID:  getInt(r["parentid"]),
@@ -309,7 +324,10 @@ func (c *Client) GetUserContributions(ctx context.Context, args GetUserContribut
 	}
 
 	for _, c := range contribs {
-		contrib := c.(map[string]interface{})
+		contrib, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		uc := UserContribution{
 			PageID:    getInt(contrib["pageid"]),
 			Title:     getString(contrib["title"]),

@@ -81,7 +81,10 @@ If you want to clear a page, use a single space or redirect instead.`,
 		return EditResult{}, err
 	}
 
-	edit := resp["edit"].(map[string]interface{})
+	edit, ok := resp["edit"].(map[string]interface{})
+	if !ok {
+		return EditResult{}, fmt.Errorf("unexpected API response: missing 'edit' object")
+	}
 	result := getString(edit["result"])
 
 	if result != "Success" {
@@ -101,8 +104,8 @@ If you want to clear a page, use a single space or redirect instead.`,
 	editResult := EditResult{
 		Success:    true,
 		Title:      getString(edit["title"]),
-		PageID:     int(edit["pageid"].(float64)),
-		RevisionID: int(edit["newrevid"].(float64)),
+		PageID:     getInt(edit["pageid"]),
+		RevisionID: getInt(edit["newrevid"]),
 		NewPage:    edit["new"] != nil,
 		Message:    "Page edited successfully",
 	}
@@ -482,7 +485,10 @@ func (c *Client) checkPagesExist(ctx context.Context, titles []string) (map[stri
 		normalized := make(map[string]string)
 		if normList, ok := query["normalized"].([]interface{}); ok {
 			for _, n := range normList {
-				norm := n.(map[string]interface{})
+				norm, ok := n.(map[string]interface{})
+				if !ok {
+					continue
+				}
 				from := getString(norm["from"])
 				to := getString(norm["to"])
 				normalized[to] = from
@@ -491,7 +497,10 @@ func (c *Client) checkPagesExist(ctx context.Context, titles []string) (map[stri
 
 		// Check each page in the response
 		for _, pageData := range pages {
-			page := pageData.(map[string]interface{})
+			page, ok := pageData.(map[string]interface{})
+			if !ok {
+				continue
+			}
 			title := getString(page["title"])
 
 			// Check if page exists (missing key indicates non-existence)
@@ -772,7 +781,10 @@ func (c *Client) getFileURL(ctx context.Context, filename string) (string, strin
 	}
 
 	for _, pageData := range pages {
-		page := pageData.(map[string]interface{})
+		page, ok := pageData.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		// Check if file exists
 		if _, missing := page["missing"]; missing {
@@ -784,7 +796,10 @@ func (c *Client) getFileURL(ctx context.Context, filename string) (string, strin
 			return "", "", fmt.Errorf("no file info available for '%s'", filename)
 		}
 
-		info := imageinfo[0].(map[string]interface{})
+		info, ok := imageinfo[0].(map[string]interface{})
+		if !ok {
+			return "", "", fmt.Errorf("unexpected API response: invalid imageinfo format for '%s'", filename)
+		}
 		fileURL := getString(info["url"])
 		mimeType := getString(info["mime"])
 
