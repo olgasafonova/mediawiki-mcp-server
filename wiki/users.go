@@ -51,7 +51,10 @@ func (c *Client) ListUsers(ctx context.Context, args ListUsersArgs) (ListUsersRe
 
 	users := make([]UserInfo, 0, len(allusers))
 	for _, u := range allusers {
-		user := u.(map[string]interface{})
+		user, ok := u.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		userInfo := UserInfo{
 			UserID:       getInt(user["userid"]),

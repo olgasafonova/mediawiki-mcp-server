@@ -48,18 +48,24 @@ func (c *Client) GetExternalLinks(ctx context.Context, args GetExternalLinksArgs
 	var pageTitle string
 
 	for _, pageData := range pages {
-		page := pageData.(map[string]interface{})
+		page, ok := pageData.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		// Check if page exists
 		if _, missing := page["missing"]; missing {
 			return ExternalLinksResult{}, fmt.Errorf("page '%s' does not exist", args.Title)
 		}
 
-		pageTitle = page["title"].(string)
+		pageTitle = getString(page["title"])
 
 		if extlinks, ok := page["extlinks"].([]interface{}); ok {
 			for _, el := range extlinks {
-				link := el.(map[string]interface{})
+				link, ok := el.(map[string]interface{})
+				if !ok {
+					continue
+				}
 				linkURL := getString(link["*"])
 				if linkURL == "" {
 					linkURL = getString(link["url"])
@@ -348,7 +354,10 @@ func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBa
 	}
 
 	for _, bl := range backlinks {
-		link := bl.(map[string]interface{})
+		link, ok := bl.(map[string]interface{})
+		if !ok {
+			continue
+		}
 		info := BacklinkInfo{
 			PageID:    getInt(link["pageid"]),
 			Title:     getString(link["title"]),
@@ -573,7 +582,10 @@ func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesAr
 	// Collect filtered titles
 	var filteredTitles []string
 	for _, r := range results {
-		page := r.(map[string]interface{})
+		page, ok := r.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		// Filter by namespace if specified
 		ns := getInt(page["ns"])
@@ -620,7 +632,10 @@ func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesAr
 			pages, _ := infoQuery["pages"].(map[string]interface{})
 
 			for _, pageData := range pages {
-				p := pageData.(map[string]interface{})
+				p, ok := pageData.(map[string]interface{})
+				if !ok {
+					continue
+				}
 				orphaned = append(orphaned, OrphanedPage{
 					Title:      getString(p["title"]),
 					PageID:     getInt(p["pageid"]),
