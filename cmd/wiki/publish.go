@@ -46,7 +46,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	preview, _ := cmd.Flags().GetBool("preview")
 
 	// Read the markdown file
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path from CLI argument
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", filePath, err)
 	}
