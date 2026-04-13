@@ -82,7 +82,7 @@ func runPageHistory(cmd *cobra.Command, title string) error {
 		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\n",
 			r.RevID, r.User, r.Timestamp, r.Size, comment)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	return nil
 }
@@ -126,7 +126,7 @@ func runUserContributions(cmd *cobra.Command, user string) error {
 		fmt.Fprintf(tw, "%s\t%d\t%s\t%d\t%s\n",
 			c.Title, c.RevID, c.Timestamp, c.Size, comment)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	return nil
 }

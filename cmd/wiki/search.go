@@ -68,7 +68,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		snippet := truncate(stripHTML(hit.Snippet), 80)
 		fmt.Fprintf(tw, "%s\t%d\t%s\n", hit.Title, hit.Size, snippet)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore {
 		fmt.Printf("\nMore results available. Use --offset %d to see next page.\n", result.NextOffset)

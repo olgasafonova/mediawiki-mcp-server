@@ -182,7 +182,7 @@ func runBulkReplace(cmd *cobra.Command) error {
 	for _, r := range result.Results {
 		fmt.Fprintf(tw, "%s\t%d\t%d\n", r.Title, r.MatchCount, r.ReplaceCount)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	return nil
 }

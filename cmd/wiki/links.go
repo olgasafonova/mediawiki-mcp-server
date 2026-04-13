@@ -75,7 +75,7 @@ func runLinksExternal(cmd *cobra.Command, args []string) error {
 	for _, link := range result.Links {
 		fmt.Fprintf(tw, "%s\n", link.URL)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	return nil
 }
@@ -145,7 +145,7 @@ func runLinksBacklinks(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintf(tw, "%s\t%d\t%s\n", bl.Title, bl.Namespace, redirect)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore {
 		fmt.Printf("\nMore results available. Use --limit %d to see more.\n", limit*2)
@@ -277,7 +277,7 @@ func runLinksCheck(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", r.URL, status, code)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	return nil
 }
@@ -335,7 +335,7 @@ func runLinksOrphaned(cmd *cobra.Command, args []string) error {
 	for _, page := range result.OrphanedPages {
 		fmt.Fprintf(tw, "%s\t%d\t%s\n", page.Title, page.Length, page.LastEdited)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	return nil
 }
