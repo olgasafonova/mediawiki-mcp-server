@@ -519,6 +519,23 @@ func TestResetCookies(t *testing.T) {
 	}
 }
 
+func TestInvalidateCSRFToken(t *testing.T) {
+	client := createTestClient(t)
+	defer client.Close()
+
+	// Set a cached token
+	client.csrfToken = "cached-token"
+	client.tokenExpiry = time.Now().Add(time.Hour)
+
+	// Invalidate
+	client.invalidateCSRFToken()
+
+	// Token should be cleared, but expiry is untouched (next getCSRFToken will fetch fresh)
+	if client.csrfToken != "" {
+		t.Errorf("Expected csrfToken to be empty, got %q", client.csrfToken)
+	}
+}
+
 func TestEnsureLoggedIn_AlreadyLoggedIn(t *testing.T) {
 	client := createTestClient(t)
 	defer client.Close()
