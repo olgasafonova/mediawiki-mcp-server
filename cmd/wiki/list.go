@@ -85,7 +85,7 @@ func runListPages(cmd *cobra.Command, args []string) error {
 	for _, p := range result.Pages {
 		fmt.Fprintf(tw, "%d\t%s\n", p.PageID, p.Title)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore {
 		fmt.Printf("\nMore pages available. Use --continue %q to see next page.\n", result.ContinueFrom)
@@ -143,7 +143,7 @@ func runListCategories(cmd *cobra.Command, args []string) error {
 	for _, c := range result.Categories {
 		fmt.Fprintf(tw, "%s\t%d\n", c.Title, c.Members)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore {
 		fmt.Printf("\nMore categories available. Use --continue %q to see next page.\n", result.ContinueFrom)
@@ -208,7 +208,7 @@ func runListMembers(cmd *cobra.Command, args []string) error {
 	for _, m := range result.Members {
 		fmt.Fprintf(tw, "%d\t%s\n", m.PageID, m.Title)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore {
 		fmt.Printf("\nMore members available. Use --continue %q to see next page.\n", result.ContinueFrom)
@@ -281,7 +281,7 @@ func runListUsers(cmd *cobra.Command, args []string) error {
 		groups := strings.Join(u.Groups, ", ")
 		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\n", u.UserID, u.Name, groups, u.EditCount, u.Registration)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore {
 		fmt.Printf("\nMore users available. Use --continue %q to see next page.\n", result.ContinueFrom)

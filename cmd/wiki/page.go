@@ -216,7 +216,7 @@ func runPageInfo(cmd *cobra.Command, client *wiki.Client, ctx context.Context, t
 			}
 			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", p.Title, p.Length, p.LastRevision, redirect)
 		}
-		tw.Flush()
+		_ = tw.Flush()
 		return nil
 	}
 
@@ -280,6 +280,6 @@ func runPageImages(cmd *cobra.Command, client *wiki.Client, ctx context.Context,
 		}
 		fmt.Fprintf(tw, "%s\t%d\t%s\n", img.Title, img.Size, dims)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	return nil
 }

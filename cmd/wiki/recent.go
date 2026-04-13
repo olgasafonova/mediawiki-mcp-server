@@ -68,7 +68,7 @@ func runRecent(cmd *cobra.Command, args []string) error {
 		for _, item := range result.Aggregated.Items {
 			fmt.Fprintf(tw, "%s\t%d\n", item.Key, item.Count)
 		}
-		tw.Flush()
+		_ = tw.Flush()
 		return nil
 	}
 
@@ -92,7 +92,7 @@ func runRecent(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			c.Timestamp.Format("2006-01-02 15:04"), c.User, c.Type, c.Title, comment)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if result.HasMore && result.ContinueFrom != "" {
 		fmt.Printf("\nMore results available. Use --continue %q to see next page.\n", result.ContinueFrom)

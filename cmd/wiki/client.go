@@ -18,9 +18,9 @@ func newWikiClient(cmd *cobra.Command) (*wiki.Client, error) {
 	// When --url overrides the wiki, clear credentials to avoid
 	// sending Tieto creds to Wikipedia (or vice versa).
 	if urlFlag != "" {
-		os.Setenv("MEDIAWIKI_URL", urlFlag)
-		os.Unsetenv("MEDIAWIKI_USERNAME")
-		os.Unsetenv("MEDIAWIKI_PASSWORD")
+		_ = os.Setenv("MEDIAWIKI_URL", urlFlag) //nolint:gosec // G104: CLI flag override, failure is non-critical
+		_ = os.Unsetenv("MEDIAWIKI_USERNAME")   //nolint:gosec // G104
+		_ = os.Unsetenv("MEDIAWIKI_PASSWORD")   //nolint:gosec // G104
 	}
 
 	cfg, err := wiki.LoadConfig()
