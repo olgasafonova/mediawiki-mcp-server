@@ -31,14 +31,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// authSchemes returns the auth schemes list for the Server Card.
-func authSchemes(token string) []string {
-	if token != "" {
-		return []string{"bearer"}
-	}
-	return []string{}
-}
-
 // recoverPanic wraps a function with panic recovery and returns an error instead of crashing
 func recoverPanic(logger *slog.Logger, operation string) {
 	if r := recover(); r != nil {
@@ -671,10 +663,6 @@ Read operations work without authentication.`,
 			URL:    "https://github.com/olgasafonova/mediawiki-mcp-server",
 			Source: "github",
 		},
-		Capabilities: &servercard.Capabilities{
-			Tools:   &servercard.ToolsCap{},
-			Logging: &servercard.LoggingCap{},
-		},
 		Provider: &servercard.Provider{
 			Name: "Olga Safonova",
 			URL:  "https://github.com/olgasafonova",
@@ -828,7 +816,6 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		Type:                      "streamable-http",
 		URL:                       "/",
 		SupportedProtocolVersions: []string{"2025-06-18"},
-		Authentication:            &servercard.Auth{Required: authToken != "", Schemes: authSchemes(authToken)},
 	}}
 	mux.Handle(servercard.WellKnownPath, servercard.Handler(card))
 
