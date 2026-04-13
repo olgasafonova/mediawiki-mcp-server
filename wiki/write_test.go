@@ -248,6 +248,60 @@ func TestEditPage_EditFailed(t *testing.T) {
 	}
 }
 
+func TestEditPage_BadTokenRetry(t *testing.T) {
+	attempts := 0
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		action := r.FormValue("action")
+		if action == "edit" {
+			attempts++
+			if attempts == 1 {
+				// First attempt: return badtoken error
+				response := map[string]interface{}{
+					"error": map[string]interface{}{
+						"code": "badtoken",
+						"info": "Invalid CSRF token",
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(response)
+				return
+			}
+			// Second attempt: succeed
+			response := map[string]interface{}{
+				"edit": map[string]interface{}{
+					"result":   "Success",
+					"pageid":   float64(123),
+					"title":    "Test Page",
+					"newrevid": float64(456),
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "Content",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed after retry: %v", err)
+	}
+
+	if !result.Success {
+		t.Error("Expected success after badtoken retry")
+	}
+	if attempts != 2 {
+		t.Errorf("Expected 2 edit attempts, got %d", attempts)
+	}
+}
+
 func TestFindReplace_Success(t *testing.T) {
 	callCount := 0
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {

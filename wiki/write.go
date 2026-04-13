@@ -49,6 +49,19 @@ If you want to clear a page, use a single space or redirect instead.`,
 		return EditResult{}, err
 	}
 
+	editResult, err := c.performEdit(ctx, args)
+	if err != nil && strings.Contains(err.Error(), "badtoken") {
+		c.invalidateCSRFToken()
+		editResult, err = c.performEdit(ctx, args)
+	}
+	if err != nil {
+		return EditResult{}, err
+	}
+	return editResult, nil
+}
+
+// performEdit executes a single edit attempt with a fresh CSRF token.
+func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult, error) {
 	token, err := c.getCSRFToken(ctx)
 	if err != nil {
 		return EditResult{}, fmt.Errorf("authentication failed: %w", err)
@@ -79,6 +92,13 @@ If you want to clear a page, use a single space or redirect instead.`,
 	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
 		return EditResult{}, err
+	}
+
+	// Check for API-level errors (badtoken, etc.)
+	if errInfo, ok := resp["error"].(map[string]interface{}); ok {
+		code := getString(errInfo["code"])
+		info := getString(errInfo["info"])
+		return EditResult{}, fmt.Errorf("%s: %s", code, info)
 	}
 
 	edit, ok := resp["edit"].(map[string]interface{})
@@ -539,20 +559,10 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 		return UploadFileResult{}, fmt.Errorf("authentication required for uploads: %w", err)
 	}
 
-	// Get CSRF token
-	token, err := c.getCSRFToken(ctx)
-	if err != nil {
-		return UploadFileResult{}, fmt.Errorf("failed to get edit token: %w", err)
-	}
-
-	var result UploadFileResult
-
-	// If URL provided, use URL upload
-	if args.FileURL != "" {
-		result, err = c.uploadFromURL(ctx, args, token)
-	} else {
-		// For local file upload, we need multipart form
-		result, err = c.uploadFromFile(ctx, args, token)
+	result, err := c.performUpload(ctx, args)
+	if err != nil && strings.Contains(err.Error(), "badtoken") {
+		c.invalidateCSRFToken()
+		result, err = c.performUpload(ctx, args)
 	}
 
 	// Log upload attempt (even if error occurred)
@@ -590,6 +600,19 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 	})
 
 	return result, nil
+}
+
+// performUpload executes a single upload attempt with a fresh CSRF token.
+func (c *Client) performUpload(ctx context.Context, args UploadFileArgs) (UploadFileResult, error) {
+	token, err := c.getCSRFToken(ctx)
+	if err != nil {
+		return UploadFileResult{}, fmt.Errorf("failed to get edit token: %w", err)
+	}
+
+	if args.FileURL != "" {
+		return c.uploadFromURL(ctx, args, token)
+	}
+	return c.uploadFromFile(ctx, args, token)
 }
 
 // uploadFromURL uploads a file from a URL
@@ -856,28 +879,11 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 	return data, nil
 }
 
-// MovePage moves (renames) a wiki page
-func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResult, error) {
-	if args.From == "" {
-		return MovePageResult{}, &ValidationError{
-			Field:   "from",
-			Message: "source page title is required",
-		}
-	}
-	if args.To == "" {
-		return MovePageResult{}, &ValidationError{
-			Field:   "to",
-			Message: "target page title is required",
-		}
-	}
-
-	if err := c.EnsureLoggedIn(ctx); err != nil {
-		return MovePageResult{}, fmt.Errorf("authentication required for page moves: %w", err)
-	}
-
+// performMove executes a single move attempt with a fresh CSRF token.
+func (c *Client) performMove(ctx context.Context, args MovePageArgs) (map[string]interface{}, error) {
 	token, err := c.getCSRFToken(ctx)
 	if err != nil {
-		return MovePageResult{}, fmt.Errorf("authentication failed: %w", err)
+		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
 
 	params := url.Values{}
@@ -906,6 +912,45 @@ func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResul
 	}
 
 	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for badtoken error so caller can retry
+	if errInfo, ok := resp["error"].(map[string]interface{}); ok {
+		code := getString(errInfo["code"])
+		if code == "badtoken" {
+			return nil, fmt.Errorf("%s: %s", code, getString(errInfo["info"]))
+		}
+	}
+
+	return resp, nil
+}
+
+// MovePage moves (renames) a wiki page
+func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResult, error) {
+	if args.From == "" {
+		return MovePageResult{}, &ValidationError{
+			Field:   "from",
+			Message: "source page title is required",
+		}
+	}
+	if args.To == "" {
+		return MovePageResult{}, &ValidationError{
+			Field:   "to",
+			Message: "target page title is required",
+		}
+	}
+
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return MovePageResult{}, fmt.Errorf("authentication required for page moves: %w", err)
+	}
+
+	resp, err := c.performMove(ctx, args)
+	if err != nil && strings.Contains(err.Error(), "badtoken") {
+		c.invalidateCSRFToken()
+		resp, err = c.performMove(ctx, args)
+	}
 	if err != nil {
 		return MovePageResult{}, err
 	}

@@ -837,6 +837,15 @@ func (c *Client) getCSRFToken(ctx context.Context) (string, error) {
 	return csrfToken, nil
 }
 
+// invalidateCSRFToken clears the cached CSRF token so the next write
+// operation fetches a fresh one. MediaWiki can invalidate CSRF tokens
+// after use, so we must not reuse them across edit requests.
+func (c *Client) invalidateCSRFToken() {
+	c.mu.Lock()
+	c.csrfToken = ""
+	c.mu.Unlock()
+}
+
 // EnsureLoggedIn ensures the client is logged in (for wikis requiring auth for read)
 func (c *Client) EnsureLoggedIn(ctx context.Context) error {
 	c.mu.RLock()
