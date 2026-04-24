@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - goos: darwin
@@ -39,18 +40,31 @@ jobs:
         with:
           go-version: '1.26'
 
-      - name: Build
+      - name: Build MCP server
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           go build -ldflags="-s -w" -o mediawiki-mcp-server-${{ matrix.suffix }}${{ matrix.ext }} .
 
-      - name: Upload artifact
+      - name: Build wiki CLI
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -ldflags="-s -w" -o wiki-${{ matrix.suffix }}${{ matrix.ext }} ./cmd/wiki
+
+      - name: Upload MCP server artifact
         uses: actions/upload-artifact@v7
         with:
           name: mediawiki-mcp-server-${{ matrix.suffix }}
           path: mediawiki-mcp-server-${{ matrix.suffix }}${{ matrix.ext }}
+
+      - name: Upload wiki CLI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wiki-${{ matrix.suffix }}
+          path: wiki-${{ matrix.suffix }}${{ matrix.ext }}
 
   release:
     name: Create Release
