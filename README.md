@@ -1,12 +1,12 @@
 # MediaWiki MCP Server
 
-Connect your AI assistant to any MediaWiki wiki. Search, read, and edit wiki content using natural language.
+Connect your AI assistant to any MediaWiki wiki, or script it directly from the terminal. Search, read, and edit wiki content using natural language or the `wiki` CLI.
 
 [![CI](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/mediawiki-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/mediawiki-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Works with:** Claude Desktop, Claude Code, Cursor, ChatGPT, n8n, and any MCP-compatible tool.
+**Works with:** Claude Desktop, Claude Code, Cursor, ChatGPT, n8n, and any MCP-compatible tool. Also ships a `wiki` CLI for shell scripts and CI pipelines, see [Use from the Terminal](#use-from-the-terminal).
 
 ---
 
@@ -80,6 +80,7 @@ Your wiki's API URL is usually:
 | n8n | [Setup instructions](#n8n) |
 | VS Code | [Setup instructions](#vs-code) |
 | Google ADK (Go/Python) | [Setup instructions](#google-adk) |
+| Shell scripts / CI (no AI) | [Use from the Terminal](#use-from-the-terminal) |
 
 ---
 
@@ -406,6 +407,75 @@ wiki_tools = MCPToolset(
 ```
 
 </details>
+
+---
+
+## Use from the Terminal
+
+The `wiki` CLI is a command-line companion to the MCP server. It shares the same API client, auth, and configuration. Reach for it when a prompt is overkill: shell pipelines, CI checks, batch edits, cron jobs.
+
+### Install
+
+```bash
+git clone https://github.com/olgasafonova/mediawiki-mcp-server.git
+cd mediawiki-mcp-server
+go build -o ~/go/bin/wiki ./cmd/wiki
+```
+
+### Configure
+
+The CLI reads the same environment variables as the MCP server.
+
+```bash
+export MEDIAWIKI_URL="https://your-wiki.com/api.php"
+
+# Optional, for write operations
+export MEDIAWIKI_USERNAME="User@BotName"
+export MEDIAWIKI_PASSWORD="your-bot-password"
+
+wiki config         # verify setup
+```
+
+You can also override the URL per-invocation with `--url`.
+
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `wiki search <query>` | Full-text search |
+| `wiki page <title>` | Read a page |
+| `wiki edit <title>` | Create or edit a page |
+| `wiki replace <find> <replace>` | Find and replace across pages |
+| `wiki lint <page>` | Check terminology and links (exit code 4 on findings) |
+| `wiki audit` | Wiki-wide health check |
+| `wiki recent` | Recent changes |
+| `wiki history <page>` | Revision history |
+| `wiki diff <page>` | Compare revisions |
+| `wiki links [external\|backlinks\|broken\|orphans\|batch]` | Link analysis |
+| `wiki list [pages\|categories\|members\|users]` | Listing queries |
+| `wiki publish <file.md>` | Convert Markdown to wikitext and publish |
+| `wiki config` | Show or verify configuration |
+| `wiki version` | Print CLI version |
+
+Every command supports `--json` (machine-readable output) and `--quiet` (errors only).
+
+### Examples
+
+```bash
+# Pipe lint results into CI
+wiki lint "Release Notes" --json > lint.json
+
+# Find broken external links as structured data
+wiki links broken --json | jq '.[] | select(.status >= 400)'
+
+# Publish a Markdown file
+wiki publish docs/onboarding.md --title "Onboarding"
+
+# Cron-friendly health check
+wiki audit --quiet --json > /tmp/wiki-health.json
+```
+
+Run `wiki <command> --help` for full flags.
 
 ---
 
