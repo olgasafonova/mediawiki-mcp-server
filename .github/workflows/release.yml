@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -89,3 +90,16 @@ jobs:
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger MCP Registry publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # GITHUB_TOKEN-created releases don't fire release:published events
+          # (GitHub anti-recursion). Dispatch mcp-registry.yml explicitly.
+          # Strip leading 'v' from tag since mcp-registry.yml expects bare semver.
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Dispatching mcp-registry.yml for ${GITHUB_REF_NAME} (version=${VERSION})"
+          gh workflow run mcp-registry.yml \
+            --ref "${GITHUB_REF_NAME}" \
+            -f version="${VERSION}"
