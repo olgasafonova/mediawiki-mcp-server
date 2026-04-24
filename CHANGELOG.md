@@ -4,6 +4,8 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-04-24
+
 ### Added
 - **`wiki` CLI** — a command-line companion to the MCP server for shell scripts and CI pipelines. Ships from the same repo under `cmd/wiki/`, shares the same API client, auth, and `MEDIAWIKI_*` environment variables. 14 commands: `search`, `page`, `edit`, `replace`, `lint` (exit code 4 on findings, CI-friendly), `audit`, `recent`, `history`, `diff`, `links` (external/backlinks/broken/orphans/batch), `list` (pages/categories/members/users), `publish` (Markdown → wikitext), `config`, `version`. Every command supports `--json` and `--quiet`.
 - Release workflow now builds and publishes both `mediawiki-mcp-server` and `wiki` binaries per platform.
