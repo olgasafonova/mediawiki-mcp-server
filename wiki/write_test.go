@@ -1228,6 +1228,8 @@ func TestDownloadFile_Success(t *testing.T) {
 
 	client := createMockClient(t, fileServer)
 	defer client.Close()
+	// httptest binds to 127.0.0.1, which validateFileURL would block.
+	client.allowPrivateDownloadForTest = true
 
 	ctx := context.Background()
 	content, err := client.downloadFile(ctx, fileServer.URL+"/test.txt")
@@ -1248,6 +1250,7 @@ func TestDownloadFile_NotFound(t *testing.T) {
 
 	client := createMockClient(t, fileServer)
 	defer client.Close()
+	client.allowPrivateDownloadForTest = true
 
 	ctx := context.Background()
 	_, err := client.downloadFile(ctx, fileServer.URL+"/notfound.txt")

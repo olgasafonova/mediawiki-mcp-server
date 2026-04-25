@@ -69,6 +69,11 @@ type Client struct {
 
 	// Audit logging for write operations
 	auditLogger AuditLogger
+
+	// allowPrivateDownloadForTest, when true, bypasses validateFileURL in
+	// downloadFile so httptest servers (bound to 127.0.0.1) work. Production
+	// code never sets this; it is only flipped on by tests in this package.
+	allowPrivateDownloadForTest bool
 }
 
 // MaxConcurrentRequests limits parallel API calls to prevent overwhelming the server

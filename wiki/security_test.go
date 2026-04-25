@@ -1,6 +1,9 @@
 package wiki
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -612,5 +615,186 @@ func TestSecurity_UnicodeBypassPrevention(t *testing.T) {
 				t.Errorf("Expected content to be allowed: %q, got error: %v", tc.content, err)
 			}
 		})
+	}
+}
+
+// TestValidateFileURL_PrivateIPs covers the SSRF guard on downloadFile's
+// validateFileURL helper. These are the URLs a malicious wiki imageinfo
+// response (or any future user-supplied caller) could try to reach.
+func TestValidateFileURL_PrivateIPs(t *testing.T) {
+	blockedURLs := []struct {
+		url  string
+		desc string
+	}{
+		{"http://169.254.169.254/latest/meta-data/", "AWS metadata endpoint"},
+		{"http://169.254.169.254/computeMetadata/v1/", "GCP metadata endpoint"},
+		{"http://10.0.0.1/internal", "RFC1918 class A"},
+		{"http://192.168.1.1/router", "RFC1918 class C"},
+		{"http://172.16.0.1/internal", "RFC1918 class B"},
+		{"http://127.0.0.1/local", "loopback IPv4"},
+		{"http://[::1]/local", "loopback IPv6"},
+		{"http://localhost/", "loopback by name"},
+		{"http://0.0.0.0/", "current network"},
+		{"http://100.64.0.1/", "shared address space (CGN)"},
+	}
+
+	for _, tc := range blockedURLs {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := validateFileURL(tc.url)
+			if err == nil {
+				t.Fatalf("Expected validateFileURL(%q) to fail, but it succeeded", tc.url)
+			}
+			ssrfErr, ok := err.(*SSRFError)
+			if !ok {
+				t.Fatalf("Expected *SSRFError, got %T: %v", err, err)
+			}
+			if ssrfErr.Code != SSRFCodePrivateIP {
+				t.Errorf("Expected code %s, got %s", SSRFCodePrivateIP, ssrfErr.Code)
+			}
+		})
+	}
+}
+
+func TestValidateFileURL_InvalidURLs(t *testing.T) {
+	invalidURLs := []struct {
+		url  string
+		desc string
+	}{
+		{"", "empty"},
+		{"file:///etc/passwd", "file scheme"},
+		{"ftp://example.com/", "ftp scheme"},
+		{"gopher://example.com/", "gopher scheme"},
+		{"javascript:alert(1)", "javascript scheme"},
+		{"http://", "missing host"},
+		{"://example.com", "missing scheme"},
+	}
+
+	for _, tc := range invalidURLs {
+		t.Run(tc.desc, func(t *testing.T) {
+			err := validateFileURL(tc.url)
+			if err == nil {
+				t.Fatalf("Expected validateFileURL(%q) to fail, but it succeeded", tc.url)
+			}
+			ssrfErr, ok := err.(*SSRFError)
+			if !ok {
+				t.Fatalf("Expected *SSRFError, got %T: %v", err, err)
+			}
+			if ssrfErr.Code != SSRFCodeInvalidURL {
+				t.Errorf("Expected code %s, got %s", SSRFCodeInvalidURL, ssrfErr.Code)
+			}
+		})
+	}
+}
+
+// TestValidateFileURL_DNSFailureFailsClosed ensures a hostname that doesn't
+// resolve is blocked rather than allowed (matches the policy of isPrivateHost
+// elsewhere in security.go).
+func TestValidateFileURL_DNSFailureFailsClosed(t *testing.T) {
+	err := validateFileURL("http://this-domain-definitely-does-not-exist-12345.invalid/file.pdf")
+	if err == nil {
+		t.Fatal("Expected DNS failure to fail closed (block), got nil")
+	}
+	ssrfErr, ok := err.(*SSRFError)
+	if !ok {
+		t.Fatalf("Expected *SSRFError, got %T: %v", err, err)
+	}
+	if ssrfErr.Code != SSRFCodeDNSError {
+		t.Errorf("Expected code %s, got %s", SSRFCodeDNSError, ssrfErr.Code)
+	}
+}
+
+// TestDownloadFile_BlocksPrivateIP confirms the lying-#nosec gap is closed:
+// downloadFile now refuses to fetch private/internal URLs even though the
+// underlying httpClient could reach them.
+func TestDownloadFile_BlocksPrivateIP(t *testing.T) {
+	// Use an httptest server only as a baseline Client; we never call it.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+	// NOTE: deliberately not setting allowPrivateDownloadForTest. We want
+	// the production validation path here.
+
+	ctx := context.Background()
+	blocked := []string{
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.1/internal",
+		"http://127.0.0.1/local",
+	}
+	for _, u := range blocked {
+		t.Run(u, func(t *testing.T) {
+			_, err := client.downloadFile(ctx, u)
+			if err == nil {
+				t.Fatalf("Expected downloadFile(%q) to be blocked, got nil", u)
+			}
+			if !strings.Contains(err.Error(), "download URL rejected") {
+				t.Errorf("Expected 'download URL rejected' in error, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestDownloadFile_RedirectToPrivateNetworkBlocked covers the SSRF-via-redirect
+// bypass: a public-IP server (or in this test, a localhost server we route
+// through with the test bypass) returning 302 Location: http://169.254.169.254/
+// must NOT cause downloadClient to follow into the private network.
+//
+// We exercise this by directly calling downloadClient.Do() against a server
+// that returns the malicious redirect. The CheckRedirect hook should reject
+// the second hop and the client should never reach the metadata endpoint.
+func TestDownloadFile_RedirectToPrivateNetworkBlocked(t *testing.T) {
+	metadataReached := false
+	// "metadata" server stand-in. If CheckRedirect is wired correctly, this
+	// handler should never be invoked.
+	metadataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		metadataReached = true
+		_, _ = w.Write([]byte("LEAKED METADATA"))
+	}))
+	defer metadataServer.Close()
+
+	// "Public" server that 302s to the metadata endpoint.
+	redirectingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Build a redirect target that resolves to a private IP. Since
+		// httptest binds to 127.0.0.1, the redirect target IS a private
+		// IP, which is exactly the condition CheckRedirect must catch.
+		http.Redirect(w, nil, metadataServer.URL+"/leak", http.StatusFound)
+	}))
+	defer redirectingServer.Close()
+
+	// Drive downloadClient directly so we exercise CheckRedirect even though
+	// the public-IP simulation here also lives on loopback.
+	req, err := http.NewRequest("GET", redirectingServer.URL+"/start", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := downloadClient.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("Expected redirect to be blocked, got nil error")
+	}
+	if metadataReached {
+		t.Fatal("FAIL: redirect followed into 'metadata' endpoint - SSRF bypass")
+	}
+}
+
+// TestDownloadFile_PublicURLRegression keeps the happy path covered: a
+// well-formed public-looking URL that fails validation only because of DNS
+// (the test never goes to the network for a real public host) should report
+// the validation failure cleanly, while a routed test server with the bypass
+// flag works end-to-end. The end-to-end bypass case is already covered by
+// TestDownloadFile_Success; here we just sanity-check that validateFileURL
+// accepts a syntactically valid public URL form on the parse + scheme path.
+func TestValidateFileURL_AcceptsPublicForm(t *testing.T) {
+	// 8.8.8.8 is Google DNS - public, will resolve, will not block.
+	if err := validateFileURL("http://8.8.8.8/file.txt"); err != nil {
+		t.Errorf("Expected public IP URL to pass validation, got: %v", err)
+	}
+	if err := validateFileURL("https://1.1.1.1/file.txt"); err != nil {
+		t.Errorf("Expected public IP URL to pass validation, got: %v", err)
 	}
 }
