@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-25T15:35:00Z",
+  "deslop_version": "2.1.0",
+  "scores": {
+    "file_health": 0.0,
+    "test_coverage": 53.5,
+    "secret_detection": 100.0,
+    "todo_debt": 100.0,
+    "dependency_health": 100.0,
+    "structural_quality": 90.0,
+    "overall": 73.9
+  },
+  "findings": [
+    {
+      "detector": "file_health",
+      "severity": "critical",
+      "key": "wiki/client_test.go",
+      "summary": "wiki/client_test.go (1,507 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "critical",
+      "key": "wiki/read.go",
+      "summary": "wiki/read.go (1,623 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "critical",
+      "key": "wiki/read_test.go",
+      "summary": "wiki/read_test.go (1,457 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "critical",
+      "key": "wiki/write_test.go",
+      "summary": "wiki/write_test.go (1,512 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "main.go",
+      "summary": "main.go (1,180 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "tools/definitions.go",
+      "summary": "tools/definitions.go (971 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/api_test.go",
+      "summary": "wiki/api_test.go (921 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/client.go",
+      "summary": "wiki/client.go (1,100 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/quality_test.go",
+      "summary": "wiki/quality_test.go (987 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/search_test.go",
+      "summary": "wiki/search_test.go (1,046 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/types.go",
+      "summary": "wiki/types.go (1,180 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/write.go",
+      "summary": "wiki/write.go (1,121 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "converter/converter.go",
+      "summary": "converter/converter.go (504 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "evals/runner.go",
+      "summary": "evals/runner.go (559 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/audit_test.go",
+      "summary": "wiki/audit_test.go (542 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/errors.go",
+      "summary": "wiki/errors.go (537 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/history_test.go",
+      "summary": "wiki/history_test.go (573 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/links.go",
+      "summary": "wiki/links.go (654 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/links_test.go",
+      "summary": "wiki/links_test.go (794 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/quality.go",
+      "summary": "wiki/quality.go (727 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/search.go",
+      "summary": "wiki/search.go (590 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/security_test.go",
+      "summary": "wiki/security_test.go (616 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/similarity_test.go",
+      "summary": "wiki/similarity_test.go (738 LOC)"
+    },
+    {
+      "detector": "structural_quality",
+      "severity": "warning",
+      "key": "god_package:wiki",
+      "summary": "wiki/ has 39 source files (>20)"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/audit.go",
+      "summary": "cmd/wiki/audit.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/client.go",
+      "summary": "cmd/wiki/client.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/config.go",
+      "summary": "cmd/wiki/config.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/diff.go",
+      "summary": "cmd/wiki/diff.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/edit.go",
+      "summary": "cmd/wiki/edit.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/history.go",
+      "summary": "cmd/wiki/history.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/links.go",
+      "summary": "cmd/wiki/links.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/lint.go",
+      "summary": "cmd/wiki/lint.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/list.go",
+      "summary": "cmd/wiki/list.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/output.go",
+      "summary": "cmd/wiki/output.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/page.go",
+      "summary": "cmd/wiki/page.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/publish.go",
+      "summary": "cmd/wiki/publish.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/recent.go",
+      "summary": "cmd/wiki/recent.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/replace.go",
+      "summary": "cmd/wiki/replace.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "cmd/wiki/search.go",
+      "summary": "cmd/wiki/search.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "converter/themes.go",
+      "summary": "converter/themes.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "tools/definitions.go",
+      "summary": "tools/definitions.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "tools/registry.go",
+      "summary": "tools/registry.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "wiki/types.go",
+      "summary": "wiki/types.go has no test file"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "wiki_editing_guidelines.go",
+      "summary": "wiki_editing_guidelines.go has no test file"
+    }
+  ]
+}
