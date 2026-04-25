@@ -844,8 +844,29 @@ func (c *Client) getFileURL(ctx context.Context, filename string) (string, strin
 	return "", "", fmt.Errorf("file '%s' not found", filename)
 }
 
-// downloadFile downloads a file from the given URL
+// downloadFile downloads a file from the given URL.
+//
+// SECURITY: The fileURL is validated against SSRF (private IPs, DNS rebinding,
+// redirect bypass) via validateFileURL before any network I/O. The actual
+// HTTP request goes through downloadClient, which uses safeDialer +
+// CheckRedirect for defense in depth. Callers in production today (only
+// SearchInFile) get fileURL from the wiki's own imageinfo API, so the URL is
+// already trusted. The validation closes the gap for any future caller that
+// might accept user-supplied URLs.
+//
+// Tests can set c.allowPrivateDownloadForTest to skip validation against
+// httptest servers (which bind to 127.0.0.1).
 func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, error) {
+	httpClient := downloadClient
+	if !c.allowPrivateDownloadForTest {
+		if err := validateFileURL(fileURL); err != nil {
+			return nil, fmt.Errorf("download URL rejected: %w", err)
+		}
+	} else {
+		// Test path: bypass SSRF guards so httptest (loopback) servers work.
+		httpClient = c.httpClient
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", fileURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -853,7 +874,7 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 
 	req.Header.Set("User-Agent", c.config.UserAgent)
 
-	resp, err := c.httpClient.Do(req) // #nosec G704 -- fileURL validated by validateFileURL in security.go before reaching here
+	resp, err := httpClient.Do(req) // #nosec G107 G704 -- URL validated by validateFileURL; request goes through downloadClient (safeDialer + CheckRedirect)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download: %w", err)
 	}

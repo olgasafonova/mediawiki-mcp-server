@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"syscall"
 	"time"
 )
@@ -114,6 +115,110 @@ func isPrivateIP(ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+// downloadClient is a shared HTTP client for file downloads with SSRF protections.
+// Mirrors linkCheckClient: safeDialer for DNS-rebinding protection plus a
+// CheckRedirect that re-validates redirect targets so a public host can't
+// 302 the download path into a private network (e.g. cloud metadata).
+var downloadClient = &http.Client{
+	Timeout: 60 * time.Second,
+	Transport: &http.Transport{
+		DialContext:         safeDialer.DialContext,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		ForceAttemptHTTP2:   true,
+	},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// Allow up to 5 redirects (matches linkCheckClient).
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+
+		// Re-validate the redirect target. Without this, a public-IP server
+		// could return 302 Location: http://169.254.169.254/ and the Go
+		// http.Client would happily follow it.
+		if hostname := req.URL.Hostname(); hostname != "" {
+			isPrivate, _ := isPrivateHost(hostname)
+			if isPrivate {
+				return &SSRFError{
+					Code:    SSRFCodeRedirect,
+					URL:     req.URL.String(),
+					Reason:  "redirect to private network blocked",
+					Blocked: true,
+				}
+			}
+		}
+
+		return nil
+	},
+}
+
+// validateFileURL checks whether a download URL is safe to fetch.
+// Used by Client.downloadFile to enforce SSRF protections at the call site,
+// in addition to the safeDialer / CheckRedirect guards on downloadClient
+// (defense in depth: the dialer protects against DNS rebinding, this catches
+// obviously bad URLs early with a structured SSRFError).
+//
+// Allowed: http(s) URLs whose host (or all DNS-resolved IPs) are public.
+// Blocked: private/internal IPs, link-local, loopback, multicast, malformed
+// URLs, non-http(s) schemes, and DNS-resolution failures (fail-closed).
+func validateFileURL(rawURL string) error {
+	if rawURL == "" {
+		return &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  "empty URL",
+			Blocked: true,
+		}
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  fmt.Sprintf("URL parse failed: %v", err),
+			Blocked: true,
+		}
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  fmt.Sprintf("unsupported scheme %q (only http/https allowed)", parsed.Scheme),
+			Blocked: true,
+		}
+	}
+
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  "missing host",
+			Blocked: true,
+		}
+	}
+
+	isPrivate, ssrfErr := isPrivateHost(hostname)
+	if isPrivate {
+		if ssrfErr != nil {
+			// DNS error - return the structured error (fail-closed)
+			return ssrfErr
+		}
+		return &SSRFError{
+			Code:    SSRFCodePrivateIP,
+			URL:     rawURL,
+			Reason:  fmt.Sprintf("host %q resolves to a private/internal network", hostname),
+			Blocked: true,
+		}
+	}
+
+	return nil
 }
 
 // isPrivateHost checks if a hostname resolves to any private IP
