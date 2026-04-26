@@ -1,8 +1,13 @@
 name: Publish to MCP Registry
 
+# Triggered exclusively by release.yml's "Trigger MCP Registry publish" step
+# (gh workflow run mcp-registry.yml -f version=...). The release: published
+# event is intentionally NOT a trigger here — it would double-fire alongside
+# the explicit dispatch (observed in productplan-mcp-server v5.0.1 on
+# 26-04-2026: first run published, second run failed with
+# "cannot publish duplicate version"). Same pattern existed here; preempted.
+# workflow_dispatch also covers manual reruns when a registry publish fails.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -25,12 +30,7 @@ jobs:
       - name: Get version
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
-          else
-            VERSION="${{ github.event.inputs.version }}"
-          fi
+          VERSION="${{ github.event.inputs.version }}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Wait for Docker image
