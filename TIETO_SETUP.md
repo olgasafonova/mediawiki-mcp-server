@@ -168,20 +168,22 @@ Replace the email and password with your actual credentials.
 
 ### Cursor
 
-1. **Quit Cursor** completely
+Cursor has built-in MCP support. You don't need to install any extension.
+
+1. **Quit Cursor** completely (Cmd+Q on Mac, right-click the taskbar icon → Quit on Windows)
 2. Open the MCP settings file:
 
    **Mac:** Open Terminal and run:
    ```bash
-   open ~/Library/Application\ Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+   mkdir -p ~/.cursor && open -t ~/.cursor/mcp.json
    ```
 
    **Windows:** Press Win+R, type this, and press Enter:
    ```
-   notepad %APPDATA%\Cursor\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json
+   notepad %USERPROFILE%\.cursor\mcp.json
    ```
 
-   If the file doesn't exist, create it.
+   If the file doesn't exist, the editor will offer to create it.
 
 3. Paste this configuration:
 
@@ -219,6 +221,15 @@ Replace the email and password with your actual credentials.
 
 4. Replace the placeholders with your actual values (same as Claude Desktop above)
 5. Save the file and reopen Cursor
+6. Verify in **Cursor Settings → MCP** — you should see `tieto-wiki` listed with a green status dot
+
+**Don't want to edit JSON?** You can also add it through the UI:
+1. Open **Cursor Settings** (Cmd+Shift+J on Mac, Ctrl+Shift+J on Windows)
+2. Click **MCP** in the sidebar (or "Tools & Integrations" in newer versions)
+3. Click **+ Add new MCP server**
+4. Fill in the name (`tieto-wiki`), command (full path to the binary), and the three env vars
+
+**Note:** This uses Cursor's native MCP support. If your team uses the Cline extension instead, the config file lives at `~/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (Mac) — same JSON shape.
 
 ---
 
