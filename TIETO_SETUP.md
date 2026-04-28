@@ -52,8 +52,14 @@ Not sure which Mac you have? Click the Apple menu, then "About This Mac". If it 
 
 1. Go to the [Releases page](https://github.com/olgasafonova/mediawiki-mcp-server/releases/latest)
 2. Download: `mediawiki-mcp-server-windows.exe`
-3. Save it to your **Downloads** folder
+3. **Important:** Save it to a folder with **no spaces in the path** and **not under OneDrive**. We recommend creating a folder called `C:\mcp` and putting the file there. Open Command Prompt and run:
+   ```
+   mkdir C:\mcp
+   move %USERPROFILE%\Downloads\mediawiki-mcp-server-windows.exe C:\mcp\
+   ```
 4. You're done with this step!
+
+**Why not Downloads or Desktop?** On corporate machines, those folders are often redirected through OneDrive (e.g., `C:\Users\YourName\OneDrive - Tietoevry\Desktop\...`). The space in `OneDrive - Tietoevry` breaks Cursor and Claude Desktop because they don't quote command paths. OneDrive can also unload files to "online only" mode, making them disappear when the AI tool tries to launch them. `C:\mcp` avoids both problems.
 
 ---
 
@@ -127,7 +133,7 @@ Pick the tool you're using:
    {
      "mcpServers": {
        "tieto-wiki": {
-         "command": "C:\\Users\\YOUR-USERNAME\\Downloads\\mediawiki-mcp-server-windows.exe",
+         "command": "C:\\mcp\\mediawiki-mcp-server-windows.exe",
          "env": {
            "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
            "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
@@ -208,7 +214,7 @@ Cursor has built-in MCP support. You don't need to install any extension.
    {
      "mcpServers": {
        "tieto-wiki": {
-         "command": "C:\\Users\\YOUR-USERNAME\\Downloads\\mediawiki-mcp-server-windows.exe",
+         "command": "C:\\mcp\\mediawiki-mcp-server-windows.exe",
          "env": {
            "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
            "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
@@ -250,7 +256,7 @@ VS Code supports MCP servers through its built-in MCP configuration.
 
    **Windows:**
    ```
-   C:\Users\YOUR-USERNAME\Downloads\mediawiki-mcp-server-windows.exe
+   C:\mcp\mediawiki-mcp-server-windows.exe
    ```
 
 6. Give it the name: `tieto-wiki`
@@ -330,7 +336,20 @@ Here's what happened in simple terms:
 
 **Windows: "not recognized as an internal or external command"**
 - Make sure the `.exe` file is in the path you specified
-- Try using the full path: `C:\Users\YourName\Downloads\mediawiki-mcp-server-windows.exe`
+- Try using the full path: `C:\mcp\mediawiki-mcp-server-windows.exe`
+
+**Windows: error mentions a path that ends at `\OneDrive` or cuts off mid-path**
+
+Example error: `'C:\Users\YourName\OneDrive' is not recognized as an internal or external command`
+
+This happens when your `.exe` is saved in Downloads, Desktop, or Documents on a corporate machine where those folders are redirected through OneDrive. The actual path is something like `C:\Users\YourName\OneDrive - Tietoevry\Desktop\...`, and the space in `OneDrive - Tietoevry` breaks the command.
+
+**Fix:** Move the `.exe` to `C:\mcp\` (a path with no spaces, not under OneDrive):
+```
+mkdir C:\mcp
+move "%USERPROFILE%\Downloads\mediawiki-mcp-server-windows.exe" C:\mcp\
+```
+Then update your config file to point to `C:\\mcp\\mediawiki-mcp-server-windows.exe` and restart your AI tool.
 
 **Still stuck?**
 - Ask a colleague who has already set this up
