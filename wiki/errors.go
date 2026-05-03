@@ -34,6 +34,11 @@ const (
 	// Not found error codes
 	NotFoundCodePage     ErrorCode = "NOT_FOUND_PAGE"
 	NotFoundCodeCategory ErrorCode = "NOT_FOUND_CATEGORY"
+
+	// API transport error codes (HTTP-level failures from the wiki API)
+	APICodeClientError ErrorCode = "API_CLIENT_ERROR" // 4xx (non-429)
+	APICodeServerError ErrorCode = "API_SERVER_ERROR" // 5xx
+	APICodeUnknown     ErrorCode = "API_UNKNOWN"      // 1xx, 2xx-non-200, anything else
 )
 
 // SSRFError represents a blocked SSRF attempt with structured error code
@@ -534,4 +539,65 @@ func WrapAPIError(code, info, operation string) *WikiError {
 	}
 
 	return err
+}
+
+// APIError represents a non-OK HTTP response from the wiki API.
+//
+// SECURITY (HG-2): the raw response body is never embedded in the error
+// message. The body may contain MediaWiki HTML error pages, MITM proxy
+// responses, or echoed POST parameters (worst-case lgpassword on the
+// login leg if a misconfigured proxy echoes request bodies). The Error()
+// method exposes only the HTTP status, code, and a stable status-text
+// message; the body is preserved on the struct via BodySnippet (capped
+// to APIErrorBodyMax bytes) for diagnostic logging by the SERVER, never
+// surfaced to MCP callers.
+type APIError struct {
+	StatusCode int
+	Code       ErrorCode
+	// BodySnippet is the truncated, server-only body capture for logging.
+	// It is NOT included in Error() output. Length capped at APIErrorBodyMax.
+	BodySnippet string
+}
+
+// APIErrorBodyMax caps the body snippet retained on APIError for server-side
+// logging. Beyond this we trade diagnostic depth for risk of leaking sensitive
+// state into log files (some operators ship logs to remote sinks).
+const APIErrorBodyMax = 256
+
+func (e *APIError) Error() string {
+	// Use http.StatusText via the standard library convention. We import
+	// net/http where APIError is constructed (in client.go) so the call
+	// site passes a stable description; here we just format what we have.
+	return fmt.Sprintf("wiki API error: HTTP %d (%s)", e.StatusCode, e.Code)
+}
+
+func (e *APIError) ErrorCode() ErrorCode {
+	return e.Code
+}
+
+// NewAPIError builds an APIError, classifying the status code into a stable
+// ErrorCode and capturing a truncated body snippet for server-side logging.
+// statusText should be the http.StatusText(statusCode) value; it is included
+// in the human-readable error message but the body is NOT.
+func NewAPIError(statusCode int, body []byte) *APIError {
+	var code ErrorCode
+	switch {
+	case statusCode >= 400 && statusCode < 500:
+		code = APICodeClientError
+	case statusCode >= 500 && statusCode < 600:
+		code = APICodeServerError
+	default:
+		code = APICodeUnknown
+	}
+
+	snippet := body
+	if len(snippet) > APIErrorBodyMax {
+		snippet = snippet[:APIErrorBodyMax]
+	}
+
+	return &APIError{
+		StatusCode:  statusCode,
+		Code:        code,
+		BodySnippet: string(snippet),
+	}
 }
