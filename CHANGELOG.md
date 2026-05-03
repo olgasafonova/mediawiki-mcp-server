@@ -4,6 +4,17 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-05-03
+
+### Fixed (security)
+- API client refuses all redirects, closing a 307/308 cross-origin credential leak. The login flow POSTs `lgpassword=<bot-password>` via the API client; without `CheckRedirect`, a wiki (or any proxy in front of it, or a MITM during DNS/TLS bootstrap) returning `307 Location: https://attacker/` would cause Go to re-POST the entire body — including `lgpassword` — to the attacker. The configured wiki URL is the only legitimate target; the MediaWiki API does not redirect under normal operation. (`1f8b2e4`)
+- API errors no longer echo the raw response body to MCP callers. Two call sites in `apiRequest` previously wrapped `string(body)` into the error chain, which propagated HTML error pages, MITM proxy responses, and any echoed POST parameters to the LLM client. Replaced with a structured `APIError` type that retains HTTP status and a stable status-text message; the body snippet is preserved on the struct (capped at 256 bytes) for server-side logging only. Restores compliance with hard gate HG-2. (`bef66aa`)
+- `mediawiki_upload_file` and `mediawiki_manage_categories` now correctly declare `Destructive: true`. Both mutate wiki state but were annotated `Destructive: false`, so hosts that gate destructive operations on the annotation (Claude Code's allowlist, n8n agent guards, MCP Inspector) silently passed them through. With `IgnoreWarnings: true`, `mediawiki_upload_file` overwrites existing files on the wiki — on wikis that allow SVG, an attacker SVG with inline JS becomes stored XSS-as-the-wiki-origin against every viewer. (`c48289e`)
+- `uploadFromURL` (the URL upload path of `mediawiki_upload_file`) now validates the source URL through both `validateFileURL` (blocks private/internal IP destinations — closes wiki-as-SSRF-proxy targeting cloud metadata, RFC1918, link-local, etc.) and a new `MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS` env-var allowlist (fail-closed when unset). The asymmetry where `validateFileURL` was applied to the *download* path but not the *upload* path was the gap. (`c48289e`)
+
+### Changed
+- `mediawiki_upload_file` URL upload path now requires the `MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS` environment variable to be set with one or more allowed source hostnames. Without it, all URL uploads are rejected (fail-closed). Comma-separated; supports leading `*.` for subdomain wildcards (`*.cdn.example.com` matches `us.cdn.example.com` but not the apex `cdn.example.com` itself, which must be listed separately if needed). Mirrors the `MIRO_SHARE_ALLOWED_DOMAINS` pattern.
+
 ## [1.29.0] - 2026-04-24
 
 ### Added
