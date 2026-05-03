@@ -553,7 +553,16 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 
 			// Don't retry client errors (4xx) except rate limiting (429)
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 429 {
-				return nil, fmt.Errorf("client error %d: %s", resp.StatusCode, string(body))
+				// SECURITY (HG-2): never echo the raw response body to the
+				// MCP caller. The body may contain HTML error pages, MITM
+				// proxy responses, or echoed login form parameters. Log the
+				// truncated body for server-side diagnostics; surface only
+				// the structured error to the caller.
+				apiErr := NewAPIError(resp.StatusCode, body)
+				c.logger.Warn("API client error response",
+					"status", resp.StatusCode,
+					"body_snippet", apiErr.BodySnippet)
+				return nil, apiErr
 			}
 
 			// Handle rate limiting with Retry-After header
@@ -573,10 +582,15 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 				}
 			}
 
-			lastErr = fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+			// SECURITY (HG-2): structured error retains status + correlation
+			// without echoing the raw body. Body snippet captured for server-
+			// side logging only; never reaches the MCP caller.
+			apiErr := NewAPIError(resp.StatusCode, body)
+			lastErr = apiErr
 			c.logger.Warn("API returned non-OK status",
 				"status", resp.StatusCode,
-				"attempt", attempt+1)
+				"attempt", attempt+1,
+				"body_snippet", apiErr.BodySnippet)
 			continue
 		}
 
