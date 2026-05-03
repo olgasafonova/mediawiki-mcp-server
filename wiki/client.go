@@ -122,6 +122,16 @@ func NewClient(config *Config, logger *slog.Logger) *Client {
 			Timeout:   config.Timeout,
 			Jar:       jar,
 			Transport: transport,
+			// SECURITY: Refuse all redirects on the API client. The client carries
+			// bot credentials and CSRF tokens; an HTTP 307/308 redirect would cause
+			// Go's default policy to re-POST the body (including lgpassword) to the
+			// new origin. The configured wiki URL is the only legitimate target,
+			// so any redirect indicates either misconfiguration or a credential-
+			// exfiltration attempt. Returning http.ErrUseLastResponse short-circuits
+			// the redirect and lets the caller handle the 3xx response itself.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 		logger:         logger,
 		semaphore:      sem,
@@ -532,6 +542,15 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 
 		// Handle different status codes appropriately
 		if resp.StatusCode != http.StatusOK {
+			// SECURITY: 3xx responses indicate the wiki tried to redirect the
+			// authenticated request. CheckRedirect returns ErrUseLastResponse
+			// which surfaces the 3xx body here. Refuse to retry or follow;
+			// surface a clear configuration/integrity error to the caller.
+			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+				location := resp.Header.Get("Location")
+				return nil, fmt.Errorf("wiki returned redirect %d (refused; API client does not follow redirects): Location=%q", resp.StatusCode, location)
+			}
+
 			// Don't retry client errors (4xx) except rate limiting (429)
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 429 {
 				return nil, fmt.Errorf("client error %d: %s", resp.StatusCode, string(body))
