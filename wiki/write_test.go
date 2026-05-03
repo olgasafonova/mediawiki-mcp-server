@@ -1349,6 +1349,11 @@ func TestUploadFile_FromURL_Success(t *testing.T) {
 	client.config.Password = "TestPass"
 	defer client.Close()
 
+	// HG-3: uploadFromURL now validates the source-URL host against
+	// MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS (fail-closed). Allow example.com
+	// for this success-path test.
+	t.Setenv(UploadAllowlistEnv, "example.com")
+
 	ctx := context.Background()
 	result, err := client.UploadFile(ctx, UploadFileArgs{
 		Filename:       "Test.png",

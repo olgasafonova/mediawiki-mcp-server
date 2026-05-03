@@ -5,9 +5,93 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"syscall"
 	"time"
 )
+
+// UploadAllowlistEnv names the env var that controls which source-URL hosts
+// mediawiki_upload_file may fetch from when uploading to the wiki via
+// uploadFromURL. Comma-separated list of hostnames; supports a leading
+// "*." for subdomain wildcards (e.g. "*.example.com" matches a.example.com
+// and b.c.example.com but NOT example.com itself).
+//
+// SECURITY (HG-3): unset or empty = deny-all (fail-closed). Mirrors the
+// MIRO_SHARE_ALLOWED_DOMAINS pattern documented in
+// rules/review-patterns.md.
+const UploadAllowlistEnv = "MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS"
+
+// validateUploadDomain enforces the source-URL host allowlist for the
+// mediawiki_upload_file tool's URL upload path. Returns nil if the host
+// is allowed, or a structured *SSRFError otherwise. Fail-closed when the
+// env var is unset.
+//
+// This pairs with validateFileURL (which blocks private-IP destinations)
+// to provide two independent gates: validateFileURL refuses internal
+// targets, validateUploadDomain refuses external targets that aren't on
+// the operator's positive list. The wiki upload-from-URL primitive grants
+// the wiki SSRF-on-behalf-of-the-bot access to any reachable URL, so
+// fail-closed is the correct default for an MCP-exposed tool.
+func validateUploadDomain(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  fmt.Sprintf("URL parse failed: %v", err),
+			Blocked: true,
+		}
+	}
+	hostname := strings.ToLower(parsed.Hostname())
+	if hostname == "" {
+		return &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  "missing host",
+			Blocked: true,
+		}
+	}
+
+	raw := strings.TrimSpace(os.Getenv(UploadAllowlistEnv))
+	if raw == "" {
+		return &SSRFError{
+			Code: SSRFCodePrivateIP,
+			URL:  rawURL,
+			Reason: fmt.Sprintf(
+				"upload source domain %q rejected: %s is unset or empty (fail-closed). "+
+					"Set %s=example.com,*.cdn.example.com to allow specific hosts.",
+				hostname, UploadAllowlistEnv, UploadAllowlistEnv),
+			Blocked: true,
+		}
+	}
+
+	for _, entry := range strings.Split(raw, ",") {
+		allowed := strings.TrimSpace(strings.ToLower(entry))
+		if allowed == "" {
+			continue
+		}
+		if strings.HasPrefix(allowed, "*.") {
+			suffix := allowed[1:] // ".example.com"
+			if strings.HasSuffix(hostname, suffix) && hostname != suffix[1:] {
+				return nil
+			}
+			continue
+		}
+		if hostname == allowed {
+			return nil
+		}
+	}
+
+	return &SSRFError{
+		Code: SSRFCodePrivateIP,
+		URL:  rawURL,
+		Reason: fmt.Sprintf(
+			"upload source domain %q is not on the %s allowlist",
+			hostname, UploadAllowlistEnv),
+		Blocked: true,
+	}
+}
 
 // Private/internal IP ranges that should be blocked for SSRF protection
 var (
