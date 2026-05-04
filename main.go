@@ -652,7 +652,7 @@ Read operations work without authentication.`,
 	// Register resources for direct wiki page access
 	registerResources(server, client, logger)
 
-	// Register SEP-2127 Server Card as MCP resource
+	// Build SEP-2127 Server Card for HTTP discovery
 	cardOpts := servercard.Options{
 		Name:        "io.github.olgasafonova/mediawiki-mcp-server",
 		Version:     ServerVersion,
@@ -672,8 +672,6 @@ Read operations work without authentication.`,
 	if err != nil {
 		log.Fatalf("Server card error: %v", err)
 	}
-	servercard.RegisterResource(server, serverCard)
-	logger.Debug("Registered Server Card resource", "uri", servercard.ResourceURI)
 
 	ctx := context.Background()
 

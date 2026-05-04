@@ -6,7 +6,7 @@ toolchain go1.26.2
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.5.0
-	github.com/olgasafonova/mcp-servercard-go v0.2.0
+	github.com/olgasafonova/mcp-servercard-go v0.3.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/spf13/cobra v1.10.2
