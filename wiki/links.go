@@ -13,12 +13,48 @@ import (
 )
 
 // GetExternalLinks retrieves external links from a wiki page
+// extractExternalLinkFromEntry pulls the URL+scheme from one extlinks entry.
+// Returns ok=false if the entry is malformed or has no URL.
+func extractExternalLinkFromEntry(entry interface{}) (ExternalLink, bool) {
+	link, ok := entry.(map[string]interface{})
+	if !ok {
+		return ExternalLink{}, false
+	}
+	linkURL := getString(link["*"])
+	if linkURL == "" {
+		linkURL = getString(link["url"])
+	}
+	if linkURL == "" {
+		return ExternalLink{}, false
+	}
+	protocol := ""
+	if u, err := url.Parse(linkURL); err == nil {
+		protocol = u.Scheme
+	}
+	return ExternalLink{URL: linkURL, Protocol: protocol}, true
+}
+
+// extractExternalLinksFromPage walks one page's extlinks list and returns the
+// ExternalLink slice. Returns the page title as well so the caller can echo it back.
+func extractExternalLinksFromPage(page map[string]interface{}) (string, []ExternalLink) {
+	links := make([]ExternalLink, 0)
+	pageTitle := getString(page["title"])
+	extlinks, ok := page["extlinks"].([]interface{})
+	if !ok {
+		return pageTitle, links
+	}
+	for _, el := range extlinks {
+		if link, ok := extractExternalLinkFromEntry(el); ok {
+			links = append(links, link)
+		}
+	}
+	return pageTitle, links
+}
+
 func (c *Client) GetExternalLinks(ctx context.Context, args GetExternalLinksArgs) (ExternalLinksResult, error) {
 	if args.Title == "" {
 		return ExternalLinksResult{}, fmt.Errorf("title is required")
 	}
-
-	// Ensure logged in for wikis requiring auth for read
 	if err := c.EnsureLoggedIn(ctx); err != nil {
 		return ExternalLinksResult{}, err
 	}
@@ -33,63 +69,27 @@ func (c *Client) GetExternalLinks(ctx context.Context, args GetExternalLinksArgs
 	if err != nil {
 		return ExternalLinksResult{}, err
 	}
-
 	query, ok := resp["query"].(map[string]interface{})
 	if !ok {
 		return ExternalLinksResult{}, fmt.Errorf("unexpected response format")
 	}
-
 	pages, ok := query["pages"].(map[string]interface{})
 	if !ok {
 		return ExternalLinksResult{}, fmt.Errorf("no pages in response")
 	}
-
-	links := make([]ExternalLink, 0) // Initialize as empty slice, not nil, to avoid JSON null
-	var pageTitle string
 
 	for _, pageData := range pages {
 		page, ok := pageData.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		// Check if page exists
 		if _, missing := page["missing"]; missing {
 			return ExternalLinksResult{}, fmt.Errorf("page '%s' does not exist", args.Title)
 		}
-
-		pageTitle = getString(page["title"])
-
-		if extlinks, ok := page["extlinks"].([]interface{}); ok {
-			for _, el := range extlinks {
-				link, ok := el.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				linkURL := getString(link["*"])
-				if linkURL == "" {
-					linkURL = getString(link["url"])
-				}
-				if linkURL != "" {
-					protocol := ""
-					if u, err := url.Parse(linkURL); err == nil {
-						protocol = u.Scheme
-					}
-					links = append(links, ExternalLink{
-						URL:      linkURL,
-						Protocol: protocol,
-					})
-				}
-			}
-		}
-		break
+		title, links := extractExternalLinksFromPage(page)
+		return ExternalLinksResult{Title: title, Links: links, Count: len(links)}, nil
 	}
-
-	return ExternalLinksResult{
-		Title: pageTitle,
-		Links: links,
-		Count: len(links),
-	}, nil
+	return ExternalLinksResult{Links: make([]ExternalLink, 0)}, nil
 }
 
 // GetExternalLinksBatch retrieves external links from multiple wiki pages
@@ -199,141 +199,172 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 }
 
 // CheckLinks checks if URLs are accessible (broken link detection)
+// validateLinkURLForCheck parses a URL and rejects unsupported schemes or
+// targets pointing at private/internal hosts. Returns a populated LinkCheckResult
+// (with Broken=true) when validation fails; ok=true means the URL passed.
+func validateLinkURLForCheck(rawURL string) (LinkCheckResult, bool) {
+	r := LinkCheckResult{URL: rawURL}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		r.Status = "invalid_url"
+		r.Error = fmt.Sprintf("[%s] Invalid URL format", SSRFCodeInvalidURL)
+		r.Broken = true
+		return r, false
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		// No hostname to test for SSRF; treat as caller's responsibility but pass.
+		return r, true
+	}
+	isPrivate, ssrfErr := isPrivateHost(hostname)
+	if !isPrivate {
+		return r, true
+	}
+	r.Status = "blocked"
+	if ssrfErr != nil {
+		r.Error = ssrfErr.Error()
+	} else {
+		r.Error = fmt.Sprintf("[%s] URLs pointing to private/internal networks are not allowed", SSRFCodePrivateIP)
+	}
+	r.Broken = true
+	return r, false
+}
+
+// fetchLinkStatus issues a HEAD request, falling back to GET if the server
+// rejects HEAD, and writes the resulting status onto r. Marks Broken=true if
+// the request fails or returns 4xx/5xx.
+func fetchLinkStatus(ctx context.Context, rawURL string, timeout time.Duration, r *LinkCheckResult) {
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	makeRequest := func(method string) (*http.Response, error) {
+		req, _ := http.NewRequestWithContext(reqCtx, method, rawURL, nil)
+		req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
+		return linkCheckClient.Do(req) // #nosec G704 -- link checker intentionally fetches external URLs
+	}
+
+	resp, err := makeRequest("HEAD")
+	if err != nil {
+		resp, err = makeRequest("GET")
+	}
+	if err != nil {
+		r.Status = "error"
+		r.Error = err.Error()
+		r.Broken = true
+		return
+	}
+	_ = resp.Body.Close()
+	r.StatusCode = resp.StatusCode
+	r.Status = resp.Status
+	if resp.StatusCode >= 400 {
+		r.Broken = true
+	}
+}
+
+// checkSingleLink performs validation + status fetch for a single URL.
+func checkSingleLink(ctx context.Context, rawURL string, timeout time.Duration) LinkCheckResult {
+	r, ok := validateLinkURLForCheck(rawURL)
+	if !ok {
+		return r
+	}
+	fetchLinkStatus(ctx, rawURL, timeout, &r)
+	return r
+}
+
+// resolveLinkCheckTimeout clamps the user-supplied timeout to the safe range.
+func resolveLinkCheckTimeout(requested int) time.Duration {
+	timeout := 10
+	if requested > 0 && requested <= 30 {
+		timeout = requested
+	}
+	return time.Duration(timeout) * time.Second
+}
+
 func (c *Client) CheckLinks(ctx context.Context, args CheckLinksArgs) (CheckLinksResult, error) {
 	if len(args.URLs) == 0 {
 		return CheckLinksResult{}, fmt.Errorf("at least one URL is required")
 	}
 
-	// Limit URLs to prevent abuse
-	maxURLs := 20
+	const maxURLs = 20
 	if len(args.URLs) > maxURLs {
 		args.URLs = args.URLs[:maxURLs]
 	}
-
-	// Set timeout (default 10s, max 30s)
-	timeout := 10
-	if args.Timeout > 0 && args.Timeout <= 30 {
-		timeout = args.Timeout
-	}
-	requestTimeout := time.Duration(timeout) * time.Second
+	requestTimeout := resolveLinkCheckTimeout(args.Timeout)
 
 	result := CheckLinksResult{
 		Results:    make([]LinkCheckResult, 0, len(args.URLs)),
 		TotalLinks: len(args.URLs),
 	}
 
-	// Use a semaphore to limit concurrent checks
 	sem := make(chan struct{}, 5)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-
 	for _, linkURL := range args.URLs {
 		wg.Add(1)
-		go func(checkURL string) {
+		go func(rawURL string) {
 			defer wg.Done()
-
-			// Acquire semaphore
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			linkResult := LinkCheckResult{URL: checkURL}
-
-			// Validate URL format
-			parsedURL, err := url.Parse(checkURL)
-			if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-				linkResult.Status = "invalid_url"
-				linkResult.Error = fmt.Sprintf("[%s] Invalid URL format", SSRFCodeInvalidURL)
-				linkResult.Broken = true
-			} else if hostname := parsedURL.Hostname(); hostname != "" {
-				// SSRF protection: block private/internal IPs
-				isPrivate, ssrfErr := isPrivateHost(hostname)
-				if isPrivate {
-					linkResult.Status = "blocked"
-					if ssrfErr != nil {
-						// DNS error - use the structured error message
-						linkResult.Error = ssrfErr.Error()
-					} else {
-						// Private IP detected
-						linkResult.Error = fmt.Sprintf("[%s] URLs pointing to private/internal networks are not allowed", SSRFCodePrivateIP)
-					}
-					linkResult.Broken = true
-				} else {
-					// Create per-request context with timeout
-					reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-
-					// Make HEAD request first (faster)
-					req, _ := http.NewRequestWithContext(reqCtx, "HEAD", checkURL, nil)
-					req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
-
-					resp, err := linkCheckClient.Do(req) // #nosec G704 -- link checker intentionally fetches external URLs
-					if err != nil {
-						// Try GET if HEAD fails (some servers don't support HEAD)
-						req, _ = http.NewRequestWithContext(reqCtx, "GET", checkURL, nil)
-						req.Header.Set("User-Agent", "MediaWiki-MCP-LinkChecker/1.0")
-						resp, err = linkCheckClient.Do(req) // #nosec G704 -- link checker intentionally fetches external URLs to verify they're alive
-					}
-
-					cancel() // Release context resources
-
-					if err != nil {
-						linkResult.Status = "error"
-						linkResult.Error = err.Error()
-						linkResult.Broken = true
-					} else {
-						_ = resp.Body.Close() // Error ignored; we only need the status
-						linkResult.StatusCode = resp.StatusCode
-						linkResult.Status = resp.Status
-
-						// Consider 4xx and 5xx as broken (except 403 which might be access denied)
-						if resp.StatusCode >= 400 {
-							linkResult.Broken = true
-						}
-					}
-				}
-			}
-
+			linkResult := checkSingleLink(ctx, rawURL, requestTimeout)
 			mu.Lock()
+			defer mu.Unlock()
 			result.Results = append(result.Results, linkResult)
 			if linkResult.Broken {
 				result.BrokenCount++
 			} else {
 				result.ValidCount++
 			}
-			mu.Unlock()
 		}(linkURL)
 	}
-
 	wg.Wait()
 	return result, nil
 }
 
 // GetBacklinks returns pages that link to the specified page ("What links here")
-func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBacklinksResult, error) {
-	if args.Title == "" {
-		return GetBacklinksResult{}, fmt.Errorf("title is required")
-	}
-
-	if err := c.EnsureLoggedIn(ctx); err != nil {
-		return GetBacklinksResult{}, err
-	}
-
-	limit := normalizeLimit(args.Limit, 50, MaxLimit)
-
+// buildBacklinksParams composes the API params for a backlinks query.
+func buildBacklinksParams(args GetBacklinksArgs, limit int) url.Values {
 	params := url.Values{}
 	params.Set("action", "query")
 	params.Set("list", "backlinks")
 	params.Set("bltitle", args.Title)
 	params.Set("bllimit", strconv.Itoa(limit))
-
 	if args.Namespace >= 0 {
 		params.Set("blnamespace", strconv.Itoa(args.Namespace))
 	}
-
 	if !args.Redirect {
 		params.Set("blfilterredir", "nonredirects")
 	}
+	return params
+}
 
-	resp, err := c.apiRequest(ctx, params)
+// backlinkInfoFromEntry converts one raw backlinks entry into a BacklinkInfo.
+func backlinkInfoFromEntry(entry interface{}) (BacklinkInfo, bool) {
+	link, ok := entry.(map[string]interface{})
+	if !ok {
+		return BacklinkInfo{}, false
+	}
+	info := BacklinkInfo{
+		PageID:    getInt(link["pageid"]),
+		Title:     getString(link["title"]),
+		Namespace: getInt(link["ns"]),
+	}
+	if _, isRedirect := link["redirect"]; isRedirect {
+		info.IsRedirect = true
+	}
+	return info, true
+}
+
+func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBacklinksResult, error) {
+	if args.Title == "" {
+		return GetBacklinksResult{}, fmt.Errorf("title is required")
+	}
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return GetBacklinksResult{}, err
+	}
+
+	limit := normalizeLimit(args.Limit, 50, MaxLimit)
+	resp, err := c.apiRequest(ctx, buildBacklinksParams(args, limit))
 	if err != nil {
 		return GetBacklinksResult{}, err
 	}
@@ -342,7 +373,6 @@ func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBa
 	if !ok {
 		return GetBacklinksResult{}, fmt.Errorf("unexpected response format")
 	}
-
 	backlinks, ok := query["backlinks"].([]interface{})
 	if !ok {
 		return GetBacklinksResult{Title: args.Title, Backlinks: make([]BacklinkInfo, 0)}, nil
@@ -352,171 +382,144 @@ func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBa
 		Title:     args.Title,
 		Backlinks: make([]BacklinkInfo, 0, len(backlinks)),
 	}
-
 	for _, bl := range backlinks {
-		link, ok := bl.(map[string]interface{})
-		if !ok {
-			continue
+		if info, ok := backlinkInfoFromEntry(bl); ok {
+			result.Backlinks = append(result.Backlinks, info)
 		}
-		info := BacklinkInfo{
-			PageID:    getInt(link["pageid"]),
-			Title:     getString(link["title"]),
-			Namespace: getInt(link["ns"]),
-		}
-		if _, isRedirect := link["redirect"]; isRedirect {
-			info.IsRedirect = true
-		}
-		result.Backlinks = append(result.Backlinks, info)
 	}
-
 	result.Count = len(result.Backlinks)
-
-	// Check for continuation
 	if _, ok := resp["continue"]; ok {
 		result.HasMore = true
 	}
-
 	return result, nil
 }
 
 // FindBrokenInternalLinks finds internal wiki links that point to non-existent pages
-func (c *Client) FindBrokenInternalLinks(ctx context.Context, args FindBrokenInternalLinksArgs) (FindBrokenInternalLinksResult, error) {
-	if err := c.EnsureLoggedIn(ctx); err != nil {
-		return FindBrokenInternalLinksResult{}, err
-	}
+// internalLinkRegex matches "[[Target]]" or "[[Target|Display]]" wiki links.
+var internalLinkRegex = regexp.MustCompile(`\[\[([^\]|#]+)(?:[|#][^\]]*)?]]`)
 
-	// Get pages to check
-	var pagesToCheck []string
-	limit := normalizeLimit(args.Limit, 20, 100)
+// internalLinkSkipPrefixes lists the lower-cased prefixes that indicate a link
+// target is not an internal page reference (categories, files, interwiki,
+// explicit-link prefix, external URL).
+var internalLinkSkipPrefixes = []string{"category:", "file:", "image:", ":", "http"}
 
-	if len(args.Pages) > 0 {
-		pagesToCheck = args.Pages
-		if len(pagesToCheck) > limit {
-			pagesToCheck = pagesToCheck[:limit]
+// isInternalLinkTarget reports whether a wiki link target should be treated as
+// an internal page reference for broken-link checking.
+func isInternalLinkTarget(target string) bool {
+	lower := strings.ToLower(target)
+	for _, prefix := range internalLinkSkipPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return false
 		}
-	} else if args.Category != "" {
-		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
-			Category: args.Category,
-			Limit:    limit,
+	}
+	return true
+}
+
+// linkLocation records a single link occurrence on a page.
+type linkLocation struct {
+	pageTitle string
+	target    string
+	line      int
+	context   string
+}
+
+// extractInternalLinks pulls every internal page-reference link out of a single
+// line, with the caller-supplied page title and line number stamped onto each.
+func extractInternalLinks(pageTitle, line string, lineNum int) []linkLocation {
+	var out []linkLocation
+	for _, match := range internalLinkRegex.FindAllStringSubmatch(line, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		target := strings.TrimSpace(match[1])
+		if !isInternalLinkTarget(target) {
+			continue
+		}
+		idx := strings.Index(line, match[0])
+		out = append(out, linkLocation{
+			pageTitle: pageTitle,
+			target:    target,
+			line:      lineNum + 1,
+			context:   extractContext(line, idx, idx+len(match[0]), 30),
 		})
-		if err != nil {
-			return FindBrokenInternalLinksResult{}, fmt.Errorf("failed to get category members: %w", err)
-		}
-		for _, p := range catResult.Members {
-			pagesToCheck = append(pagesToCheck, p.Title)
-		}
-	} else {
-		return FindBrokenInternalLinksResult{}, fmt.Errorf("either 'pages' or 'category' must be specified")
 	}
+	return out
+}
 
-	result := FindBrokenInternalLinksResult{
-		Pages: make([]PageBrokenLinksResult, 0, len(pagesToCheck)),
-	}
-
-	// Regex to match internal wiki links: [[Target]] or [[Target|Display]]
-	linkRegex := regexp.MustCompile(`\[\[([^\]|#]+)(?:[|#][^\]]*)?]]`)
-
-	// First pass: collect all unique link targets from all pages
-	type linkLocation struct {
-		pageTitle string
-		target    string
-		line      int
-		context   string
-	}
-	var allLinkLocations []linkLocation
-	allTargets := make(map[string]bool)
-	pageContents := make(map[string]string)
-
-	for _, pageTitle := range pagesToCheck {
-		// Check for context cancellation
+// collectInternalLinkLocations fetches each page and extracts its internal
+// link locations. Pages that fail to fetch produce error entries in the result;
+// successfully-fetched pages are recorded in fetched so the caller can build
+// per-page result rows for them.
+func (c *Client) collectInternalLinkLocations(ctx context.Context, pages []string) (locations []linkLocation, fetched map[string]struct{}, errResults []PageBrokenLinksResult, err error) {
+	fetched = make(map[string]struct{}, len(pages))
+	for _, pageTitle := range pages {
 		select {
 		case <-ctx.Done():
-			return result, ctx.Err()
+			return locations, fetched, errResults, ctx.Err()
 		default:
 		}
-
-		page, err := c.GetPage(ctx, GetPageArgs{Title: pageTitle, Format: "wikitext"})
-		if err != nil {
-			result.Pages = append(result.Pages, PageBrokenLinksResult{
+		page, fetchErr := c.GetPage(ctx, GetPageArgs{Title: pageTitle, Format: "wikitext"})
+		if fetchErr != nil {
+			errResults = append(errResults, PageBrokenLinksResult{
 				Title:       pageTitle,
 				BrokenLinks: make([]BrokenLink, 0),
-				Error:       err.Error(),
+				Error:       fetchErr.Error(),
 			})
 			continue
 		}
-		pageContents[pageTitle] = page.Content
-
-		lines := strings.Split(page.Content, "\n")
-		for lineNum, line := range lines {
-			matches := linkRegex.FindAllStringSubmatch(line, -1)
-			for _, match := range matches {
-				if len(match) < 2 {
-					continue
-				}
-
-				target := strings.TrimSpace(match[1])
-
-				// Skip special prefixes (categories, files, interwiki)
-				lowerTarget := strings.ToLower(target)
-				if strings.HasPrefix(lowerTarget, "category:") ||
-					strings.HasPrefix(lowerTarget, "file:") ||
-					strings.HasPrefix(lowerTarget, "image:") ||
-					strings.HasPrefix(lowerTarget, ":") ||
-					strings.HasPrefix(lowerTarget, "http") {
-					continue
-				}
-
-				allTargets[target] = true
-				allLinkLocations = append(allLinkLocations, linkLocation{
-					pageTitle: pageTitle,
-					target:    target,
-					line:      lineNum + 1,
-					context:   extractContext(line, strings.Index(line, match[0]), strings.Index(line, match[0])+len(match[0]), 30),
-				})
-			}
+		fetched[pageTitle] = struct{}{}
+		for lineNum, line := range strings.Split(page.Content, "\n") {
+			locations = append(locations, extractInternalLinks(pageTitle, line, lineNum)...)
 		}
 	}
+	return locations, fetched, errResults, nil
+}
 
-	// Second pass: batch check all targets at once
-	targetList := make([]string, 0, len(allTargets))
-	for target := range allTargets {
-		targetList = append(targetList, target)
+// uniqueLinkTargets returns the deduplicated set of target titles from all
+// link locations.
+func uniqueLinkTargets(locations []linkLocation) []string {
+	set := make(map[string]struct{})
+	for _, loc := range locations {
+		set[loc.target] = struct{}{}
 	}
-
-	existenceMap, err := c.checkPagesExist(ctx, targetList)
-	if err != nil {
-		return FindBrokenInternalLinksResult{}, fmt.Errorf("failed to check page existence: %w", err)
+	out := make([]string, 0, len(set))
+	for target := range set {
+		out = append(out, target)
 	}
+	return out
+}
 
-	// Third pass: build results using the existence map
-	pageResults := make(map[string]*PageBrokenLinksResult)
-	for _, pageTitle := range pagesToCheck {
-		if _, hasContent := pageContents[pageTitle]; hasContent {
-			pageResults[pageTitle] = &PageBrokenLinksResult{
-				Title:       pageTitle,
+// buildBrokenLinksResults turns link locations + existence-map into per-page
+// PageBrokenLinksResult rows. Within each page, only the first occurrence of
+// each broken target is reported.
+func buildBrokenLinksResults(pages []string, fetched map[string]struct{}, locations []linkLocation, existence map[string]bool) []PageBrokenLinksResult {
+	pageResults := make(map[string]*PageBrokenLinksResult, len(fetched))
+	for _, title := range pages {
+		if _, ok := fetched[title]; ok {
+			pageResults[title] = &PageBrokenLinksResult{
+				Title:       title,
 				BrokenLinks: make([]BrokenLink, 0),
 			}
 		}
 	}
 
-	seenLinks := make(map[string]map[string]bool) // page -> target -> seen
-	for _, loc := range allLinkLocations {
-		if pageResults[loc.pageTitle] == nil {
+	seen := make(map[string]map[string]bool)
+	for _, loc := range locations {
+		pr := pageResults[loc.pageTitle]
+		if pr == nil {
 			continue
 		}
-
-		// Deduplicate links within the same page
-		if seenLinks[loc.pageTitle] == nil {
-			seenLinks[loc.pageTitle] = make(map[string]bool)
+		if seen[loc.pageTitle] == nil {
+			seen[loc.pageTitle] = make(map[string]bool)
 		}
-		if seenLinks[loc.pageTitle][loc.target] {
+		if seen[loc.pageTitle][loc.target] {
 			continue
 		}
-		seenLinks[loc.pageTitle][loc.target] = true
+		seen[loc.pageTitle][loc.target] = true
 
-		// Check if the target exists
-		if exists, ok := existenceMap[loc.target]; !ok || !exists {
-			pageResults[loc.pageTitle].BrokenLinks = append(pageResults[loc.pageTitle].BrokenLinks, BrokenLink{
+		exists, ok := existence[loc.target]
+		if !ok || !exists {
+			pr.BrokenLinks = append(pr.BrokenLinks, BrokenLink{
 				Target:  loc.target,
 				Line:    loc.line,
 				Context: loc.context,
@@ -524,35 +527,57 @@ func (c *Client) FindBrokenInternalLinks(ctx context.Context, args FindBrokenInt
 		}
 	}
 
-	// Finalize results
-	for _, pageTitle := range pagesToCheck {
-		if pr, ok := pageResults[pageTitle]; ok {
+	out := make([]PageBrokenLinksResult, 0, len(pageResults))
+	for _, title := range pages {
+		if pr, ok := pageResults[title]; ok {
 			pr.BrokenCount = len(pr.BrokenLinks)
-			result.BrokenCount += pr.BrokenCount
-			result.Pages = append(result.Pages, *pr)
+			out = append(out, *pr)
 		}
 	}
+	return out
+}
 
-	// Add pages that had errors (already added above)
-	for _, pr := range result.Pages {
-		if pr.Error != "" {
-			continue // Already counted
-		}
+func (c *Client) FindBrokenInternalLinks(ctx context.Context, args FindBrokenInternalLinksArgs) (FindBrokenInternalLinksResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return FindBrokenInternalLinksResult{}, err
 	}
 
+	limit := normalizeLimit(args.Limit, 20, 100)
+	pagesToCheck, err := c.collectPagesFromArgs(ctx, args.Pages, args.Category, limit, "pages")
+	if err != nil {
+		return FindBrokenInternalLinksResult{}, err
+	}
+
+	locations, fetched, errResults, err := c.collectInternalLinkLocations(ctx, pagesToCheck)
+	if err != nil {
+		// Context cancellation: return what we have so far.
+		return FindBrokenInternalLinksResult{
+			Pages: append(errResults, buildBrokenLinksResults(pagesToCheck, fetched, locations, nil)...),
+		}, err
+	}
+
+	existence, err := c.checkPagesExist(ctx, uniqueLinkTargets(locations))
+	if err != nil {
+		return FindBrokenInternalLinksResult{}, fmt.Errorf("failed to check page existence: %w", err)
+	}
+
+	successResults := buildBrokenLinksResults(pagesToCheck, fetched, locations, existence)
+
+	result := FindBrokenInternalLinksResult{
+		Pages: make([]PageBrokenLinksResult, 0, len(errResults)+len(successResults)),
+	}
+	result.Pages = append(result.Pages, errResults...)
+	result.Pages = append(result.Pages, successResults...)
+	for _, pr := range successResults {
+		result.BrokenCount += pr.BrokenCount
+	}
 	result.PagesChecked = len(result.Pages)
 	return result, nil
 }
 
 // FindOrphanedPages finds pages that have no incoming links from other pages
-func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesArgs) (FindOrphanedPagesResult, error) {
-	if err := c.EnsureLoggedIn(ctx); err != nil {
-		return FindOrphanedPagesResult{}, err
-	}
-
-	limit := normalizeLimit(args.Limit, 50, 200)
-
-	// Use the API's lonelypages query (pages with no links to them)
+// queryLonelyPages calls the Lonelypages querypage and returns the raw page entries.
+func (c *Client) queryLonelyPages(ctx context.Context, limit int) ([]interface{}, error) {
 	params := url.Values{}
 	params.Set("action", "query")
 	params.Set("list", "querypage")
@@ -561,91 +586,108 @@ func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesAr
 
 	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
-		return FindOrphanedPagesResult{}, err
+		return nil, err
 	}
-
 	query, ok := resp["query"].(map[string]interface{})
 	if !ok {
-		return FindOrphanedPagesResult{}, fmt.Errorf("unexpected response format")
+		return nil, fmt.Errorf("unexpected response format")
 	}
-
 	querypage, ok := query["querypage"].(map[string]interface{})
 	if !ok {
-		return FindOrphanedPagesResult{}, fmt.Errorf("querypage not found in response")
+		return nil, fmt.Errorf("querypage not found in response")
 	}
-
 	results, ok := querypage["results"].([]interface{})
 	if !ok {
-		return FindOrphanedPagesResult{}, fmt.Errorf("results not found in querypage")
+		return nil, fmt.Errorf("results not found in querypage")
 	}
+	return results, nil
+}
 
-	// Collect filtered titles
-	var filteredTitles []string
-	for _, r := range results {
-		page, ok := r.(map[string]interface{})
+// orphanedPageMatchesFilter reports whether the page entry passes the namespace
+// and title-prefix filters, returning the page's title when it does.
+func orphanedPageMatchesFilter(entry interface{}, namespace int, prefix string) (string, bool) {
+	page, ok := entry.(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	if namespace >= 0 && getInt(page["ns"]) != namespace {
+		return "", false
+	}
+	title := getString(page["title"])
+	if prefix != "" && !strings.HasPrefix(title, prefix) {
+		return "", false
+	}
+	return title, true
+}
+
+// fetchOrphanInfoBatch fetches detailed page info for one batch of orphan
+// titles. On API failure, returns minimal entries (title only) so the caller
+// can still report the orphan list.
+func (c *Client) fetchOrphanInfoBatch(ctx context.Context, batch []string) []OrphanedPage {
+	out := make([]OrphanedPage, 0, len(batch))
+
+	infoParams := url.Values{}
+	infoParams.Set("action", "query")
+	infoParams.Set("titles", strings.Join(batch, "|"))
+	infoParams.Set("prop", "info")
+
+	infoResp, err := c.apiRequest(ctx, infoParams)
+	if err != nil {
+		for _, title := range batch {
+			out = append(out, OrphanedPage{Title: title})
+		}
+		return out
+	}
+	infoQuery, _ := infoResp["query"].(map[string]interface{})
+	pages, _ := infoQuery["pages"].(map[string]interface{})
+	for _, pageData := range pages {
+		p, ok := pageData.(map[string]interface{})
 		if !ok {
 			continue
 		}
+		out = append(out, OrphanedPage{
+			Title:      getString(p["title"]),
+			PageID:     getInt(p["pageid"]),
+			Length:     getInt(p["length"]),
+			LastEdited: getString(p["touched"]),
+		})
+	}
+	return out
+}
 
-		// Filter by namespace if specified
-		ns := getInt(page["ns"])
-		if args.Namespace >= 0 && ns != args.Namespace {
-			continue
+// fetchOrphanedPagesInfo fetches info for all titles in 50-at-a-time batches.
+func (c *Client) fetchOrphanedPagesInfo(ctx context.Context, titles []string) []OrphanedPage {
+	const batchSize = 50
+	orphaned := make([]OrphanedPage, 0, len(titles))
+	for i := 0; i < len(titles); i += batchSize {
+		end := i + batchSize
+		if end > len(titles) {
+			end = len(titles)
 		}
+		orphaned = append(orphaned, c.fetchOrphanInfoBatch(ctx, titles[i:end])...)
+	}
+	return orphaned
+}
 
-		title := getString(page["title"])
-
-		// Filter by prefix if specified
-		if args.Prefix != "" && !strings.HasPrefix(title, args.Prefix) {
-			continue
-		}
-
-		filteredTitles = append(filteredTitles, title)
+func (c *Client) FindOrphanedPages(ctx context.Context, args FindOrphanedPagesArgs) (FindOrphanedPagesResult, error) {
+	if err := c.EnsureLoggedIn(ctx); err != nil {
+		return FindOrphanedPagesResult{}, err
 	}
 
-	// Fetch actual page info (pageid, length, touched) for the filtered pages
-	orphaned := make([]OrphanedPage, 0, len(filteredTitles))
-	if len(filteredTitles) > 0 {
-		// Batch fetch page info (up to 50 at a time)
-		for i := 0; i < len(filteredTitles); i += 50 {
-			end := i + 50
-			if end > len(filteredTitles) {
-				end = len(filteredTitles)
-			}
-			batch := filteredTitles[i:end]
+	limit := normalizeLimit(args.Limit, 50, 200)
+	results, err := c.queryLonelyPages(ctx, limit)
+	if err != nil {
+		return FindOrphanedPagesResult{}, err
+	}
 
-			infoParams := url.Values{}
-			infoParams.Set("action", "query")
-			infoParams.Set("titles", strings.Join(batch, "|"))
-			infoParams.Set("prop", "info")
-
-			infoResp, err := c.apiRequest(ctx, infoParams)
-			if err != nil {
-				// Fall back to basic info if fetch fails
-				for _, title := range batch {
-					orphaned = append(orphaned, OrphanedPage{Title: title})
-				}
-				continue
-			}
-
-			infoQuery, _ := infoResp["query"].(map[string]interface{})
-			pages, _ := infoQuery["pages"].(map[string]interface{})
-
-			for _, pageData := range pages {
-				p, ok := pageData.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				orphaned = append(orphaned, OrphanedPage{
-					Title:      getString(p["title"]),
-					PageID:     getInt(p["pageid"]),
-					Length:     getInt(p["length"]),
-					LastEdited: getString(p["touched"]),
-				})
-			}
+	var filteredTitles []string
+	for _, r := range results {
+		if title, ok := orphanedPageMatchesFilter(r, args.Namespace, args.Prefix); ok {
+			filteredTitles = append(filteredTitles, title)
 		}
 	}
 
+	orphaned := c.fetchOrphanedPagesInfo(ctx, filteredTitles)
 	return FindOrphanedPagesResult{
 		OrphanedPages: orphaned,
 		TotalChecked:  len(results),
