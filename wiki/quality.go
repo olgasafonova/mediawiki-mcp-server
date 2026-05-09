@@ -10,52 +10,57 @@ import (
 	"time"
 )
 
+// collectPagesFromArgs resolves the set of pages to operate on from either
+// an explicit list or a category. Returns an error if neither is specified.
+// pagesFieldName is used in the "neither specified" error message so callers
+// can match their own argument naming (e.g. "pages" vs "base_pages").
+func (c *Client) collectPagesFromArgs(ctx context.Context, pages []string, category string, limit int, pagesFieldName string) ([]string, error) {
+	if len(pages) > 0 {
+		if len(pages) > limit {
+			pages = pages[:limit]
+		}
+		return pages, nil
+	}
+	if category != "" {
+		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+			Category: category,
+			Limit:    limit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get category members: %w", err)
+		}
+		titles := make([]string, 0, len(catResult.Members))
+		for _, p := range catResult.Members {
+			titles = append(titles, p.Title)
+		}
+		return titles, nil
+	}
+	return nil, fmt.Errorf("either '%s' or 'category' must be specified", pagesFieldName)
+}
+
 // CheckTerminology checks pages for terminology inconsistencies based on a wiki glossary
 func (c *Client) CheckTerminology(ctx context.Context, args CheckTerminologyArgs) (CheckTerminologyResult, error) {
-	// Ensure logged in for wikis requiring auth for read
 	if err := c.EnsureLoggedIn(ctx); err != nil {
 		return CheckTerminologyResult{}, err
 	}
 
-	// Default glossary page
 	glossaryPage := args.GlossaryPage
 	if glossaryPage == "" {
 		glossaryPage = "Brand Terminology Glossary"
 	}
 
-	// Load glossary from wiki
 	glossary, err := c.loadGlossary(ctx, glossaryPage)
 	if err != nil {
 		return CheckTerminologyResult{}, fmt.Errorf("failed to load glossary from '%s': %w", glossaryPage, err)
 	}
-
 	if len(glossary) == 0 {
 		return CheckTerminologyResult{}, fmt.Errorf("no terms found in glossary page '%s'", glossaryPage)
 	}
 
-	// Get pages to check
-	var pagesToCheck []string
 	limit := normalizeLimit(args.Limit, 10, 50)
-
-	if len(args.Pages) > 0 {
-		pagesToCheck = args.Pages
-		if len(pagesToCheck) > limit {
-			pagesToCheck = pagesToCheck[:limit]
-		}
-	} else if args.Category != "" {
-		// Get pages from category
-		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
-			Category: args.Category,
-			Limit:    limit,
-		})
-		if err != nil {
-			return CheckTerminologyResult{}, fmt.Errorf("failed to get category members: %w", err)
-		}
-		for _, p := range catResult.Members {
-			pagesToCheck = append(pagesToCheck, p.Title)
-		}
-	} else {
-		return CheckTerminologyResult{}, fmt.Errorf("either 'pages' or 'category' must be specified")
+	pagesToCheck, err := c.collectPagesFromArgs(ctx, args.Pages, args.Category, limit, "pages")
+	if err != nil {
+		return CheckTerminologyResult{}, err
 	}
 
 	result := CheckTerminologyResult{
@@ -97,55 +102,49 @@ func (c *Client) loadGlossary(ctx context.Context, glossaryPage string) ([]Gloss
 	return parseWikiTableGlossary(page.Content), nil
 }
 
+// glossaryTableRegex matches wikitable blocks tagged with mcp-glossary or wikitable.
+var glossaryTableRegex = regexp.MustCompile(`(?s)\{\|[^\n]*class="[^"]*(?:mcp-glossary|wikitable)[^"]*"[^\n]*\n(.*?)\|\}`)
+
+// glossaryTermFromCells converts parsed table cells into a GlossaryTerm.
+// Returns ok=false for rows that should be skipped (too few cells, empty, or
+// where the "incorrect" form already matches the "correct" form).
+func glossaryTermFromCells(cells []string) (GlossaryTerm, bool) {
+	if len(cells) < 2 {
+		return GlossaryTerm{}, false
+	}
+	term := GlossaryTerm{
+		Incorrect: strings.TrimSpace(cells[0]),
+		Correct:   strings.TrimSpace(cells[1]),
+	}
+	if term.Incorrect == "" || term.Incorrect == term.Correct {
+		return GlossaryTerm{}, false
+	}
+	if len(cells) >= 3 {
+		term.Pattern = strings.TrimSpace(cells[2])
+	}
+	if len(cells) >= 4 {
+		term.Notes = strings.TrimSpace(cells[3])
+	}
+	return term, true
+}
+
 // parseWikiTableGlossary extracts terms from wikitable format
 func parseWikiTableGlossary(content string) []GlossaryTerm {
 	var terms []GlossaryTerm
-
-	// Match wiki tables with class containing "mcp-glossary" or any wikitable
-	// Format: {| class="wikitable..." ... |}
-	tableRegex := regexp.MustCompile(`(?s)\{\|[^\n]*class="[^"]*(?:mcp-glossary|wikitable)[^"]*"[^\n]*\n(.*?)\|\}`)
-	tables := tableRegex.FindAllStringSubmatch(content, -1)
-
-	for _, table := range tables {
+	for _, table := range glossaryTableRegex.FindAllStringSubmatch(content, -1) {
 		if len(table) < 2 {
 			continue
 		}
-
-		tableContent := table[1]
-
-		// Split into rows (|-) and process each
-		rows := strings.Split(tableContent, "|-")
-		for _, row := range rows {
+		for _, row := range strings.Split(table[1], "|-") {
 			row = strings.TrimSpace(row)
 			if row == "" || strings.HasPrefix(row, "!") {
-				// Skip empty rows and header rows
 				continue
 			}
-
-			// Parse cells (|| separator or | at line start)
-			cells := parseTableRow(row)
-			if len(cells) >= 2 {
-				term := GlossaryTerm{
-					Incorrect: strings.TrimSpace(cells[0]),
-					Correct:   strings.TrimSpace(cells[1]),
-				}
-
-				// Skip if incorrect is empty or equals correct
-				if term.Incorrect == "" || term.Incorrect == term.Correct {
-					continue
-				}
-
-				if len(cells) >= 3 {
-					term.Pattern = strings.TrimSpace(cells[2])
-				}
-				if len(cells) >= 4 {
-					term.Notes = strings.TrimSpace(cells[3])
-				}
+			if term, ok := glossaryTermFromCells(parseTableRow(row)); ok {
 				terms = append(terms, term)
 			}
 		}
 	}
-
 	return terms
 }
 
@@ -176,6 +175,40 @@ func parseTableRow(row string) []string {
 	return cells
 }
 
+// compileTermMatcher returns a case-insensitive regex for a glossary term.
+// Returns nil if the regex fails to compile (caller should skip the term).
+func compileTermMatcher(term GlossaryTerm) *regexp.Regexp {
+	expr := term.Pattern
+	if expr == "" {
+		expr = regexp.QuoteMeta(term.Incorrect)
+	}
+	re, err := regexp.Compile("(?i)" + expr)
+	if err != nil {
+		return nil
+	}
+	return re
+}
+
+// findTermIssuesInLine returns terminology issues for a single (line, term) pair.
+// Skips matches whose text already equals the correct form.
+func findTermIssuesInLine(line string, lineNum int, term GlossaryTerm, re *regexp.Regexp) []TerminologyIssue {
+	var issues []TerminologyIssue
+	for _, match := range re.FindAllStringIndex(line, -1) {
+		matchedText := line[match[0]:match[1]]
+		if strings.EqualFold(matchedText, term.Correct) {
+			continue
+		}
+		issues = append(issues, TerminologyIssue{
+			Incorrect: matchedText,
+			Correct:   term.Correct,
+			Line:      lineNum + 1,
+			Context:   extractContext(line, match[0], match[1], 40),
+			Notes:     term.Notes,
+		})
+	}
+	return issues
+}
+
 // checkPageTerminology checks a single page against the glossary
 func (c *Client) checkPageTerminology(ctx context.Context, title string, glossary []GlossaryTerm, excludeCode bool) PageTerminologyResult {
 	result := PageTerminologyResult{
@@ -190,53 +223,22 @@ func (c *Client) checkPageTerminology(ctx context.Context, title string, glossar
 	}
 
 	content := page.Content
-
-	// Strip code blocks to avoid false positives on code paths like SI.Data
 	if excludeCode {
 		content = stripCodeBlocksForTerminology(content)
 	}
 
-	lines := strings.Split(content, "\n")
+	// Pre-compile term matchers once per page.
+	matchers := make([]*regexp.Regexp, len(glossary))
+	for i, term := range glossary {
+		matchers[i] = compileTermMatcher(term)
+	}
 
-	for lineNum, line := range lines {
-		for _, term := range glossary {
-			// Use regex pattern if specified, otherwise literal match
-			var re *regexp.Regexp
-			var err error
-
-			if term.Pattern != "" {
-				re, err = regexp.Compile("(?i)" + term.Pattern)
-			} else {
-				// Escape special regex characters and do case-insensitive match
-				escaped := regexp.QuoteMeta(term.Incorrect)
-				re, err = regexp.Compile("(?i)" + escaped)
-			}
-
-			if err != nil {
+	for lineNum, line := range strings.Split(content, "\n") {
+		for i, term := range glossary {
+			if matchers[i] == nil {
 				continue
 			}
-
-			matches := re.FindAllStringIndex(line, -1)
-			for _, match := range matches {
-				// Extract the actual matched text
-				matchedText := line[match[0]:match[1]]
-
-				// Skip if the matched text is actually the correct form
-				if strings.EqualFold(matchedText, term.Correct) {
-					continue
-				}
-
-				// Get context (surrounding text)
-				context := extractContext(line, match[0], match[1], 40)
-
-				result.Issues = append(result.Issues, TerminologyIssue{
-					Incorrect: matchedText,
-					Correct:   term.Correct,
-					Line:      lineNum + 1,
-					Context:   context,
-					Notes:     term.Notes,
-				})
-			}
+			result.Issues = append(result.Issues, findTermIssuesInLine(line, lineNum, term, matchers[i])...)
 		}
 	}
 
@@ -300,6 +302,68 @@ func stripCodeBlocksForTerminology(content string) string {
 	return content
 }
 
+// validTranslationPatterns is the set of accepted translation pattern names.
+var validTranslationPatterns = map[string]struct{}{
+	"subpage": {},
+	"suffix":  {},
+	"prefix":  {},
+}
+
+// validateTranslationPattern resolves the default and validates the pattern name.
+func validateTranslationPattern(pattern string) (string, error) {
+	if pattern == "" {
+		pattern = "subpage"
+	}
+	if _, ok := validTranslationPatterns[pattern]; !ok {
+		return "", fmt.Errorf("invalid pattern: %s (use 'subpage', 'suffix', or 'prefix')", pattern)
+	}
+	return pattern, nil
+}
+
+// buildTranslationTitle composes the localized page title for a base page,
+// language, and naming pattern.
+func buildTranslationTitle(basePage, lang, pattern string) string {
+	switch pattern {
+	case "suffix":
+		return fmt.Sprintf("%s (%s)", basePage, lang)
+	case "prefix":
+		return fmt.Sprintf("%s:%s", lang, basePage)
+	default: // "subpage"
+		return fmt.Sprintf("%s/%s", basePage, lang)
+	}
+}
+
+// checkBasePageTranslations checks one base page across all requested languages
+// and returns the per-page result plus the count of missing translations.
+func (c *Client) checkBasePageTranslations(ctx context.Context, basePage string, languages []string, pattern string) (PageTranslationResult, int) {
+	pageResult := PageTranslationResult{
+		BasePage:     basePage,
+		Translations: make(map[string]TranslationStatus),
+		Complete:     true,
+	}
+	missing := 0
+
+	for _, lang := range languages {
+		langPage := buildTranslationTitle(basePage, lang, pattern)
+		status := TranslationStatus{PageTitle: langPage}
+
+		info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: langPage})
+		if err == nil && info.Exists {
+			status.Exists = true
+			status.PageID = info.PageID
+			status.Length = info.Length
+		} else {
+			pageResult.MissingLangs = append(pageResult.MissingLangs, lang)
+			pageResult.Complete = false
+			missing++
+		}
+
+		pageResult.Translations[lang] = status
+	}
+
+	return pageResult, missing
+}
+
 // CheckTranslations checks if pages exist in all specified languages
 func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsArgs) (CheckTranslationsResult, error) {
 	if err := c.EnsureLoggedIn(ctx); err != nil {
@@ -310,37 +374,15 @@ func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsAr
 		return CheckTranslationsResult{}, fmt.Errorf("at least one language is required")
 	}
 
-	// Default pattern
-	pattern := args.Pattern
-	if pattern == "" {
-		pattern = "subpage"
-	}
-	if pattern != "subpage" && pattern != "suffix" && pattern != "prefix" {
-		return CheckTranslationsResult{}, fmt.Errorf("invalid pattern: %s (use 'subpage', 'suffix', or 'prefix')", pattern)
+	pattern, err := validateTranslationPattern(args.Pattern)
+	if err != nil {
+		return CheckTranslationsResult{}, err
 	}
 
-	// Get base pages to check
-	var basePages []string
 	limit := normalizeLimit(args.Limit, 20, 100)
-
-	if len(args.BasePages) > 0 {
-		basePages = args.BasePages
-		if len(basePages) > limit {
-			basePages = basePages[:limit]
-		}
-	} else if args.Category != "" {
-		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
-			Category: args.Category,
-			Limit:    limit,
-		})
-		if err != nil {
-			return CheckTranslationsResult{}, fmt.Errorf("failed to get category members: %w", err)
-		}
-		for _, p := range catResult.Members {
-			basePages = append(basePages, p.Title)
-		}
-	} else {
-		return CheckTranslationsResult{}, fmt.Errorf("either 'base_pages' or 'category' must be specified")
+	basePages, err := c.collectPagesFromArgs(ctx, args.BasePages, args.Category, limit, "base_pages")
+	if err != nil {
+		return CheckTranslationsResult{}, err
 	}
 
 	result := CheckTranslationsResult{
@@ -349,58 +391,168 @@ func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsAr
 		Pages:            make([]PageTranslationResult, 0, len(basePages)),
 	}
 
-	// Check each base page for all languages
 	for _, basePage := range basePages {
-		// Check for context cancellation
 		select {
 		case <-ctx.Done():
 			return result, ctx.Err()
 		default:
 		}
 
-		pageResult := PageTranslationResult{
-			BasePage:     basePage,
-			Translations: make(map[string]TranslationStatus),
-			Complete:     true,
-		}
-
-		for _, lang := range args.Languages {
-			// Build page title based on pattern
-			var langPage string
-			switch pattern {
-			case "subpage":
-				langPage = fmt.Sprintf("%s/%s", basePage, lang)
-			case "suffix":
-				langPage = fmt.Sprintf("%s (%s)", basePage, lang)
-			case "prefix":
-				langPage = fmt.Sprintf("%s:%s", lang, basePage)
-			}
-
-			// Check if page exists
-			info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: langPage})
-			status := TranslationStatus{
-				PageTitle: langPage,
-			}
-
-			if err == nil && info.Exists {
-				status.Exists = true
-				status.PageID = info.PageID
-				status.Length = info.Length
-			} else {
-				status.Exists = false
-				pageResult.MissingLangs = append(pageResult.MissingLangs, lang)
-				pageResult.Complete = false
-				result.MissingCount++
-			}
-
-			pageResult.Translations[lang] = status
-		}
-
+		pageResult, missing := c.checkBasePageTranslations(ctx, basePage, args.Languages, pattern)
+		result.MissingCount += missing
 		result.Pages = append(result.Pages, pageResult)
 	}
 
 	result.PagesChecked = len(result.Pages)
 	return result, nil
+}
+
+// healthCheckApply mutates the audit result with one check's outcome.
+type healthCheckApply func(*WikiHealthAuditResult)
+
+// healthCheckFunc runs one health check and returns either an apply function
+// or an error. Apply functions are invoked under the dispatcher's lock so
+// individual checks don't need their own synchronization.
+type healthCheckFunc func(context.Context, WikiHealthAuditArgs, int) (healthCheckApply, error)
+
+// runLinksCheck checks for broken internal links and updates the broken-link summary.
+func (c *Client) runLinksCheck(ctx context.Context, args WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
+	r, err := c.FindBrokenInternalLinks(ctx, FindBrokenInternalLinksArgs{
+		Pages:    args.Pages,
+		Category: args.Category,
+		Limit:    limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return func(out *WikiHealthAuditResult) {
+		out.BrokenLinks = &r
+		out.Summary.BrokenLinksCount = r.BrokenCount
+		if r.PagesChecked > out.PagesAudited {
+			out.PagesAudited = r.PagesChecked
+		}
+	}, nil
+}
+
+// runTerminologyCheck runs the terminology consistency check.
+func (c *Client) runTerminologyCheck(ctx context.Context, args WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
+	r, err := c.CheckTerminology(ctx, CheckTerminologyArgs{
+		Pages:    args.Pages,
+		Category: args.Category,
+		Limit:    limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return func(out *WikiHealthAuditResult) {
+		out.Terminology = &r
+		out.Summary.TerminologyIssues = r.IssuesFound
+		if r.PagesChecked > out.PagesAudited {
+			out.PagesAudited = r.PagesChecked
+		}
+	}, nil
+}
+
+// runOrphansCheck looks for pages with no incoming links in the main namespace.
+func (c *Client) runOrphansCheck(ctx context.Context, _ WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
+	r, err := c.FindOrphanedPages(ctx, FindOrphanedPagesArgs{
+		Namespace: 0,
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return func(out *WikiHealthAuditResult) {
+		out.OrphanedPages = &r
+		out.Summary.OrphanedPagesCount = r.OrphanedCount
+	}, nil
+}
+
+// runActivityCheck summarizes recent changes by user.
+func (c *Client) runActivityCheck(ctx context.Context, _ WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
+	r, err := c.GetRecentChanges(ctx, RecentChangesArgs{Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	aggregated := aggregateChanges(r.Changes, "user")
+	return func(out *WikiHealthAuditResult) {
+		out.RecentActivity = aggregated
+	}, nil
+}
+
+// runExternalCheck samples external links from a sample page and tests reachability.
+func (c *Client) runExternalCheck(ctx context.Context, args WikiHealthAuditArgs, _ int) (healthCheckApply, error) {
+	pages := samplePagesForExternalCheck(ctx, c, args, 5)
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("no pages or URLs found to check")
+	}
+	page, err := c.GetPage(ctx, GetPageArgs{Title: pages[0], Format: "wikitext"})
+	if err != nil {
+		return nil, fmt.Errorf("no pages or URLs found to check")
+	}
+	urls := extractExternalURLs(page.Content, 10)
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("no pages or URLs found to check")
+	}
+	r, err := c.CheckLinks(ctx, CheckLinksArgs{URLs: urls})
+	if err != nil {
+		return nil, err
+	}
+	return func(out *WikiHealthAuditResult) {
+		out.ExternalLinks = &r
+		out.Summary.ExternalBrokenCount = r.BrokenCount
+	}, nil
+}
+
+// samplePagesForExternalCheck returns up to maxPages titles from args.Pages or args.Category.
+// External checks are slow, so the sample is intentionally small.
+func samplePagesForExternalCheck(ctx context.Context, c *Client, args WikiHealthAuditArgs, maxPages int) []string {
+	if len(args.Pages) > 0 {
+		if len(args.Pages) > maxPages {
+			return args.Pages[:maxPages]
+		}
+		return args.Pages
+	}
+	if args.Category == "" {
+		return nil
+	}
+	catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+		Category: args.Category,
+		Limit:    maxPages,
+	})
+	if err != nil {
+		return nil
+	}
+	titles := make([]string, 0, len(catResult.Members))
+	for _, p := range catResult.Members {
+		titles = append(titles, p.Title)
+	}
+	return titles
+}
+
+// computeHealthScore turns the summary counts into a 0-100 score.
+// Formula: 100 - (broken_links*5 + terminology*2 + orphans*1 + external*3).
+func computeHealthScore(summary WikiHealthAuditSummary) int {
+	score := 100 -
+		summary.BrokenLinksCount*5 -
+		summary.TerminologyIssues*2 -
+		summary.OrphanedPagesCount*1 -
+		summary.ExternalBrokenCount*3
+	if score < 0 {
+		return 0
+	}
+	return score
+}
+
+// healthAuditChecks returns the registry mapping check names to runners.
+func (c *Client) healthAuditChecks() map[string]healthCheckFunc {
+	return map[string]healthCheckFunc{
+		"links":       c.runLinksCheck,
+		"terminology": c.runTerminologyCheck,
+		"orphans":     c.runOrphansCheck,
+		"activity":    c.runActivityCheck,
+		"external":    c.runExternalCheck,
+	}
 }
 
 // HealthAudit runs a comprehensive wiki health audit, checking multiple quality metrics in parallel.
@@ -410,182 +562,42 @@ func (c *Client) HealthAudit(ctx context.Context, args WikiHealthAuditArgs) (Wik
 		return WikiHealthAuditResult{}, err
 	}
 
-	// Initialize result
 	result := WikiHealthAuditResult{
 		WikiName:  c.config.BaseURL,
 		AuditedAt: time.Now().UTC().Format(time.RFC3339),
 		Errors:    make([]string, 0),
 	}
 
-	// Determine which checks to run
 	checksToRun := args.Checks
 	if len(checksToRun) == 0 {
-		// Default: all except external (which can be slow)
 		checksToRun = []string{"links", "terminology", "orphans", "activity"}
 	}
-
-	// Normalize limit
 	limit := normalizeLimit(args.Limit, 20, 50)
+	registry := c.healthAuditChecks()
 
-	// Build check set for quick lookup
-	checkSet := make(map[string]bool)
-	for _, check := range checksToRun {
-		checkSet[check] = true
-	}
-
-	// Mutex for thread-safe result updates
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-
-	// Run checks in parallel
-	if checkSet["links"] {
+	for _, name := range checksToRun {
+		check, ok := registry[name]
+		if !ok {
+			continue
+		}
 		wg.Add(1)
-		go func() {
+		go func(name string, check healthCheckFunc) {
 			defer wg.Done()
-			linksResult, err := c.FindBrokenInternalLinks(ctx, FindBrokenInternalLinksArgs{
-				Pages:    args.Pages,
-				Category: args.Category,
-				Limit:    limit,
-			})
+			apply, err := check(ctx, args, limit)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("links check failed: %v", err))
-			} else {
-				result.BrokenLinks = &linksResult
-				result.Summary.BrokenLinksCount = linksResult.BrokenCount
-				if linksResult.PagesChecked > result.PagesAudited {
-					result.PagesAudited = linksResult.PagesChecked
-				}
+				result.Errors = append(result.Errors, fmt.Sprintf("%s check failed: %v", name, err))
+				return
 			}
-		}()
+			apply(&result)
+		}(name, check)
 	}
-
-	if checkSet["terminology"] {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			termResult, err := c.CheckTerminology(ctx, CheckTerminologyArgs{
-				Pages:    args.Pages,
-				Category: args.Category,
-				Limit:    limit,
-			})
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("terminology check failed: %v", err))
-			} else {
-				result.Terminology = &termResult
-				result.Summary.TerminologyIssues = termResult.IssuesFound
-				if termResult.PagesChecked > result.PagesAudited {
-					result.PagesAudited = termResult.PagesChecked
-				}
-			}
-		}()
-	}
-
-	if checkSet["orphans"] {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			orphanResult, err := c.FindOrphanedPages(ctx, FindOrphanedPagesArgs{
-				Namespace: 0,
-				Limit:     limit,
-			})
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("orphans check failed: %v", err))
-			} else {
-				result.OrphanedPages = &orphanResult
-				result.Summary.OrphanedPagesCount = orphanResult.OrphanedCount
-			}
-		}()
-	}
-
-	if checkSet["activity"] {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			activityResult, err := c.GetRecentChanges(ctx, RecentChangesArgs{
-				Limit: limit,
-			})
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("activity check failed: %v", err))
-			} else {
-				// Aggregate by user
-				aggregated := aggregateChanges(activityResult.Changes, "user")
-				result.RecentActivity = aggregated
-			}
-		}()
-	}
-
-	if checkSet["external"] {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// Get a sample of pages to check external links
-			var pagesToCheck []string
-			if len(args.Pages) > 0 {
-				pagesToCheck = args.Pages
-				if len(pagesToCheck) > 5 {
-					pagesToCheck = pagesToCheck[:5] // Limit external checks
-				}
-			} else if args.Category != "" {
-				catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
-					Category: args.Category,
-					Limit:    5,
-				})
-				if err == nil {
-					for _, p := range catResult.Members {
-						pagesToCheck = append(pagesToCheck, p.Title)
-					}
-				}
-			}
-
-			if len(pagesToCheck) > 0 {
-				// Get external links from first page
-				page, err := c.GetPage(ctx, GetPageArgs{Title: pagesToCheck[0], Format: "wikitext"})
-				if err == nil {
-					// Extract URLs from content (simple regex for external links)
-					urls := extractExternalURLs(page.Content, 10)
-					if len(urls) > 0 {
-						extResult, err := c.CheckLinks(ctx, CheckLinksArgs{URLs: urls})
-						mu.Lock()
-						defer mu.Unlock()
-						if err != nil {
-							result.Errors = append(result.Errors, fmt.Sprintf("external links check failed: %v", err))
-						} else {
-							result.ExternalLinks = &extResult
-							result.Summary.ExternalBrokenCount = extResult.BrokenCount
-						}
-						return
-					}
-				}
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			result.Errors = append(result.Errors, "external links check: no pages or URLs found to check")
-		}()
-	}
-
-	// Wait for all checks to complete
 	wg.Wait()
 
-	// Calculate health score
-	// Formula: 100 - (broken_links*5 + terminology*2 + orphans*1 + external*3)
-	score := 100
-	score -= result.Summary.BrokenLinksCount * 5
-	score -= result.Summary.TerminologyIssues * 2
-	score -= result.Summary.OrphanedPagesCount * 1
-	score -= result.Summary.ExternalBrokenCount * 3
-	if score < 0 {
-		score = 0
-	}
-	result.HealthScore = score
-
+	result.HealthScore = computeHealthScore(result.Summary)
 	return result, nil
 }
 
@@ -609,6 +621,85 @@ func extractExternalURLs(content string, limit int) []string {
 	return urls
 }
 
+// listPagesForStaleCheck collects candidate page titles for the stale-page check
+// from either a category or a namespace. Returns oversampled results because
+// the caller filters them by last-edited timestamp.
+func (c *Client) listPagesForStaleCheck(ctx context.Context, args GetStalePagesArgs, limit int) ([]string, error) {
+	if args.Category != "" {
+		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+			Category: args.Category,
+			Limit:    limit * 2,
+			Type:     "page",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get category members: %w", err)
+		}
+		titles := make([]string, 0, len(catResult.Members))
+		for _, m := range catResult.Members {
+			titles = append(titles, m.Title)
+		}
+		return titles, nil
+	}
+
+	listResult, err := c.ListPages(ctx, ListPagesArgs{
+		Namespace: args.Namespace,
+		Limit:     limit * 3,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pages: %w", err)
+	}
+	titles := make([]string, 0, len(listResult.Pages))
+	for _, p := range listResult.Pages {
+		titles = append(titles, p.Title)
+	}
+	return titles, nil
+}
+
+// findStaleInBatches fetches page info in batches and returns pages last
+// touched before cutoff. Errors on individual batches are skipped silently
+// so a single API hiccup doesn't sink the whole audit.
+func (c *Client) findStaleInBatches(ctx context.Context, titles []string, cutoff time.Time) []StalePage {
+	stale := make([]StalePage, 0)
+	for i := 0; i < len(titles); i += MaxBatchSize {
+		if ctx.Err() != nil {
+			break
+		}
+		end := i + MaxBatchSize
+		if end > len(titles) {
+			end = len(titles)
+		}
+		batchInfo, err := c.GetPagesInfoBatch(ctx, GetPagesInfoBatchArgs{Titles: titles[i:end]})
+		if err != nil {
+			continue
+		}
+		for _, info := range batchInfo.Pages {
+			if page, ok := staleEntryFromInfo(info, cutoff); ok {
+				stale = append(stale, page)
+			}
+		}
+	}
+	return stale
+}
+
+// staleEntryFromInfo returns a StalePage if the page exists and was touched
+// before cutoff. The bool reports whether the page qualified.
+func staleEntryFromInfo(info PageInfo, cutoff time.Time) (StalePage, bool) {
+	if !info.Exists || info.Touched == "" {
+		return StalePage{}, false
+	}
+	touched, err := time.Parse("2006-01-02T15:04:05Z", info.Touched)
+	if err != nil || !touched.Before(cutoff) {
+		return StalePage{}, false
+	}
+	return StalePage{
+		Title:      info.Title,
+		PageID:     info.PageID,
+		LastEdited: info.Touched,
+		DaysStale:  int(time.Since(touched).Hours() / 24),
+		Length:     info.Length,
+	}, true
+}
+
 // GetStalePages finds pages that haven't been edited in a specified number of days.
 func (c *Client) GetStalePages(ctx context.Context, args GetStalePagesArgs) (GetStalePagesResult, error) {
 	if err := c.EnsureLoggedIn(ctx); err != nil {
@@ -623,33 +714,9 @@ func (c *Client) GetStalePages(ctx context.Context, args GetStalePagesArgs) (Get
 	limit := normalizeLimit(args.Limit, 50, 200)
 	cutoff := time.Now().AddDate(0, 0, -days)
 
-	var pageTitles []string
-
-	if args.Category != "" {
-		// Get pages from category
-		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
-			Category: args.Category,
-			Limit:    limit * 2, // Get more to filter
-			Type:     "page",
-		})
-		if err != nil {
-			return GetStalePagesResult{}, fmt.Errorf("failed to get category members: %w", err)
-		}
-		for _, m := range catResult.Members {
-			pageTitles = append(pageTitles, m.Title)
-		}
-	} else {
-		// Get pages from namespace via allpages
-		listResult, err := c.ListPages(ctx, ListPagesArgs{
-			Namespace: args.Namespace,
-			Limit:     limit * 3, // Get more since we'll filter
-		})
-		if err != nil {
-			return GetStalePagesResult{}, fmt.Errorf("failed to list pages: %w", err)
-		}
-		for _, p := range listResult.Pages {
-			pageTitles = append(pageTitles, p.Title)
-		}
+	pageTitles, err := c.listPagesForStaleCheck(ctx, args, limit)
+	if err != nil {
+		return GetStalePagesResult{}, err
 	}
 
 	if len(pageTitles) == 0 {
@@ -660,61 +727,16 @@ func (c *Client) GetStalePages(ctx context.Context, args GetStalePagesArgs) (Get
 		}, nil
 	}
 
-	// Get info for all pages in batches
 	result := GetStalePagesResult{
 		Days:         days,
-		StalePages:   make([]StalePage, 0),
+		StalePages:   c.findStaleInBatches(ctx, pageTitles, cutoff),
 		TotalScanned: len(pageTitles),
 	}
 
-	// Process in batches of 50
-	for i := 0; i < len(pageTitles); i += MaxBatchSize {
-		if ctx.Err() != nil {
-			break
-		}
-
-		end := i + MaxBatchSize
-		if end > len(pageTitles) {
-			end = len(pageTitles)
-		}
-		batch := pageTitles[i:end]
-
-		batchInfo, err := c.GetPagesInfoBatch(ctx, GetPagesInfoBatchArgs{Titles: batch})
-		if err != nil {
-			continue
-		}
-
-		for _, info := range batchInfo.Pages {
-			if !info.Exists || info.Touched == "" {
-				continue
-			}
-
-			// Parse the timestamp
-			touched, err := time.Parse("2006-01-02T15:04:05Z", info.Touched)
-			if err != nil {
-				continue
-			}
-
-			if touched.Before(cutoff) {
-				daysStale := int(time.Since(touched).Hours() / 24)
-				stalePage := StalePage{
-					Title:      info.Title,
-					PageID:     info.PageID,
-					LastEdited: info.Touched,
-					DaysStale:  daysStale,
-					Length:     info.Length,
-				}
-				result.StalePages = append(result.StalePages, stalePage)
-			}
-		}
-	}
-
-	// Sort by last edited (oldest first)
 	sort.Slice(result.StalePages, func(i, j int) bool {
 		return result.StalePages[i].LastEdited < result.StalePages[j].LastEdited
 	})
 
-	// Limit results
 	if len(result.StalePages) > limit {
 		result.StalePages = result.StalePages[:limit]
 	}
