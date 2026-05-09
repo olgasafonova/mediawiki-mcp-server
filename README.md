@@ -1132,7 +1132,12 @@ mediawiki-mcp-server/
 │   ├── config.go              # Configuration management
 │   ├── types.go               # Request/response types
 │   ├── errors.go              # Error handling
-│   ├── read.go                # Page reading operations
+│   ├── read.go                # Page content reads (GetPage, Parse, GetPageSummary)
+│   ├── pageinfo.go            # Page metadata + listings (GetPageInfo, ListPages, ResolveTitle, GetWikiInfo)
+│   ├── sections.go            # Section operations (GetSections)
+│   ├── related.go             # Related pages, categories, outgoing links (GetRelated)
+│   ├── images.go              # Image operations (GetImages)
+│   ├── batch.go               # Batch operations (GetPagesBatch, GetPagesInfoBatch, SearchAndRead)
 │   ├── write.go               # Page editing operations
 │   ├── search.go              # Search functionality
 │   ├── methods.go             # Core API methods

@@ -59,7 +59,12 @@ mediawiki-mcp-server/
 │   ├── config.go          # Configuration management
 │   ├── types.go           # All type definitions (Args, Results)
 │   ├── errors.go          # Error types and validation
-│   ├── read.go            # Page reading operations
+│   ├── read.go            # Page content reads (GetPage, Parse, GetPageSummary)
+│   ├── pageinfo.go        # Page metadata + listings
+│   ├── sections.go        # Section operations
+│   ├── related.go         # Related pages, categories, outgoing links
+│   ├── images.go          # Image operations
+│   ├── batch.go           # Batch operations + SearchAndRead
 │   ├── write.go           # Page editing operations
 │   ├── search.go          # Search operations
 │   ├── links.go           # Link checking operations
