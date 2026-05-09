@@ -70,11 +70,13 @@ mediawiki-mcp-server/
 │   ├── links.go           # Link checking operations
 │   ├── history.go         # Revision history operations
 │   ├── categories.go      # Category operations
-│   ├── quality.go         # Content quality checks
+│   ├── quality.go         # Content quality checks (terminology, translations, audit, stale pages)
 │   ├── users.go           # User operations
-│   ├── security.go        # SSRF protection
+│   ├── security.go        # SSRF protection, input sanitization
 │   ├── similarity.go      # Text similarity algorithms
-│   ├── pdf.go             # PDF generation
+│   ├── pdf.go             # PDF text extraction (via pdftotext)
+│   ├── audit.go           # Audit logging for write operations
+│   ├── dedup.go           # In-flight request deduplication
 │   └── *_test.go          # Unit tests
 ├── converter/              # Markdown ↔ MediaWiki conversion
 │   ├── md_to_wiki.go
@@ -88,17 +90,19 @@ mediawiki-mcp-server/
 
 ### 1. MCP Server (main.go)
 
-The entry point registers 33 tools with the MCP server:
+The entry point registers 43 tools with the MCP server (42 from `tools/definitions.go` plus `mediawiki_convert_markdown` registered in `main.go`):
 
 | Category | Tools |
 |----------|-------|
-| Read | `get_page`, `get_page_info`, `list_pages`, `get_sections`, `get_images` |
-| Write | `edit_page`, `find_replace`, `apply_formatting`, `bulk_replace`, `upload_file` |
-| Search | `search`, `search_in_page`, `find_similar_pages`, `compare_topic` |
-| Links | `get_backlinks`, `get_external_links`, `check_links`, `find_broken_internal_links` |
+| Read (page content) | `get_page`, `get_page_summary`, `get_sections`, `get_images`, `get_related`, `parse`, `batch_get_pages`, `search_and_read` |
+| Read (metadata + listings) | `get_page_info`, `batch_get_pages_info`, `list_pages`, `list_categories`, `get_category_members`, `list_users`, `get_wiki_info`, `resolve_title` |
+| Write | `edit_page`, `upload_file`, `move_page`, `manage_categories` |
+| Quick edits | `find_replace`, `apply_formatting`, `bulk_replace` |
+| Search | `search`, `search_in_page`, `search_in_file`, `find_similar_pages`, `compare_topic` |
+| Links | `get_backlinks`, `get_external_links`, `get_external_links_batch`, `check_links`, `find_broken_internal_links` |
+| Quality | `audit`, `check_terminology`, `check_translations`, `find_orphaned_pages`, `get_stale_pages` |
 | History | `get_revisions`, `compare_revisions`, `get_recent_changes`, `get_user_contributions` |
-| Quality | `check_terminology`, `check_translations` |
-| Other | `get_wiki_info`, `resolve_title`, `convert_markdown_to_wiki`, `convert_wiki_to_markdown` |
+| Conversion | `convert_markdown` |
 
 ### 2. Wiki Client (wiki/client.go)
 

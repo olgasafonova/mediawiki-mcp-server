@@ -1146,7 +1146,7 @@ mediawiki-mcp-server/
 │   ├── users.go               # User management
 │   ├── links.go               # Link analysis
 │   ├── quality.go             # Content quality checks
-│   ├── audit.go               # Wiki health audits
+│   ├── audit.go               # Audit logging for write operations (edit/create/upload)
 │   ├── similarity.go          # Content similarity detection
 │   ├── pdf.go                 # PDF text extraction
 │   ├── security.go            # Input sanitization, SSRF protection
