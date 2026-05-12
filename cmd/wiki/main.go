@@ -21,6 +21,9 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageErr(err)
+	})
 
 	// Global flags
 	root.PersistentFlags().String("url", "", "Wiki API URL (overrides MEDIAWIKI_URL)")
@@ -47,7 +50,7 @@ func main() {
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		os.Exit(ExitCode(err))
 	}
 }
 

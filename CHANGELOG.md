@@ -4,6 +4,9 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+### Added
+- `wiki` CLI now returns typed exit codes so shell scripts can branch on failure category: `2` usage error, `3` not found (HTTP 404), `5` wiki API error (other 4xx/5xx), `6` auth error (HTTP 401/403), `7` rate limit (HTTP 429), `10` config error. Adapted from the cli-printing-press canonical map; `4` remains reserved for `wiki lint` findings (existing public API), so auth errors use `6` instead of `4`. Plain errors still exit `1`. `wiki.APIError` from the wiki client is auto-classified by status; commands can also return `usageErr`/`notFoundErr`/`authErr`/`apiErr`/`rateLimitErr`/`configErr` directly. Cobra flag-parse errors (unknown flag, missing required arg) auto-wrap to exit `2`.
+
 ## [1.30.0] - 2026-05-03
 
 ### Fixed (security)

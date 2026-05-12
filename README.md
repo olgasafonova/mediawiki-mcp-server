@@ -459,6 +459,24 @@ You can also override the URL per-invocation with `--url`.
 
 Every command supports `--json` (machine-readable output) and `--quiet` (errors only).
 
+### Exit codes
+
+The CLI uses typed exit codes so shell scripts can branch on the failure category.
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Unknown / unclassified error |
+| 2 | Usage error (unknown flag, missing required arg) |
+| 3 | Not found (HTTP 404 from wiki API) |
+| 4 | `wiki lint` found terminology issues or broken links |
+| 5 | Wiki API error (other 4xx/5xx) |
+| 6 | Auth error (HTTP 401 / 403) |
+| 7 | Rate limit (HTTP 429) |
+| 10 | Config error |
+
+Adapted from the [cli-printing-press](https://github.com/mvanhorn/cli-printing-press) canonical map; deviation: code `4` is reserved for `wiki lint` findings (existing public API), so auth errors use `6`.
+
 ### Examples
 
 ```bash
