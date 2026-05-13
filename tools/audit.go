@@ -45,6 +45,24 @@ type ToolCallEntry struct {
 
 	// Args contains a summary of key arguments (title, query) without content bodies
 	Args string `json:"args,omitempty"`
+
+	// Rationale is the agent-supplied one-sentence "why" for this tool call.
+	// Required per the BaseArgs schema; rationale logs reconstruct agent intent
+	// without needing access to the originating chat context.
+	Rationale string `json:"rationale,omitempty"`
+}
+
+// rationaler is implemented by every Args struct via embedded wiki.BaseArgs.
+type rationaler interface {
+	GetRationale() string
+}
+
+// extractRationale returns the rationale from any Args struct, or "" if absent.
+func extractRationale(args any) string {
+	if r, ok := args.(rationaler); ok {
+		return r.GetRationale()
+	}
+	return ""
 }
 
 // ToolAuditLogger defines the interface for handler-level audit logging.
@@ -196,5 +214,6 @@ func newToolCallEntry(spec ToolSpec, args any, err error, start time.Time) ToolC
 		Error:      errorString(err),
 		ReadOnly:   spec.ReadOnly,
 		Args:       extractArgsSummary(args),
+		Rationale:  extractRationale(args),
 	}
 }

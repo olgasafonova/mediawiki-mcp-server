@@ -209,6 +209,7 @@ func register[Args, Result any](
 			attribute.String("mcp.tool.name", spec.Name),
 			attribute.String("mcp.tool.category", spec.Category),
 			attribute.Bool("mcp.tool.readonly", spec.ReadOnly),
+			attribute.String("mcp.tool.rationale", extractRationale(args)),
 		)
 
 		// Track in-flight requests
@@ -253,6 +254,9 @@ func (h *HandlerRegistry) recoverPanic(toolName string) {
 func (h *HandlerRegistry) logExecution(spec ToolSpec, args, result any) {
 	// Build log attributes from the spec
 	attrs := []any{"tool", spec.Name}
+	if rationale := extractRationale(args); rationale != "" {
+		attrs = append(attrs, "rationale", rationale)
+	}
 
 	// Add any extractable fields from args/result using type assertions
 	// This is more performant than reflection for common cases

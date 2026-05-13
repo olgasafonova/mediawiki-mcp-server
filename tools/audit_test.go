@@ -303,3 +303,65 @@ func TestErrorString(t *testing.T) {
 		t.Errorf("errorString(err) = %q, want %q", got, "test")
 	}
 }
+
+func TestExtractRationale(t *testing.T) {
+	tests := []struct {
+		name string
+		args any
+		want string
+	}{
+		{
+			name: "SearchArgs with rationale",
+			args: wiki.SearchArgs{
+				BaseArgs: wiki.BaseArgs{Rationale: "user asked about deployment docs"},
+				Query:    "deployment",
+			},
+			want: "user asked about deployment docs",
+		},
+		{
+			name: "EditPageArgs with rationale",
+			args: wiki.EditPageArgs{
+				BaseArgs: wiki.BaseArgs{Rationale: "strike former employee per HR request"},
+				Title:    "Team",
+			},
+			want: "strike former employee per HR request",
+		},
+		{
+			name: "args without rationale returns empty",
+			args: wiki.SearchArgs{Query: "x"},
+			want: "",
+		},
+		{
+			name: "non-Args type returns empty",
+			args: struct{ Foo string }{Foo: "bar"},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractRationale(tt.args); got != tt.want {
+				t.Errorf("extractRationale() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewToolCallEntry_CapturesRationale(t *testing.T) {
+	spec := ToolSpec{
+		Name:     "mediawiki_search",
+		Method:   "Search",
+		Category: "search",
+		ReadOnly: true,
+	}
+	args := wiki.SearchArgs{
+		BaseArgs: wiki.BaseArgs{Rationale: "user is investigating API timeouts"},
+		Query:    "timeout",
+	}
+
+	entry := newToolCallEntry(spec, args, nil, time.Now())
+
+	if entry.Rationale != "user is investigating API timeouts" {
+		t.Errorf("Rationale = %q, want %q", entry.Rationale, "user is investigating API timeouts")
+	}
+}

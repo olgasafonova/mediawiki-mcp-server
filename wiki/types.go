@@ -12,10 +12,28 @@ const (
 	MaxEditSize = 200000 // 200KB max for edits (larger than read to allow updates)
 )
 
+// BaseArgs holds parameters shared by every tool call.
+//
+// Rationale is required: a one-sentence agent-supplied explanation of why
+// the tool is being called. Rationale logs reconstruct intent without needing
+// access to the originating chat context. Pattern from Teddy Riker,
+// "Designing for Agents" (Ramp PM).
+type BaseArgs struct {
+	Rationale string `json:"rationale" jsonschema:"One-sentence explanation of why you are calling this tool. Required. Used for audit trails and intent reconstruction without access to chat context."`
+}
+
+// GetRationale returns the rationale string. Promoted via embedded BaseArgs
+// onto every tool's Args struct, so handlers can extract rationale uniformly
+// without per-type switches.
+func (b BaseArgs) GetRationale() string {
+	return b.Rationale
+}
+
 // ========== Search Types ==========
 
 // SearchArgs contains parameters for full-text wiki search.
 type SearchArgs struct {
+	BaseArgs
 	Query  string `json:"query" jsonschema:"Search query text"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum results to return (default 20, max 500)"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Offset for pagination"`
@@ -42,6 +60,7 @@ type SearchHit struct {
 
 // GetPageArgs contains parameters for retrieving page content.
 type GetPageArgs struct {
+	BaseArgs
 	Title  string `json:"title" jsonschema:"Page title to retrieve"`
 	Format string `json:"format,omitempty" jsonschema:"Output format: 'wikitext' (default) or 'html'"`
 }
@@ -63,6 +82,7 @@ type PageContent struct {
 // GetPagesBatchArgs contains parameters for retrieving multiple pages at once.
 // This is more efficient than individual GetPage calls for bulk operations.
 type GetPagesBatchArgs struct {
+	BaseArgs
 	Titles []string `json:"titles" jsonschema:"List of page titles to retrieve (max 50)"`
 	Format string   `json:"format,omitempty" jsonschema:"Output format: 'wikitext' (default) or 'html'"`
 }
@@ -90,6 +110,7 @@ type PageContentResult struct {
 
 // GetPagesInfoBatchArgs contains parameters for retrieving metadata for multiple pages.
 type GetPagesInfoBatchArgs struct {
+	BaseArgs
 	Titles []string `json:"titles" jsonschema:"List of page titles to get info for (max 50)"`
 }
 
@@ -105,6 +126,7 @@ type GetPagesInfoBatchResult struct {
 
 // ListPagesArgs contains parameters for listing wiki pages.
 type ListPagesArgs struct {
+	BaseArgs
 	Prefix       string `json:"prefix,omitempty" jsonschema:"Filter pages starting with this prefix"`
 	Namespace    int    `json:"namespace,omitempty" jsonschema:"Namespace ID (0=main, 1=talk, etc.)"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"Maximum pages to return (default 50, max 500)"`
@@ -131,6 +153,7 @@ type PageSummary struct {
 
 // ListCategoriesArgs contains parameters for listing wiki categories.
 type ListCategoriesArgs struct {
+	BaseArgs
 	Prefix       string `json:"prefix,omitempty" jsonschema:"Filter categories starting with this prefix"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"Maximum categories to return (default 50, max 500)"`
 	ContinueFrom string `json:"continue_from,omitempty" jsonschema:"Continue token for pagination"`
@@ -151,6 +174,7 @@ type CategoryInfo struct {
 
 // CategoryMembersArgs contains parameters for listing pages in a category.
 type CategoryMembersArgs struct {
+	BaseArgs
 	Category     string `json:"category" jsonschema:"Category name (with or without 'Category:' prefix)"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"Maximum members to return (default 50, max 500)"`
 	ContinueFrom string `json:"continue_from,omitempty" jsonschema:"Continue token for pagination"`
@@ -169,6 +193,7 @@ type CategoryMembersResult struct {
 
 // PageInfoArgs contains parameters for retrieving page metadata.
 type PageInfoArgs struct {
+	BaseArgs
 	Title string `json:"title" jsonschema:"Page title"`
 }
 
@@ -194,6 +219,7 @@ type PageInfo struct {
 
 // EditPageArgs contains parameters for creating or editing a wiki page.
 type EditPageArgs struct {
+	BaseArgs
 	Title   string `json:"title" jsonschema:"Page title to edit or create"`
 	Content string `json:"content" jsonschema:"New page content in wikitext format"`
 	Summary string `json:"summary,omitempty" jsonschema:"Edit summary explaining the change"`
@@ -229,6 +255,7 @@ type UndoInfo struct {
 
 // RecentChangesArgs contains parameters for querying recent wiki changes.
 type RecentChangesArgs struct {
+	BaseArgs
 	Limit        int    `json:"limit,omitempty" jsonschema:"Maximum changes to return (default 50, max 500)"`
 	Namespace    int    `json:"namespace,omitempty" jsonschema:"Filter by namespace (-1 for all)"`
 	Type         string `json:"type,omitempty" jsonschema:"Filter by type: 'edit', 'new', 'log', or empty for all"`
@@ -278,6 +305,7 @@ type RecentChange struct {
 
 // ParseArgs contains parameters for parsing wikitext to HTML.
 type ParseArgs struct {
+	BaseArgs
 	Wikitext string `json:"wikitext" jsonschema:"Wikitext content to parse"`
 	Title    string `json:"title,omitempty" jsonschema:"Page title for context (affects template expansion)"`
 }
@@ -295,6 +323,7 @@ type ParseResult struct {
 
 // WikiInfoArgs contains parameters for retrieving wiki site info (none required).
 type WikiInfoArgs struct {
+	BaseArgs
 	// No arguments needed
 }
 
@@ -328,6 +357,7 @@ type WikiStats struct {
 
 // GetExternalLinksArgs contains parameters for retrieving external URLs from a page.
 type GetExternalLinksArgs struct {
+	BaseArgs
 	Title string `json:"title" jsonschema:"Page title to get external links from"`
 }
 
@@ -348,6 +378,7 @@ type ExternalLink struct {
 
 // CheckLinksArgs contains parameters for checking URL accessibility.
 type CheckLinksArgs struct {
+	BaseArgs
 	URLs    []string `json:"urls" jsonschema:"List of URLs to check (max 20)"`
 	Timeout int      `json:"timeout,omitempty" jsonschema:"Timeout per URL in seconds (default 10, max 30)"`
 }
@@ -373,6 +404,7 @@ type LinkCheckResult struct {
 
 // GetExternalLinksBatchArgs contains parameters for retrieving links from multiple pages.
 type GetExternalLinksBatchArgs struct {
+	BaseArgs
 	Titles []string `json:"titles" jsonschema:"Page titles to get external links from (max 10)"`
 }
 
@@ -394,6 +426,7 @@ type PageExternalLinks struct {
 
 // CheckTerminologyArgs contains parameters for checking terminology consistency.
 type CheckTerminologyArgs struct {
+	BaseArgs
 	Pages             []string `json:"pages,omitempty" jsonschema:"Page titles to check. If empty, uses pages from category."`
 	Category          string   `json:"category,omitempty" jsonschema:"Category to get pages from (alternative to pages list)"`
 	GlossaryPage      string   `json:"glossary_page,omitempty" jsonschema:"Wiki page containing the glossary table (default: 'Brand Terminology Glossary')"`
@@ -439,6 +472,7 @@ type GlossaryTerm struct {
 
 // CheckTranslationsArgs contains parameters for checking translation coverage.
 type CheckTranslationsArgs struct {
+	BaseArgs
 	BasePages []string `json:"base_pages,omitempty" jsonschema:"Base page names to check for translations (without language suffix)"`
 	Category  string   `json:"category,omitempty" jsonschema:"Category to get base pages from (alternative to base_pages)"`
 	Languages []string `json:"languages" jsonschema:"Language codes to check (e.g., ['en', 'no', 'sv'])"`
@@ -475,6 +509,7 @@ type TranslationStatus struct {
 
 // FindBrokenInternalLinksArgs contains parameters for finding dead internal links.
 type FindBrokenInternalLinksArgs struct {
+	BaseArgs
 	Pages    []string `json:"pages,omitempty" jsonschema:"Page titles to check for broken internal links"`
 	Category string   `json:"category,omitempty" jsonschema:"Category to get pages from (alternative to pages)"`
 	Limit    int      `json:"limit,omitempty" jsonschema:"Max pages to check (default 20, max 100)"`
@@ -506,6 +541,7 @@ type BrokenLink struct {
 
 // FindOrphanedPagesArgs contains parameters for finding pages with no incoming links.
 type FindOrphanedPagesArgs struct {
+	BaseArgs
 	Namespace int    `json:"namespace,omitempty" jsonschema:"Namespace to check (0=main, default). Use -1 for all namespaces."`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Max pages to return (default 50, max 200)"`
 	Prefix    string `json:"prefix,omitempty" jsonschema:"Only check pages starting with this prefix"`
@@ -530,6 +566,7 @@ type OrphanedPage struct {
 
 // GetBacklinksArgs contains parameters for finding pages that link to a target.
 type GetBacklinksArgs struct {
+	BaseArgs
 	Title     string `json:"title" jsonschema:"Page title to find backlinks for"`
 	Namespace int    `json:"namespace,omitempty" jsonschema:"Filter by namespace (-1 for all, 0 for main)"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Max backlinks to return (default 50, max 500)"`
@@ -556,6 +593,7 @@ type BacklinkInfo struct {
 
 // GetRevisionsArgs contains parameters for retrieving page revision history.
 type GetRevisionsArgs struct {
+	BaseArgs
 	Title string `json:"title" jsonschema:"Page title to get revision history for"`
 	Limit int    `json:"limit,omitempty" jsonschema:"Max revisions to return (default 20, max 100)"`
 	Start string `json:"start,omitempty" jsonschema:"Start from this timestamp (ISO 8601, newer first)"`
@@ -588,6 +626,7 @@ type RevisionInfo struct {
 
 // CompareRevisionsArgs contains parameters for comparing two revisions.
 type CompareRevisionsArgs struct {
+	BaseArgs
 	FromRev   int    `json:"from_rev,omitempty" jsonschema:"Source revision ID"`
 	ToRev     int    `json:"to_rev,omitempty" jsonschema:"Target revision ID"`
 	FromTitle string `json:"from_title,omitempty" jsonschema:"Source page title (uses latest revision)"`
@@ -611,6 +650,7 @@ type CompareRevisionsResult struct {
 
 // GetUserContributionsArgs contains parameters for retrieving a user's edits.
 type GetUserContributionsArgs struct {
+	BaseArgs
 	User      string `json:"user" jsonschema:"Username to get contributions for"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Max contributions to return (default 50, max 500)"`
 	Namespace int    `json:"namespace,omitempty" jsonschema:"Filter by namespace (-1 for all)"`
@@ -645,6 +685,7 @@ type UserContribution struct {
 
 // FindReplaceArgs contains parameters for text substitution in a page.
 type FindReplaceArgs struct {
+	BaseArgs
 	Title    string `json:"title" jsonschema:"Page title to edit"`
 	Find     string `json:"find" jsonschema:"Text to find (exact match or regex if use_regex=true)"`
 	Replace  string `json:"replace" jsonschema:"Replacement text"`
@@ -681,6 +722,7 @@ type TextChange struct {
 
 // ApplyFormattingArgs contains parameters for applying wiki markup formatting.
 type ApplyFormattingArgs struct {
+	BaseArgs
 	Title   string `json:"title" jsonschema:"Page title to edit"`
 	Text    string `json:"text" jsonschema:"Text to find and format"`
 	Format  string `json:"format" jsonschema:"Format to apply: 'strikethrough', 'bold', 'italic', 'underline', 'code', 'nowiki'"`
@@ -708,6 +750,7 @@ type ApplyFormattingResult struct {
 
 // BulkReplaceArgs contains parameters for find/replace across multiple pages.
 type BulkReplaceArgs struct {
+	BaseArgs
 	Pages    []string `json:"pages,omitempty" jsonschema:"Page titles to process"`
 	Category string   `json:"category,omitempty" jsonschema:"Category to get pages from (alternative to pages)"`
 	Find     string   `json:"find" jsonschema:"Text to find"`
@@ -744,6 +787,7 @@ type PageReplaceResult struct {
 
 // SearchInPageArgs contains parameters for searching within a specific page.
 type SearchInPageArgs struct {
+	BaseArgs
 	Title        string `json:"title" jsonschema:"Page title to search in"`
 	Query        string `json:"query" jsonschema:"Text to search for"`
 	UseRegex     bool   `json:"use_regex,omitempty" jsonschema:"Treat query as a Go RE2 regex. Characters like . [ ] * + ? ( ) have special meaning; escape with backslash for literal match. Max 500 chars."`
@@ -770,6 +814,7 @@ type PageMatch struct {
 
 // ResolveTitleArgs contains parameters for fuzzy page title matching.
 type ResolveTitleArgs struct {
+	BaseArgs
 	Title      string `json:"title" jsonschema:"Page title to resolve (can be inexact)"`
 	Fuzzy      bool   `json:"fuzzy,omitempty" jsonschema:"Enable fuzzy matching for similar titles"`
 	MaxResults int    `json:"max_results,omitempty" jsonschema:"Max suggestions to return (default 5)"`
@@ -795,6 +840,7 @@ type TitleSuggestion struct {
 
 // ListUsersArgs contains parameters for listing wiki users.
 type ListUsersArgs struct {
+	BaseArgs
 	Group        string `json:"group,omitempty" jsonschema:"Filter by user group: 'sysop' (admins), 'bureaucrat', 'bot', or empty for all users"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"Maximum users to return (default 50, max 500)"`
 	ContinueFrom string `json:"continue_from,omitempty" jsonschema:"Continue token for pagination"`
@@ -823,6 +869,7 @@ type UserInfo struct {
 
 // GetSectionsArgs contains parameters for retrieving page section structure.
 type GetSectionsArgs struct {
+	BaseArgs
 	Title   string `json:"title" jsonschema:"Page title to get sections from"`
 	Section int    `json:"section,omitempty" jsonschema:"Specific section number to retrieve content for (0 = intro, 1+ = sections). Omit to list all sections."`
 	Format  string `json:"format,omitempty" jsonschema:"Output format for section content: 'wikitext' (default) or 'html'"`
@@ -852,6 +899,7 @@ type SectionInfo struct {
 
 // GetRelatedArgs contains parameters for finding related pages.
 type GetRelatedArgs struct {
+	BaseArgs
 	Title  string `json:"title" jsonschema:"Page title to find related pages for"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum related pages to return (default 20, max 50)"`
 	Method string `json:"method,omitempty" jsonschema:"Method to find related: 'categories' (default), 'links', 'backlinks', or 'all'"`
@@ -879,6 +927,7 @@ type RelatedPage struct {
 
 // UploadFileArgs contains parameters for uploading a file to the wiki.
 type UploadFileArgs struct {
+	BaseArgs
 	Filename       string `json:"filename" jsonschema:"Target filename on the wiki (e.g., 'Example.png')"`
 	FilePath       string `json:"file_path,omitempty" jsonschema:"Local file path to upload"`
 	FileURL        string `json:"file_url,omitempty" jsonschema:"URL to fetch and upload (alternative to file_path)"`
@@ -902,6 +951,7 @@ type UploadFileResult struct {
 
 // GetImagesArgs contains parameters for retrieving images used on a page.
 type GetImagesArgs struct {
+	BaseArgs
 	Title string `json:"title" jsonschema:"Page title to get images from"`
 	Limit int    `json:"limit,omitempty" jsonschema:"Maximum images to return (default 50, max 500)"`
 }
@@ -928,6 +978,7 @@ type ImageInfo struct {
 
 // SearchInFileArgs contains parameters for searching within uploaded files.
 type SearchInFileArgs struct {
+	BaseArgs
 	Filename string `json:"filename" jsonschema:"File page name (e.g., 'File:Report.pdf' or just 'Report.pdf')"`
 	Query    string `json:"query" jsonschema:"Text to search for in the file"`
 }
@@ -953,6 +1004,7 @@ type FileSearchMatch struct {
 
 // FindSimilarPagesArgs contains parameters for finding content-similar pages.
 type FindSimilarPagesArgs struct {
+	BaseArgs
 	Page     string  `json:"page" jsonschema:"Page title to find similar pages for"`
 	Limit    int     `json:"limit,omitempty" jsonschema:"Maximum similar pages to return (default 10, max 50)"`
 	Category string  `json:"category,omitempty" jsonschema:"Limit search to pages in this category"`
@@ -981,6 +1033,7 @@ type SimilarPage struct {
 
 // CompareTopicArgs contains parameters for comparing topic mentions across pages.
 type CompareTopicArgs struct {
+	BaseArgs
 	Topic    string `json:"topic" jsonschema:"Topic or term to compare across pages"`
 	Category string `json:"category,omitempty" jsonschema:"Limit search to pages in this category"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum pages to compare (default 20, max 50)"`
@@ -1017,6 +1070,7 @@ type Inconsistency struct {
 
 // WikiHealthAuditArgs contains parameters for a comprehensive wiki health audit.
 type WikiHealthAuditArgs struct {
+	BaseArgs
 	Pages    []string `json:"pages,omitempty" jsonschema:"Specific pages to audit"`
 	Category string   `json:"category,omitempty" jsonschema:"Category to audit (alternative to pages)"`
 	Limit    int      `json:"limit,omitempty" jsonschema:"Max pages to audit (default 20, max 50)"`
@@ -1050,6 +1104,7 @@ type WikiHealthAuditSummary struct {
 
 // MovePageArgs contains parameters for moving (renaming) a wiki page.
 type MovePageArgs struct {
+	BaseArgs
 	From         string `json:"from" jsonschema:"Current page title"`
 	To           string `json:"to" jsonschema:"New page title"`
 	Reason       string `json:"reason,omitempty" jsonschema:"Reason for the move"`
@@ -1073,6 +1128,7 @@ type MovePageResult struct {
 
 // SearchAndReadArgs contains parameters for searching and reading top results in one call.
 type SearchAndReadArgs struct {
+	BaseArgs
 	Query     string `json:"query" jsonschema:"Search query text"`
 	ReadCount int    `json:"read_count,omitempty" jsonschema:"Number of top results to read (default 1, max 5)"`
 	Format    string `json:"format,omitempty" jsonschema:"Content format: 'wikitext' (default) or 'html'"`
@@ -1103,6 +1159,7 @@ type SearchAndReadPage struct {
 
 // GetPageSummaryArgs contains parameters for retrieving a page summary.
 type GetPageSummaryArgs struct {
+	BaseArgs
 	Title string `json:"title" jsonschema:"Page title to get summary for"`
 }
 
@@ -1127,6 +1184,7 @@ type PageSummaryResult struct {
 
 // ManageCategoriesArgs contains parameters for adding or removing categories.
 type ManageCategoriesArgs struct {
+	BaseArgs
 	Title   string   `json:"title" jsonschema:"Page title to manage categories for"`
 	Add     []string `json:"add,omitempty" jsonschema:"Category names to add (without 'Category:' prefix)"`
 	Remove  []string `json:"remove,omitempty" jsonschema:"Category names to remove (without 'Category:' prefix)"`
@@ -1154,6 +1212,7 @@ type ManageCategoriesResult struct {
 
 // GetStalePagesArgs contains parameters for finding pages not recently updated.
 type GetStalePagesArgs struct {
+	BaseArgs
 	Days      int    `json:"days,omitempty" jsonschema:"Pages not edited in this many days (default 90)"`
 	Category  string `json:"category,omitempty" jsonschema:"Limit to pages in this category"`
 	Namespace int    `json:"namespace,omitempty" jsonschema:"Namespace to check (default 0 = main)"`
