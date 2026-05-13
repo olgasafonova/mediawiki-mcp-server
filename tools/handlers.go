@@ -252,11 +252,10 @@ func (h *HandlerRegistry) recoverPanic(toolName string) {
 
 // logExecution logs tool execution details.
 func (h *HandlerRegistry) logExecution(spec ToolSpec, args, result any) {
-	// Build log attributes from the spec
-	attrs := []any{"tool", spec.Name}
-	if rationale := extractRationale(args); rationale != "" {
-		attrs = append(attrs, "rationale", rationale)
-	}
+	// Build log attributes from the spec. Rationale is always logged
+	// (empty string when absent) to keep this function branch-free for
+	// the audit field; this matches the BaseArgs schema requirement.
+	attrs := []any{"tool", spec.Name, "rationale", extractRationale(args)}
 
 	// Add any extractable fields from args/result using type assertions
 	// This is more performant than reflection for common cases
