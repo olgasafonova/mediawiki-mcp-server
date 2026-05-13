@@ -48,124 +48,175 @@ func (h *HandlerRegistry) RegisterAll(server *mcp.Server) {
 	h.logger.Info("Registered all tools", "count", len(AllTools))
 }
 
-// registerByName dispatches to the correct typed registration function.
-func (h *HandlerRegistry) registerByName(server *mcp.Server, spec ToolSpec) {
-	tool := h.buildTool(spec)
+// methodRegistrar binds a ToolSpec.Method name to a closure that registers
+// the matching typed handler. Each closure carries its method-specific Args
+// and Result types via Go generic type inference on register[Args, Result].
+type methodRegistrar func(*HandlerRegistry, *mcp.Server, *mcp.Tool, ToolSpec)
 
-	switch spec.Method {
+// methodRegistrars dispatches ToolSpec.Method to the typed registration
+// closure. Grouped by category to mirror tools/definitions.go.
+var methodRegistrars = map[string]methodRegistrar{
 	// Search tools
-	case "Search":
-		h.register(server, tool, spec, h.client.Search)
-	case "SearchInPage":
-		h.register(server, tool, spec, h.client.SearchInPage)
-	case "SearchInFile":
-		h.register(server, tool, spec, h.client.SearchInFile)
-	case "ResolveTitle":
-		h.register(server, tool, spec, h.client.ResolveTitle)
+	"Search": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.Search)
+	},
+	"SearchInPage": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.SearchInPage)
+	},
+	"SearchInFile": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.SearchInFile)
+	},
+	"ResolveTitle": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.ResolveTitle)
+	},
 
 	// Read tools
-	case "GetPage":
-		h.register(server, tool, spec, h.client.GetPage)
-	case "ListPages":
-		h.register(server, tool, spec, h.client.ListPages)
-	case "GetPageInfo":
-		h.register(server, tool, spec, h.client.GetPageInfo)
-	case "GetSections":
-		h.register(server, tool, spec, h.client.GetSections)
-	case "GetRelated":
-		h.register(server, tool, spec, h.client.GetRelated)
-	case "GetImages":
-		h.register(server, tool, spec, h.client.GetImages)
-	case "Parse":
-		h.register(server, tool, spec, h.client.Parse)
-	case "GetWikiInfo":
-		h.register(server, tool, spec, h.client.GetWikiInfo)
+	"GetPage": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetPage)
+	},
+	"ListPages": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.ListPages)
+	},
+	"GetPageInfo": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetPageInfo)
+	},
+	"GetSections": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetSections)
+	},
+	"GetRelated": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetRelated)
+	},
+	"GetImages": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetImages)
+	},
+	"Parse": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.Parse)
+	},
+	"GetWikiInfo": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetWikiInfo)
+	},
 
 	// Category tools
-	case "ListCategories":
-		h.register(server, tool, spec, h.client.ListCategories)
-	case "GetCategoryMembers":
-		h.register(server, tool, spec, h.client.GetCategoryMembers)
+	"ListCategories": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.ListCategories)
+	},
+	"GetCategoryMembers": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetCategoryMembers)
+	},
 
 	// History tools
-	case "GetRecentChanges":
-		h.register(server, tool, spec, h.client.GetRecentChanges)
-	case "GetRevisions":
-		h.register(server, tool, spec, h.client.GetRevisions)
-	case "CompareRevisions":
-		h.register(server, tool, spec, h.client.CompareRevisions)
-	case "GetUserContributions":
-		h.register(server, tool, spec, h.client.GetUserContributions)
+	"GetRecentChanges": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetRecentChanges)
+	},
+	"GetRevisions": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetRevisions)
+	},
+	"CompareRevisions": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.CompareRevisions)
+	},
+	"GetUserContributions": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetUserContributions)
+	},
 
 	// Link tools
-	case "GetExternalLinks":
-		h.register(server, tool, spec, h.client.GetExternalLinks)
-	case "GetExternalLinksBatch":
-		h.register(server, tool, spec, h.client.GetExternalLinksBatch)
-	case "CheckLinks":
-		h.register(server, tool, spec, h.client.CheckLinks)
-	case "GetBacklinks":
-		h.register(server, tool, spec, h.client.GetBacklinks)
-	case "FindBrokenInternalLinks":
-		h.register(server, tool, spec, h.client.FindBrokenInternalLinks)
-	case "FindOrphanedPages":
-		h.register(server, tool, spec, h.client.FindOrphanedPages)
+	"GetExternalLinks": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetExternalLinks)
+	},
+	"GetExternalLinksBatch": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetExternalLinksBatch)
+	},
+	"CheckLinks": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.CheckLinks)
+	},
+	"GetBacklinks": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetBacklinks)
+	},
+	"FindBrokenInternalLinks": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.FindBrokenInternalLinks)
+	},
+	"FindOrphanedPages": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.FindOrphanedPages)
+	},
 
 	// Quality tools
-	case "CheckTerminology":
-		h.register(server, tool, spec, h.client.CheckTerminology)
-	case "CheckTranslations":
-		h.register(server, tool, spec, h.client.CheckTranslations)
-	case "HealthAudit":
-		h.register(server, tool, spec, h.client.HealthAudit)
+	"CheckTerminology": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.CheckTerminology)
+	},
+	"CheckTranslations": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.CheckTranslations)
+	},
+	"HealthAudit": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.HealthAudit)
+	},
 
 	// Discovery tools
-	case "FindSimilarPages":
-		h.register(server, tool, spec, h.client.FindSimilarPages)
-	case "CompareTopic":
-		h.register(server, tool, spec, h.client.CompareTopic)
+	"FindSimilarPages": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.FindSimilarPages)
+	},
+	"CompareTopic": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.CompareTopic)
+	},
 
 	// User tools
-	case "ListUsers":
-		h.register(server, tool, spec, h.client.ListUsers)
+	"ListUsers": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.ListUsers)
+	},
 
 	// Batch tools
-	case "GetPagesBatch":
-		h.register(server, tool, spec, h.client.GetPagesBatch)
-	case "GetPagesInfoBatch":
-		h.register(server, tool, spec, h.client.GetPagesInfoBatch)
+	"GetPagesBatch": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetPagesBatch)
+	},
+	"GetPagesInfoBatch": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetPagesInfoBatch)
+	},
 
 	// Composite tools
-	case "SearchAndRead":
-		h.register(server, tool, spec, h.client.SearchAndRead)
-	case "GetPageSummary":
-		h.register(server, tool, spec, h.client.GetPageSummary)
+	"SearchAndRead": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.SearchAndRead)
+	},
+	"GetPageSummary": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetPageSummary)
+	},
 
 	// Page management tools
-	case "MovePage":
-		h.register(server, tool, spec, h.client.MovePage)
-	case "ManageCategories":
-		h.register(server, tool, spec, h.client.ManageCategories)
+	"MovePage": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.MovePage)
+	},
+	"ManageCategories": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.ManageCategories)
+	},
 
 	// Wiki hygiene tools
-	case "GetStalePages":
-		h.register(server, tool, spec, h.client.GetStalePages)
+	"GetStalePages": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.GetStalePages)
+	},
 
 	// Write tools
-	case "EditPage":
-		h.register(server, tool, spec, h.client.EditPage)
-	case "FindReplace":
-		h.register(server, tool, spec, h.client.FindReplace)
-	case "ApplyFormatting":
-		h.register(server, tool, spec, h.client.ApplyFormatting)
-	case "BulkReplace":
-		h.register(server, tool, spec, h.client.BulkReplace)
-	case "UploadFile":
-		h.register(server, tool, spec, h.client.UploadFile)
+	"EditPage": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.EditPage)
+	},
+	"FindReplace": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.FindReplace)
+	},
+	"ApplyFormatting": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.ApplyFormatting)
+	},
+	"BulkReplace": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.BulkReplace)
+	},
+	"UploadFile": func(h *HandlerRegistry, s *mcp.Server, t *mcp.Tool, sp ToolSpec) {
+		register(h, s, t, sp, h.client.UploadFile)
+	},
+}
 
-	default:
-		h.logger.Error("Unknown method, tool not registered", "method", spec.Method, "tool", spec.Name)
+// registerByName looks up the registrar for spec.Method and invokes it.
+func (h *HandlerRegistry) registerByName(server *mcp.Server, spec ToolSpec) {
+	tool := h.buildTool(spec)
+	if r, ok := methodRegistrars[spec.Method]; ok {
+		r(h, server, tool, spec)
+		return
 	}
+	h.logger.Error("Unknown method, tool not registered", "method", spec.Method, "tool", spec.Name)
 }
 
 // buildTool creates an mcp.Tool from a ToolSpec.
@@ -189,8 +240,8 @@ func (h *HandlerRegistry) buildTool(spec ToolSpec) *mcp.Tool {
 	}
 }
 
-// register is a generic helper that registers a tool with the MCP server.
-// It wraps the client method with panic recovery, metrics, tracing, and logging.
+// register wraps a typed client method with panic recovery, metrics, tracing,
+// and logging, then attaches it to the MCP server.
 func register[Args, Result any](
 	h *HandlerRegistry,
 	server *mcp.Server,
@@ -201,7 +252,6 @@ func register[Args, Result any](
 	mcp.AddTool(server, tool, func(ctx context.Context, req *mcp.CallToolRequest, args Args) (*mcp.CallToolResult, Result, error) {
 		defer h.recoverPanic(spec.Name)
 
-		// Start trace span
 		ctx, span := tracing.StartSpan(ctx, "mcp.tool."+spec.Name)
 		defer span.End()
 
@@ -212,7 +262,6 @@ func register[Args, Result any](
 			attribute.String("mcp.tool.rationale", extractRationale(args)),
 		)
 
-		// Track in-flight requests
 		metrics.RequestInFlight.WithLabelValues(spec.Name).Inc()
 		defer metrics.RequestInFlight.WithLabelValues(spec.Name).Dec()
 
@@ -250,186 +299,73 @@ func (h *HandlerRegistry) recoverPanic(toolName string) {
 	}
 }
 
-// logExecution logs tool execution details.
+// logExecution logs tool execution details. Rationale is always logged
+// (empty string when absent) to keep the call branch-free; this matches
+// the BaseArgs schema requirement.
 func (h *HandlerRegistry) logExecution(spec ToolSpec, args, result any) {
-	// Build log attributes from the spec. Rationale is always logged
-	// (empty string when absent) to keep this function branch-free for
-	// the audit field; this matches the BaseArgs schema requirement.
 	attrs := []any{"tool", spec.Name, "rationale", extractRationale(args)}
-
-	// Add any extractable fields from args/result using type assertions
-	// This is more performant than reflection for common cases
-	switch a := args.(type) {
-	case wiki.SearchArgs:
-		attrs = append(attrs, "query", a.Query)
-	case wiki.GetPageArgs:
-		attrs = append(attrs, "title", a.Title, "format", a.Format)
-	case wiki.SearchInPageArgs:
-		attrs = append(attrs, "title", a.Title, "query", a.Query)
-	case wiki.EditPageArgs:
-		attrs = append(attrs, "title", a.Title, "content_len", len(a.Content))
-	case wiki.FindReplaceArgs:
-		attrs = append(attrs, "title", a.Title, "preview", a.Preview)
-	case wiki.BulkReplaceArgs:
-		attrs = append(attrs, "pages_count", len(a.Pages), "preview", a.Preview)
-	case wiki.GetPagesBatchArgs:
-		attrs = append(attrs, "titles_count", len(a.Titles))
-	case wiki.SearchAndReadArgs:
-		attrs = append(attrs, "query", a.Query, "read_count", a.ReadCount)
-	case wiki.GetPageSummaryArgs:
-		attrs = append(attrs, "title", a.Title)
-	case wiki.MovePageArgs:
-		attrs = append(attrs, "from", a.From, "to", a.To)
-	case wiki.ManageCategoriesArgs:
-		attrs = append(attrs, "title", a.Title, "add", len(a.Add), "remove", len(a.Remove))
-	case wiki.GetStalePagesArgs:
-		attrs = append(attrs, "days", a.Days, "category", a.Category)
-	}
-
-	switch r := result.(type) {
-	case wiki.SearchResult:
-		attrs = append(attrs, "results_count", len(r.Results), "total_hits", r.TotalHits)
-	case wiki.PageContent:
-		attrs = append(attrs, "output_chars", len(r.Content))
-	case wiki.EditResult:
-		attrs = append(attrs, "success", r.Success, "new_page", r.NewPage)
-	case wiki.FindReplaceResult:
-		attrs = append(attrs, "matches", r.MatchCount, "replaced", r.ReplaceCount)
-	case wiki.BulkReplaceResult:
-		attrs = append(attrs, "pages_modified", r.PagesModified, "total_changes", r.TotalChanges)
-	case wiki.GetPagesBatchResult:
-		attrs = append(attrs, "found", r.FoundCount, "missing", r.MissingCount)
-	case wiki.SearchAndReadResult:
-		attrs = append(attrs, "total_hits", r.TotalHits, "pages_read", len(r.Pages))
-	case wiki.PageSummaryResult:
-		attrs = append(attrs, "sections", r.SectionCount, "length", r.Length)
-	case wiki.MovePageResult:
-		attrs = append(attrs, "success", r.Success, "from", r.From, "to", r.To)
-	case wiki.ManageCategoriesResult:
-		attrs = append(attrs, "added", len(r.Added), "removed", len(r.Removed))
-	case wiki.GetStalePagesResult:
-		attrs = append(attrs, "stale_count", r.StaleCount, "scanned", r.TotalScanned)
-	}
-
+	attrs = appendArgAttrs(attrs, args)
+	attrs = appendResultAttrs(attrs, result)
 	h.logger.Info("Tool executed", attrs...)
 }
 
-// Convenience function to call the generic register with method receiver
-func (h *HandlerRegistry) register(server *mcp.Server, tool *mcp.Tool, spec ToolSpec, method any) {
-	switch m := method.(type) {
-	// Search tools
-	case func(context.Context, wiki.SearchArgs) (wiki.SearchResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.SearchInPageArgs) (wiki.SearchInPageResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.SearchInFileArgs) (wiki.SearchInFileResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.ResolveTitleArgs) (wiki.ResolveTitleResult, error):
-		register(h, server, tool, spec, m)
-
-	// Read tools
-	case func(context.Context, wiki.GetPageArgs) (wiki.PageContent, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.ListPagesArgs) (wiki.ListPagesResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.PageInfoArgs) (wiki.PageInfo, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetSectionsArgs) (wiki.GetSectionsResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetRelatedArgs) (wiki.GetRelatedResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetImagesArgs) (wiki.GetImagesResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.ParseArgs) (wiki.ParseResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.WikiInfoArgs) (wiki.WikiInfo, error):
-		register(h, server, tool, spec, m)
-
-	// Category tools
-	case func(context.Context, wiki.ListCategoriesArgs) (wiki.ListCategoriesResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.CategoryMembersArgs) (wiki.CategoryMembersResult, error):
-		register(h, server, tool, spec, m)
-
-	// History tools
-	case func(context.Context, wiki.RecentChangesArgs) (wiki.RecentChangesResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetRevisionsArgs) (wiki.GetRevisionsResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.CompareRevisionsArgs) (wiki.CompareRevisionsResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetUserContributionsArgs) (wiki.GetUserContributionsResult, error):
-		register(h, server, tool, spec, m)
-
-	// Link tools
-	case func(context.Context, wiki.GetExternalLinksArgs) (wiki.ExternalLinksResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetExternalLinksBatchArgs) (wiki.ExternalLinksBatchResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.CheckLinksArgs) (wiki.CheckLinksResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetBacklinksArgs) (wiki.GetBacklinksResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.FindBrokenInternalLinksArgs) (wiki.FindBrokenInternalLinksResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.FindOrphanedPagesArgs) (wiki.FindOrphanedPagesResult, error):
-		register(h, server, tool, spec, m)
-
-	// Quality tools
-	case func(context.Context, wiki.CheckTerminologyArgs) (wiki.CheckTerminologyResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.CheckTranslationsArgs) (wiki.CheckTranslationsResult, error):
-		register(h, server, tool, spec, m)
-
-	// Discovery tools
-	case func(context.Context, wiki.FindSimilarPagesArgs) (wiki.FindSimilarPagesResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.CompareTopicArgs) (wiki.CompareTopicResult, error):
-		register(h, server, tool, spec, m)
-
-	// User tools
-	case func(context.Context, wiki.ListUsersArgs) (wiki.ListUsersResult, error):
-		register(h, server, tool, spec, m)
-
-	// Batch tools
-	case func(context.Context, wiki.GetPagesBatchArgs) (wiki.GetPagesBatchResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetPagesInfoBatchArgs) (wiki.GetPagesInfoBatchResult, error):
-		register(h, server, tool, spec, m)
-
-	// Composite tools
-	case func(context.Context, wiki.SearchAndReadArgs) (wiki.SearchAndReadResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.GetPageSummaryArgs) (wiki.PageSummaryResult, error):
-		register(h, server, tool, spec, m)
-
-	// Page management tools
-	case func(context.Context, wiki.MovePageArgs) (wiki.MovePageResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.ManageCategoriesArgs) (wiki.ManageCategoriesResult, error):
-		register(h, server, tool, spec, m)
-
-	// Quality tools
-	case func(context.Context, wiki.WikiHealthAuditArgs) (wiki.WikiHealthAuditResult, error):
-		register(h, server, tool, spec, m)
-
-	// Wiki hygiene tools
-	case func(context.Context, wiki.GetStalePagesArgs) (wiki.GetStalePagesResult, error):
-		register(h, server, tool, spec, m)
-
-	// Write tools
-	case func(context.Context, wiki.EditPageArgs) (wiki.EditResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.FindReplaceArgs) (wiki.FindReplaceResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.ApplyFormattingArgs) (wiki.ApplyFormattingResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.BulkReplaceArgs) (wiki.BulkReplaceResult, error):
-		register(h, server, tool, spec, m)
-	case func(context.Context, wiki.UploadFileArgs) (wiki.UploadFileResult, error):
-		register(h, server, tool, spec, m)
-
-	default:
-		h.logger.Error("Unknown method type, tool not registered", "tool", spec.Name)
+// appendArgAttrs adds tool-specific argument attributes to attrs.
+// Type-asserted over reflection for performance on the hot path.
+func appendArgAttrs(attrs []any, args any) []any {
+	switch a := args.(type) {
+	case wiki.SearchArgs:
+		return append(attrs, "query", a.Query)
+	case wiki.GetPageArgs:
+		return append(attrs, "title", a.Title, "format", a.Format)
+	case wiki.SearchInPageArgs:
+		return append(attrs, "title", a.Title, "query", a.Query)
+	case wiki.EditPageArgs:
+		return append(attrs, "title", a.Title, "content_len", len(a.Content))
+	case wiki.FindReplaceArgs:
+		return append(attrs, "title", a.Title, "preview", a.Preview)
+	case wiki.BulkReplaceArgs:
+		return append(attrs, "pages_count", len(a.Pages), "preview", a.Preview)
+	case wiki.GetPagesBatchArgs:
+		return append(attrs, "titles_count", len(a.Titles))
+	case wiki.SearchAndReadArgs:
+		return append(attrs, "query", a.Query, "read_count", a.ReadCount)
+	case wiki.GetPageSummaryArgs:
+		return append(attrs, "title", a.Title)
+	case wiki.MovePageArgs:
+		return append(attrs, "from", a.From, "to", a.To)
+	case wiki.ManageCategoriesArgs:
+		return append(attrs, "title", a.Title, "add", len(a.Add), "remove", len(a.Remove))
+	case wiki.GetStalePagesArgs:
+		return append(attrs, "days", a.Days, "category", a.Category)
 	}
+	return attrs
+}
+
+// appendResultAttrs adds tool-specific result attributes to attrs.
+func appendResultAttrs(attrs []any, result any) []any {
+	switch r := result.(type) {
+	case wiki.SearchResult:
+		return append(attrs, "results_count", len(r.Results), "total_hits", r.TotalHits)
+	case wiki.PageContent:
+		return append(attrs, "output_chars", len(r.Content))
+	case wiki.EditResult:
+		return append(attrs, "success", r.Success, "new_page", r.NewPage)
+	case wiki.FindReplaceResult:
+		return append(attrs, "matches", r.MatchCount, "replaced", r.ReplaceCount)
+	case wiki.BulkReplaceResult:
+		return append(attrs, "pages_modified", r.PagesModified, "total_changes", r.TotalChanges)
+	case wiki.GetPagesBatchResult:
+		return append(attrs, "found", r.FoundCount, "missing", r.MissingCount)
+	case wiki.SearchAndReadResult:
+		return append(attrs, "total_hits", r.TotalHits, "pages_read", len(r.Pages))
+	case wiki.PageSummaryResult:
+		return append(attrs, "sections", r.SectionCount, "length", r.Length)
+	case wiki.MovePageResult:
+		return append(attrs, "success", r.Success, "from", r.From, "to", r.To)
+	case wiki.ManageCategoriesResult:
+		return append(attrs, "added", len(r.Added), "removed", len(r.Removed))
+	case wiki.GetStalePagesResult:
+		return append(attrs, "stale_count", r.StaleCount, "scanned", r.TotalScanned)
+	}
+	return attrs
 }
