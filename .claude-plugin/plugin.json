@@ -1,0 +1,20 @@
+{
+  "name": "mediawiki",
+  "version": "0.1.0",
+  "description": "Claude Code plugin for MediaWiki. Skills shell out to the wiki CLI for search, audit, lint, and publish workflows.",
+  "author": {
+    "name": "Olga Safonova",
+    "url": "https://github.com/olgasafonova"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/olgasafonova/mediawiki-mcp-server",
+  "repository": "https://github.com/olgasafonova/mediawiki-mcp-server",
+  "skills": "./skills/",
+  "keywords": [
+    "mediawiki",
+    "wiki",
+    "claude-code",
+    "plugin",
+    "skill"
+  ]
+}

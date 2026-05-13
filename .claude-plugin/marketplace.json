@@ -1,0 +1,37 @@
+{
+  "name": "mediawiki-mcp-marketplace",
+  "owner": {
+    "name": "Olga Safonova"
+  },
+  "metadata": {
+    "description": "MediaWiki knowledge skills for Claude Code, powered by mediawiki-mcp-server and the wiki CLI.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "mediawiki",
+      "source": "./.claude-plugin",
+      "description": "Skills for searching, reading, auditing, and publishing to MediaWiki wikis via the wiki CLI.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Olga Safonova"
+      },
+      "homepage": "https://github.com/olgasafonova/mediawiki-mcp-server",
+      "repository": "https://github.com/olgasafonova/mediawiki-mcp-server",
+      "license": "MIT",
+      "category": "knowledge",
+      "keywords": [
+        "mediawiki",
+        "wiki",
+        "skill",
+        "claude-code"
+      ],
+      "tags": [
+        "wiki",
+        "knowledge-base",
+        "documentation",
+        "mediawiki-api"
+      ]
+    }
+  ]
+}
