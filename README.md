@@ -454,6 +454,8 @@ You can also override the URL per-invocation with `--url`.
 | `wiki links [external\|backlinks\|broken\|orphans\|batch]` | Link analysis |
 | `wiki list [pages\|categories\|members\|users]` | Listing queries |
 | `wiki publish <file.md>` | Convert Markdown to wikitext and publish |
+| `wiki similar <page>` | Find pages with similar content |
+| `wiki stale-pages` | Find pages not edited in N days |
 | `wiki config` | Show or verify configuration |
 | `wiki version` | Print CLI version |
 

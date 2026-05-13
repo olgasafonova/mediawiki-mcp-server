@@ -44,6 +44,8 @@ func main() {
 		newLinksCmd(),
 		newListCmd(),
 		newPublishCmd(),
+		newSimilarCmd(),
+		newStaleCmd(),
 		newConfigCmd(),
 		newVersionCmd(),
 	)
