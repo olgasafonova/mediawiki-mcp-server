@@ -12,20 +12,36 @@ const (
 	MaxEditSize = 200000 // 200KB max for edits (larger than read to allow updates)
 )
 
-// BaseArgs holds parameters shared by every tool call.
+// BaseArgs holds parameters shared by every read-only tool call.
 //
-// Rationale is required: a one-sentence agent-supplied explanation of why
-// the tool is being called. Rationale logs reconstruct intent without needing
-// access to the originating chat context. Pattern from Teddy Riker,
-// "Designing for Agents" (Ramp PM).
+// Rationale is optional on reads. The post-hoc-debug value of "why did
+// this search happen?" is low — search/get_page calls are almost always
+// performative narration of the conversation. Required-on-reads paid a
+// ceremony tax for ~zero audit signal. Writes are covered by
+// [BaseWriteArgs]. Pattern from Teddy Riker, "Designing for Agents".
 type BaseArgs struct {
-	Rationale string `json:"rationale" jsonschema:"One-sentence explanation of why you are calling this tool. Required. Used for audit trails and intent reconstruction without access to chat context."`
+	Rationale string `json:"rationale,omitempty" jsonschema:"Optional one-sentence explanation of why you are calling this tool. Used for audit trails when present."`
 }
 
-// GetRationale returns the rationale string. Promoted via embedded BaseArgs
-// onto every tool's Args struct, so handlers can extract rationale uniformly
-// without per-type switches.
+// BaseWriteArgs holds parameters shared by destructive / write tool calls.
+//
+// Rationale is required here. Edits, uploads, moves, and category changes
+// are the calls worth reconstructing six weeks later, and where prompt-
+// injected agents most need to surface intent.
+type BaseWriteArgs struct {
+	Rationale string `json:"rationale" jsonschema:"Required one-sentence explanation of why you are making this change. Stored in the audit log for post-hoc intent reconstruction."`
+}
+
+// GetRationale returns the rationale string. Both BaseArgs and BaseWriteArgs
+// satisfy the same interface, so handlers extract rationale uniformly without
+// per-type switches.
 func (b BaseArgs) GetRationale() string {
+	return b.Rationale
+}
+
+// GetRationale on BaseWriteArgs mirrors BaseArgs so the audit logger sees a
+// single GetRationale() interface across reads and writes.
+func (b BaseWriteArgs) GetRationale() string {
 	return b.Rationale
 }
 
@@ -219,7 +235,7 @@ type PageInfo struct {
 
 // EditPageArgs contains parameters for creating or editing a wiki page.
 type EditPageArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	Title   string `json:"title" jsonschema:"Page title to edit or create"`
 	Content string `json:"content" jsonschema:"New page content in wikitext format"`
 	Summary string `json:"summary,omitempty" jsonschema:"Edit summary explaining the change"`
@@ -685,7 +701,7 @@ type UserContribution struct {
 
 // FindReplaceArgs contains parameters for text substitution in a page.
 type FindReplaceArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	Title    string `json:"title" jsonschema:"Page title to edit"`
 	Find     string `json:"find" jsonschema:"Text to find (exact match or regex if use_regex=true)"`
 	Replace  string `json:"replace" jsonschema:"Replacement text"`
@@ -722,7 +738,7 @@ type TextChange struct {
 
 // ApplyFormattingArgs contains parameters for applying wiki markup formatting.
 type ApplyFormattingArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	Title   string `json:"title" jsonschema:"Page title to edit"`
 	Text    string `json:"text" jsonschema:"Text to find and format"`
 	Format  string `json:"format" jsonschema:"Format to apply: 'strikethrough', 'bold', 'italic', 'underline', 'code', 'nowiki'"`
@@ -750,7 +766,7 @@ type ApplyFormattingResult struct {
 
 // BulkReplaceArgs contains parameters for find/replace across multiple pages.
 type BulkReplaceArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	Pages    []string `json:"pages,omitempty" jsonschema:"Page titles to process"`
 	Category string   `json:"category,omitempty" jsonschema:"Category to get pages from (alternative to pages)"`
 	Find     string   `json:"find" jsonschema:"Text to find"`
@@ -927,7 +943,7 @@ type RelatedPage struct {
 
 // UploadFileArgs contains parameters for uploading a file to the wiki.
 type UploadFileArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	Filename       string `json:"filename" jsonschema:"Target filename on the wiki (e.g., 'Example.png')"`
 	FilePath       string `json:"file_path,omitempty" jsonschema:"Local file path to upload"`
 	FileURL        string `json:"file_url,omitempty" jsonschema:"URL to fetch and upload (alternative to file_path)"`
@@ -1104,7 +1120,7 @@ type WikiHealthAuditSummary struct {
 
 // MovePageArgs contains parameters for moving (renaming) a wiki page.
 type MovePageArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	From         string `json:"from" jsonschema:"Current page title"`
 	To           string `json:"to" jsonschema:"New page title"`
 	Reason       string `json:"reason,omitempty" jsonschema:"Reason for the move"`
@@ -1184,7 +1200,7 @@ type PageSummaryResult struct {
 
 // ManageCategoriesArgs contains parameters for adding or removing categories.
 type ManageCategoriesArgs struct {
-	BaseArgs
+	BaseWriteArgs
 	Title   string   `json:"title" jsonschema:"Page title to manage categories for"`
 	Add     []string `json:"add,omitempty" jsonschema:"Category names to add (without 'Category:' prefix)"`
 	Remove  []string `json:"remove,omitempty" jsonschema:"Category names to remove (without 'Category:' prefix)"`

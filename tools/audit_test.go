@@ -321,8 +321,8 @@ func TestExtractRationale(t *testing.T) {
 		{
 			name: "EditPageArgs with rationale",
 			args: wiki.EditPageArgs{
-				BaseArgs: wiki.BaseArgs{Rationale: "strike former employee per HR request"},
-				Title:    "Team",
+				BaseWriteArgs: wiki.BaseWriteArgs{Rationale: "strike former employee per HR request"},
+				Title:         "Team",
 			},
 			want: "strike former employee per HR request",
 		},
