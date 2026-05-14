@@ -46,6 +46,10 @@ func main() {
 		newPublishCmd(),
 		newSimilarCmd(),
 		newStaleCmd(),
+		newResolveCmd(),
+		newMoveCmd(),
+		newUploadCmd(),
+		newCategoriesCmd(),
 		newConfigCmd(),
 		newVersionCmd(),
 	)

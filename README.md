@@ -454,7 +454,7 @@ You can also override the URL per-invocation with `--url`.
 | `wiki search <query>` | Full-text search |
 | `wiki page <title>` | Read a page |
 | `wiki edit <title>` | Create or edit a page |
-| `wiki replace <find> <replace>` | Find and replace across pages |
+| `wiki replace <title> --find X --replace Y` | Find and replace in a page (add `--bulk --pages` or `--bulk --category` for multi-page) |
 | `wiki lint <page>` | Check terminology and links (exit code 4 on findings) |
 | `wiki audit` | Wiki-wide health check |
 | `wiki recent` | Recent changes |
@@ -462,9 +462,13 @@ You can also override the URL per-invocation with `--url`.
 | `wiki diff <page>` | Compare revisions |
 | `wiki links [external\|backlinks\|broken\|orphans\|batch]` | Link analysis |
 | `wiki list [pages\|categories\|members\|users]` | Listing queries |
-| `wiki publish <file.md>` | Convert Markdown to wikitext and publish |
+| `wiki publish <file.md> <page-title>` | Convert Markdown to wikitext and publish (add `--preview` to skip publish) |
 | `wiki similar <page>` | Find pages with similar content |
 | `wiki stale-pages` | Find pages not edited in N days |
+| `wiki resolve <title>` | Resolve inexact title (add `--fuzzy` for suggestions; exit `3` on no match) |
+| `wiki move <from> <to>` | Rename a page (leaves a redirect; `--no-redirect` to suppress) |
+| `wiki upload <filename>` | Upload from `--file` or `--url` |
+| `wiki categories <page>` | Add/remove categories with `--add`/`--remove` (`--preview` to dry-run) |
 | `wiki config` | Show or verify configuration |
 | `wiki version` | Print CLI version |
 
@@ -497,8 +501,8 @@ wiki lint "Release Notes" --json > lint.json
 # Find broken external links as structured data
 wiki links broken --json | jq '.[] | select(.status >= 400)'
 
-# Publish a Markdown file
-wiki publish docs/onboarding.md --title "Onboarding"
+# Publish a Markdown file (page title is the second positional arg)
+wiki publish docs/onboarding.md "Onboarding"
 
 # Cron-friendly health check
 wiki audit --quiet --json > /tmp/wiki-health.json
@@ -1208,6 +1212,10 @@ mediawiki-mcp-server/
 │   │   ├── recent.go          # `wiki recent`
 │   │   ├── similar.go         # `wiki similar`
 │   │   ├── stale.go           # `wiki stale-pages`
+│   │   ├── resolve.go         # `wiki resolve`
+│   │   ├── move.go            # `wiki move`
+│   │   ├── upload.go          # `wiki upload`
+│   │   ├── categories.go      # `wiki categories`
 │   │   └── errors_test.go     # Exit code tests
 │   ├── benchmark/             # Performance benchmarking
 │   │   └── main.go
