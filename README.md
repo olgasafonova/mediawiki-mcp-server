@@ -486,7 +486,7 @@ The CLI uses typed exit codes so shell scripts can branch on the failure categor
 | 7 | Rate limit (HTTP 429) |
 | 10 | Config error |
 
-Adapted from the [cli-printing-press](https://github.com/mvanhorn/cli-printing-press) canonical map; deviation: code `4` is reserved for `wiki lint` findings (existing public API), so auth errors use `6`.
+Note: code `4` is reserved for `wiki lint` findings (existing public API), so auth errors use `6`.
 
 ### Examples
 
@@ -559,10 +559,10 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 - *"Find all pages mentioning the API"*
 - *"Show me the Getting Started guide"*
 - *"List all pages in the Documentation category"*
-- *"Give me a quick overview of the Configuration page"* ✨
-- *"Get the content of Main Page, FAQ, and Setup all at once"* ✨
+- *"Give me a quick overview of the Configuration page"*
+- *"Get the content of Main Page, FAQ, and Setup all at once"*
 
-### Sections & Related Content ✨
+### Sections & Related Content
 - *"Show me the sections of the Installation Guide"*
 - *"Get the 'Troubleshooting' section from the FAQ page"*
 - *"Find pages related to the API Reference"*
@@ -572,18 +572,18 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 - *"What pages were updated this week?"*
 - *"Who edited the Release Notes page?"*
 - *"Show me the diff between the last two versions"*
-- *"Who are the most active editors this month?"* ✨
-- *"Which pages get edited most frequently?"* ✨
+- *"Who are the most active editors this month?"*
+- *"Which pages get edited most frequently?"*
 
 ### Check Quality
 - *"Are there broken links on this page?"*
 - *"Find orphaned pages with no links to them"*
 - *"Check terminology consistency in the Product category"*
-- *"Find pages similar to the Installation Guide"* ✨
-- *"Compare how 'API version' is documented across pages"* ✨
-- *"Find pages not updated in the last 90 days"* ✨
+- *"Find pages similar to the Installation Guide"*
+- *"Compare how 'API version' is documented across pages"*
+- *"Find pages not updated in the last 90 days"*
 
-### Page Management (requires auth) ✨
+### Page Management (requires auth)
 - *"Rename 'Old Guide' to 'Updated Guide'"*
 - *"Add category 'API' to the Integration page"*
 - *"Remove the 'Deprecated' category from this page"*
@@ -593,17 +593,17 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 - *"Replace 'version 2.0' with 'version 3.0' on Release Notes"*
 - *"Make 'API Gateway' bold on the Architecture page"*
 
-### File Uploads (requires auth) ✨
+### File Uploads (requires auth)
 - *"Upload this image from URL to the wiki"*
 - *"Add the logo from https://example.com/logo.png as Company_Logo.png"*
 
-### File Search ✨
+### File Search
 - *"Search for 'budget' in File:Annual-Report.pdf"*
 - *"Find mentions of 'API' in the changelog.txt file"*
 
 > **Note:** PDF search requires `poppler-utils` installed. See [PDF Search Setup](#pdf-search-setup).
 
-### Convert Markdown ✨
+### Convert Markdown
 - *"Convert this README to wiki format"*
 - *"Transform my release notes from Markdown to MediaWiki"*
 - *"Convert with Tieto branding and CSS"* (use theme="tieto", add_css=true)
@@ -835,9 +835,9 @@ curl http://localhost:8080/status
 |------|-------------|
 | `mediawiki_search` | Full-text search |
 | `mediawiki_get_page` | Get page content |
-| `mediawiki_get_sections` | Get section structure or specific section content ✨ |
-| `mediawiki_get_related` | Find related pages via categories/links ✨ |
-| `mediawiki_get_images` | Get images used on a page ✨ |
+| `mediawiki_get_sections` | Get section structure or specific section content |
+| `mediawiki_get_related` | Find related pages via categories/links |
+| `mediawiki_get_images` | Get images used on a page |
 | `mediawiki_list_pages` | List all pages |
 | `mediawiki_list_categories` | List categories |
 | `mediawiki_get_category_members` | Get pages in category |
@@ -845,24 +845,24 @@ curl http://localhost:8080/status
 | `mediawiki_get_wiki_info` | Wiki statistics |
 | `mediawiki_list_users` | List users by group |
 | `mediawiki_parse` | Preview wikitext |
-| `mediawiki_get_page_summary` | Lead section + metadata without full page load ✨ |
-| `mediawiki_batch_get_pages` | Fetch multiple page contents in one API call ✨ |
-| `mediawiki_batch_get_pages_info` | Get metadata for multiple pages at once ✨ |
-| `mediawiki_search_and_read` | Search + read top results in one call ✨ |
+| `mediawiki_get_page_summary` | Lead section + metadata without full page load |
+| `mediawiki_batch_get_pages` | Fetch multiple page contents in one API call |
+| `mediawiki_batch_get_pages_info` | Get metadata for multiple pages at once |
+| `mediawiki_search_and_read` | Search + read top results in one call |
 
-**search_and_read ✨** — Eliminates the most common two-call pattern (search then read):
+**search_and_read** — Eliminates the most common two-call pattern (search then read):
 ```
 "What does the wiki say about deployment?"
 → Searches, reads top result, returns content + remaining hits as summaries
 ```
 
-**get_page_summary ✨** — Quick overview without loading full page content:
+**get_page_summary** — Quick overview without loading full page content:
 ```
 "What is the API Reference page about?"
 → Returns intro section, categories, section list, and metadata
 ```
 
-**batch_get_pages ✨** — Fetch up to 50 pages in one call:
+**batch_get_pages** — Fetch up to 50 pages in one call:
 ```
 "Get the content of Main Page, FAQ, and Getting Started"
 → Returns all three pages in a single API request
@@ -892,9 +892,9 @@ curl http://localhost:8080/status
 | `mediawiki_check_translations` | Find missing translations |
 | `mediawiki_find_orphaned_pages` | Find unlinked pages |
 | `mediawiki_audit` | Comprehensive health audit (parallel checks, health score) |
-| `mediawiki_get_stale_pages` | Find pages not edited in N days ✨ |
+| `mediawiki_get_stale_pages` | Find pages not edited in N days |
 
-**get_stale_pages ✨** — Wiki hygiene: find outdated content that needs review:
+**get_stale_pages** — Wiki hygiene: find outdated content that needs review:
 ```
 "Find pages not updated in 90 days"
 → Returns stale pages sorted oldest-first with days since last edit
@@ -903,7 +903,7 @@ curl http://localhost:8080/status
 </details>
 
 <details>
-<summary><strong>Content Discovery ✨</strong></summary>
+<summary><strong>Content Discovery</strong></summary>
 
 | Tool | Description |
 |------|-------------|
@@ -932,9 +932,9 @@ curl http://localhost:8080/status
 | `mediawiki_get_revisions` | Page edit history |
 | `mediawiki_compare_revisions` | Diff between versions |
 | `mediawiki_get_user_contributions` | User's edit history |
-| `mediawiki_get_recent_changes` | Recent wiki activity with aggregation ✨ |
+| `mediawiki_get_recent_changes` | Recent wiki activity with aggregation |
 
-**Aggregation ✨** - Use `aggregate_by` parameter to get compact summaries:
+**Aggregation** - Use `aggregate_by` parameter to get compact summaries:
 - `aggregate_by: "user"` → Most active editors
 - `aggregate_by: "page"` → Most edited pages
 - `aggregate_by: "type"` → Change type distribution (edit, new, log)
@@ -952,7 +952,7 @@ curl http://localhost:8080/status
 | `mediawiki_search_in_page` | Search within a page |
 | `mediawiki_resolve_title` | Fuzzy title matching |
 
-**Edit Response Info ✨** - All edit operations return revision tracking and undo instructions:
+**Edit Response Info** - All edit operations return revision tracking and undo instructions:
 ```json
 {
   "revision": {
@@ -975,17 +975,17 @@ curl http://localhost:8080/status
 | Tool | Description |
 |------|-------------|
 | `mediawiki_edit_page` | Create or edit pages |
-| `mediawiki_upload_file` | Upload files from URL ✨ |
-| `mediawiki_move_page` | Move (rename) pages with redirect ✨ |
-| `mediawiki_manage_categories` | Add/remove categories without full edit ✨ |
+| `mediawiki_upload_file` | Upload files from URL |
+| `mediawiki_move_page` | Move (rename) pages with redirect |
+| `mediawiki_manage_categories` | Add/remove categories without full edit |
 
-**move_page ✨** — Rename pages properly (don't delete and recreate):
+**move_page** — Rename pages properly (don't delete and recreate):
 ```
 "Rename 'Old Guide' to 'Updated Guide'"
 → Moves page, creates redirect, optionally moves talk page
 ```
 
-**manage_categories ✨** — Quick category management:
+**manage_categories** — Quick category management:
 ```
 "Add category 'API' and remove category 'Deprecated' from this page"
 → Modifies categories without touching page content
@@ -994,7 +994,7 @@ curl http://localhost:8080/status
 </details>
 
 <details>
-<summary><strong>File Search ✨</strong></summary>
+<summary><strong>File Search</strong></summary>
 
 | Tool | Description |
 |------|-------------|
@@ -1007,7 +1007,7 @@ curl http://localhost:8080/status
 </details>
 
 <details>
-<summary><strong>Markdown Conversion ✨</strong></summary>
+<summary><strong>Markdown Conversion</strong></summary>
 
 | Tool | Description |
 |------|-------------|
@@ -1187,9 +1187,46 @@ mediawiki-mcp-server/
 │   ├── converter_test.go      # Tests
 │   └── themes.go              # Theme definitions (tieto, neutral, dark)
 │
-├── cmd/
-│   └── benchmark/             # Performance benchmarking
-│       └── main.go
+├── cmd/                       # Additional binaries
+│   ├── wiki/                  # `wiki` CLI (shell + CI companion)
+│   │   ├── main.go            # CLI entry point, command dispatch
+│   │   ├── client.go          # Wraps wiki/ package for CLI use
+│   │   ├── config.go          # `wiki config` command
+│   │   ├── errors.go          # Typed exit codes (0/1/2/3/4/5/6/7/10)
+│   │   ├── output.go          # --json / --quiet formatting
+│   │   ├── search.go          # `wiki search`
+│   │   ├── page.go            # `wiki page`
+│   │   ├── edit.go            # `wiki edit`
+│   │   ├── publish.go         # `wiki publish` (Markdown to wiki)
+│   │   ├── replace.go         # `wiki replace`
+│   │   ├── lint.go            # `wiki lint`
+│   │   ├── audit.go           # `wiki audit`
+│   │   ├── links.go           # `wiki links {external,backlinks,broken,orphans,batch}`
+│   │   ├── list.go            # `wiki list {pages,categories,members,users}`
+│   │   ├── history.go         # `wiki history`
+│   │   ├── diff.go            # `wiki diff`
+│   │   ├── recent.go          # `wiki recent`
+│   │   ├── similar.go         # `wiki similar`
+│   │   ├── stale.go           # `wiki stale-pages`
+│   │   └── errors_test.go     # Exit code tests
+│   ├── benchmark/             # Performance benchmarking
+│   │   └── main.go
+│   └── evals/                 # Eval inspector + Claude-backed runner
+│       └── main.go            # `-run` runs all suites against Claude
+│
+├── evals/                     # Eval datasets, framework, Claude adapter
+│   ├── runner.go              # ToolSelector interface + Evaluate* functions
+│   ├── claude_selector.go     # Reference adapter (Anthropic API)
+│   ├── tool_selection.json    # Which-tool-to-pick cases (37)
+│   ├── confusion_pairs.json   # Disambiguation cases (50)
+│   └── argument_correctness.json  # Argument extraction cases (25)
+│
+├── skills/                    # Claude Code skills bundled with the plugin
+│   ├── wiki-editing/
+│   └── wiki-operations/
+│
+├── .claude-plugin/            # Plugin marketplace manifest
+│   └── skills/wiki-publish/
 │
 ├── ARCHITECTURE.md            # System design documentation
 ├── CONTRIBUTING.md            # Contribution guidelines

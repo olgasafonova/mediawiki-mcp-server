@@ -1,15 +1,18 @@
-// Command evals runs MCP tool selection evaluations.
+// Command evals inspects or runs the MediaWiki MCP tool selection eval suites.
 //
-// Usage:
+// Inspect (default):
 //
 //	go run ./cmd/evals -dir ./evals -suite all
 //
-// This command loads evaluation test suites and reports on test coverage
-// and expected behavior patterns. For actual LLM evaluation, integrate
-// the evals package with your LLM testing framework.
+// Run against Claude (requires ANTHROPIC_API_KEY):
+//
+//	go run ./cmd/evals -run
+//	go run ./cmd/evals -run -model claude-opus-4-7 -suite confusion_pairs
+//	go run ./cmd/evals -run -json
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -20,9 +23,17 @@ import (
 
 func main() {
 	dir := flag.String("dir", "./evals", "Directory containing eval JSON files")
-	suite := flag.String("suite", "all", "Suite to load: tool_selection, confusion_pairs, arguments, or all")
-	verbose := flag.Bool("verbose", false, "Show detailed test information")
+	suite := flag.String("suite", "all", "Suite: tool_selection, confusion_pairs, arguments, or all")
+	verbose := flag.Bool("verbose", false, "Show detailed test information (inspect mode only)")
+	run := flag.Bool("run", false, "Run the evals against Claude (requires ANTHROPIC_API_KEY)")
+	model := flag.String("model", "", "Claude model (default: claude-sonnet-4-6)")
+	jsonOut := flag.Bool("json", false, "Emit results as JSON (run mode only)")
 	flag.Parse()
+
+	if *run {
+		runEvals(*dir, *suite, *model, *jsonOut)
+		return
+	}
 
 	fmt.Println("MediaWiki MCP Server - Evaluation Framework")
 	fmt.Println("============================================")
@@ -40,6 +51,81 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown suite: %s\n", *suite)
 		os.Exit(1)
+	}
+}
+
+func runEvals(dir, suite, model string, jsonOut bool) {
+	selector, err := evals.NewClaudeSelector(model)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing Claude selector: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !jsonOut {
+		modelName := model
+		if modelName == "" {
+			modelName = "claude-sonnet-4-6 (default)"
+		}
+		fmt.Printf("Running evals against %s\n", modelName)
+		fmt.Println("Suite:", suite)
+		fmt.Println()
+	}
+
+	results := make(map[string]*evals.EvalMetrics)
+
+	if suite == "tool_selection" || suite == "all" {
+		s, err := evals.LoadToolSelectionSuite(filepath.Join(dir, "tool_selection.json"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading tool_selection: %v\n", err)
+			os.Exit(1)
+		}
+		metrics, _ := evals.EvaluateToolSelection(s, selector)
+		results["tool_selection"] = metrics
+		if !jsonOut {
+			fmt.Print(evals.FormatMetrics(metrics, "Tool Selection"))
+		}
+	}
+
+	if suite == "confusion_pairs" || suite == "all" {
+		s, err := evals.LoadConfusionPairSuite(filepath.Join(dir, "confusion_pairs.json"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading confusion_pairs: %v\n", err)
+			os.Exit(1)
+		}
+		metrics, _ := evals.EvaluateConfusionPairs(s, selector)
+		results["confusion_pairs"] = metrics
+		if !jsonOut {
+			fmt.Print(evals.FormatMetrics(metrics, "Confusion Pairs"))
+		}
+	}
+
+	if suite == "arguments" || suite == "all" {
+		s, err := evals.LoadArgumentSuite(filepath.Join(dir, "argument_correctness.json"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading arguments: %v\n", err)
+			os.Exit(1)
+		}
+		metrics, _ := evals.EvaluateArguments(s, selector)
+		results["arguments"] = metrics
+		if !jsonOut {
+			fmt.Print(evals.FormatMetrics(metrics, "Argument Correctness"))
+		}
+	}
+
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(results); err != nil {
+			fmt.Fprintf(os.Stderr, "Error encoding results: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Non-zero exit when any suite has failures, so CI can branch on it.
+	for _, m := range results {
+		if m.FailedTests > 0 {
+			os.Exit(1)
+		}
 	}
 }
 
@@ -81,9 +167,9 @@ func loadToolSelection(dir string, verbose bool) {
 		fmt.Println("Test Cases:")
 		for _, test := range suite.Tests {
 			fmt.Printf("  [%s] %s\n", test.ID, test.Input)
-			fmt.Printf("    → %s\n", test.ExpectedTool)
+			fmt.Printf("    -> %s\n", test.ExpectedTool)
 			if len(test.NotTools) > 0 {
-				fmt.Printf("    ✗ %v\n", test.NotTools)
+				fmt.Printf("    not: %v\n", test.NotTools)
 			}
 		}
 	}
@@ -119,7 +205,7 @@ func loadConfusionPairs(dir string, verbose bool) {
 		if verbose {
 			for _, test := range pair.Tests {
 				fmt.Printf("      \"%s\"\n", test.Input)
-				fmt.Printf("        → %s (%s)\n", test.Expected, test.Reason)
+				fmt.Printf("        -> %s (%s)\n", test.Expected, test.Reason)
 			}
 		}
 	}
@@ -203,7 +289,7 @@ func loadAll(dir string, verbose bool) {
 	}
 	fmt.Printf("Confusion Pair Tests:   %d (across %d pairs)\n", confusionTests, len(confusionPairs.Pairs))
 	fmt.Printf("Argument Tests:         %d\n", len(arguments.Tests))
-	fmt.Printf("──────────────────────────\n")
+	fmt.Printf("----------------------\n")
 	fmt.Printf("Total Evaluation Tests: %d\n", totalTests)
 	fmt.Println()
 
@@ -226,11 +312,10 @@ func loadAll(dir string, verbose bool) {
 	if verbose {
 		fmt.Println("\nCovered Tools:")
 		for tool := range toolCoverage {
-			fmt.Printf("  ✓ %s\n", tool)
+			fmt.Printf("  - %s\n", tool)
 		}
 	}
 
 	fmt.Println()
-	fmt.Println("To run with LLM integration, implement the evals.ToolSelector interface")
-	fmt.Println("and use EvaluateToolSelection(), EvaluateConfusionPairs(), EvaluateArguments()")
+	fmt.Println("Run against Claude: go run ./cmd/evals -run  (requires ANTHROPIC_API_KEY)")
 }

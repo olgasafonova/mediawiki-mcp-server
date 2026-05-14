@@ -38,24 +38,48 @@ Tests for correct argument extraction:
 
 ## Running Evals
 
-### View eval summary
-```bash
-go run ./cmd/evals -dir ./evals -suite all
-```
+### Inspect the test data
 
-### View specific suite with details
 ```bash
+# Summary of all suites
+go run ./cmd/evals -dir ./evals -suite all
+
+# One suite with full case detail
 go run ./cmd/evals -dir ./evals -suite tool_selection -verbose
 ```
 
-### Run eval tests
+### Run evals against Claude (reference adapter)
+
+The repo ships a Claude-backed `ToolSelector` so anyone with an Anthropic API key can run the evals end-to-end.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Run all 112 tests against the default model (claude-sonnet-4-6)
+go run ./cmd/evals -run
+
+# Pick a different model or a single suite
+go run ./cmd/evals -run -model claude-opus-4-7 -suite confusion_pairs
+
+# Emit machine-readable results for CI
+go run ./cmd/evals -run -json > results.json
+```
+
+Exit code is non-zero when any suite has failures, so CI can branch on it.
+
+The tool definitions are prompt-cached across calls, so a full 112-test pass typically uses ~95% cached input tokens.
+
+### Run the framework unit tests
+
 ```bash
 go test ./evals/...
 ```
 
-## Integrating with LLM Testing
+These exercise the loader and `EvaluateToolSelection` / `EvaluateConfusionPairs` / `EvaluateArguments` against mock selectors. They do not call any LLM.
 
-To run actual evaluations with an LLM, implement the `ToolSelector` interface:
+## Bring Your Own Selector
+
+The Claude adapter (`claude_selector.go`) is one implementation of the `ToolSelector` interface. To evaluate a different LLM, implement:
 
 ```go
 type ToolSelector interface {
@@ -63,23 +87,19 @@ type ToolSelector interface {
 }
 ```
 
-Then use the evaluation functions:
+Then feed it to the same evaluation functions:
 
 ```go
 import "github.com/olgasafonova/mediawiki-mcp-server/evals"
 
-// Load suites
 toolSelection, confusionPairs, arguments, _ := evals.LoadAllEvals("./evals")
 
-// Create your LLM-backed selector
 selector := &MyLLMSelector{...}
 
-// Run evaluations
 metrics1, _ := evals.EvaluateToolSelection(toolSelection, selector)
 metrics2, _ := evals.EvaluateConfusionPairs(confusionPairs, selector)
 metrics3, _ := evals.EvaluateArguments(arguments, selector)
 
-// Print results
 fmt.Println(evals.FormatMetrics(metrics1, "Tool Selection"))
 fmt.Println(evals.FormatMetrics(metrics2, "Confusion Pairs"))
 fmt.Println(evals.FormatMetrics(metrics3, "Argument Correctness"))
