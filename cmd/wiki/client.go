@@ -38,8 +38,19 @@ func newWikiClient(cmd *cobra.Command) (*wiki.Client, error) {
 	// Authenticate if credentials are configured.
 	// For public wikis (no credentials), skip auth entirely.
 	if cfg.HasCredentials() {
+		// Restore a cached session before login so EnsureLoggedIn can
+		// short-circuit if the cached tokenExpiry is still in the future.
+		// On auth-required wikis this is the difference between paying a
+		// bot-password login round-trip on every CLI invocation vs once
+		// per sessionMaxAge.
+		if cached, ok := loadCachedSession(cfg.BaseURL); ok {
+			_ = client.RestoreSession(cached) //nolint:errcheck // cache miss is non-fatal
+		}
 		if err := client.EnsureLoggedIn(context.Background()); err != nil {
 			return nil, fmt.Errorf("authentication failed: %w", err)
+		}
+		if snapshot, err := client.SessionSnapshot(); err == nil {
+			_ = saveCachedSession(cfg.BaseURL, snapshot) //nolint:errcheck // cache write failure is non-fatal
 		}
 	}
 

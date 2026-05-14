@@ -29,6 +29,25 @@ With --from-title/--to-title flags, compares latest revisions of two pages.`,
 	return cmd
 }
 
+type diffSelectors struct {
+	fromRev   int
+	toRev     int
+	fromTitle string
+	toTitle   string
+}
+
+func (d diffSelectors) empty() bool {
+	return d.fromRev == 0 && d.toRev == 0 && d.fromTitle == "" && d.toTitle == ""
+}
+
+func readDiffSelectors(cmd *cobra.Command) diffSelectors {
+	fromRev, _ := cmd.Flags().GetInt("from")
+	toRev, _ := cmd.Flags().GetInt("to")
+	fromTitle, _ := cmd.Flags().GetString("from-title")
+	toTitle, _ := cmd.Flags().GetString("to-title")
+	return diffSelectors{fromRev, toRev, fromTitle, toTitle}
+}
+
 func runDiff(cmd *cobra.Command, args []string) error {
 	client, err := newWikiClient(cmd)
 	if err != nil {
@@ -37,26 +56,21 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	ctx := context.Background()
-	fromRev, _ := cmd.Flags().GetInt("from")
-	toRev, _ := cmd.Flags().GetInt("to")
-	fromTitle, _ := cmd.Flags().GetString("from-title")
-	toTitle, _ := cmd.Flags().GetString("to-title")
+	sel := readDiffSelectors(cmd)
 
-	// Shortcut: wiki diff <title> — compare last two revisions
-	if len(args) == 1 && fromRev == 0 && toRev == 0 && fromTitle == "" && toTitle == "" {
+	if len(args) == 1 && sel.empty() {
 		return runDiffLastTwo(cmd, client, ctx, args[0])
 	}
 
-	// Explicit flags required if no title argument
-	if fromRev == 0 && toRev == 0 && fromTitle == "" && toTitle == "" {
+	if sel.empty() {
 		return fmt.Errorf("provide a page title, --from/--to revision IDs, or --from-title/--to-title")
 	}
 
 	result, err := client.CompareRevisions(ctx, wiki.CompareRevisionsArgs{
-		FromRev:   fromRev,
-		ToRev:     toRev,
-		FromTitle: fromTitle,
-		ToTitle:   toTitle,
+		FromRev:   sel.fromRev,
+		ToRev:     sel.toRev,
+		FromTitle: sel.fromTitle,
+		ToTitle:   sel.toTitle,
 	})
 	if err != nil {
 		return fmt.Errorf("diff failed: %w", err)
@@ -88,32 +102,26 @@ func runDiffLastTwo(cmd *cobra.Command, client *wiki.Client, ctx context.Context
 	return printDiffResult(cmd, result)
 }
 
+func printDiffHeader(label, title string, revID int, user, ts string) {
+	fmt.Printf("%s %s (rev %d)", label, title, revID)
+	if user != "" {
+		fmt.Printf(" by %s", user)
+	}
+	if ts != "" {
+		fmt.Printf(" at %s", ts)
+	}
+	fmt.Println()
+}
+
 func printDiffResult(cmd *cobra.Command, result wiki.CompareRevisionsResult) error {
 	if isJSON(cmd) {
 		return printJSON(result)
 	}
 
-	// Header
-	fmt.Printf("From: %s (rev %d)", result.FromTitle, result.FromRevID)
-	if result.FromUser != "" {
-		fmt.Printf(" by %s", result.FromUser)
-	}
-	if result.FromTimestamp != "" {
-		fmt.Printf(" at %s", result.FromTimestamp)
-	}
+	printDiffHeader("From:", result.FromTitle, result.FromRevID, result.FromUser, result.FromTimestamp)
+	printDiffHeader("To:  ", result.ToTitle, result.ToRevID, result.ToUser, result.ToTimestamp)
 	fmt.Println()
 
-	fmt.Printf("To:   %s (rev %d)", result.ToTitle, result.ToRevID)
-	if result.ToUser != "" {
-		fmt.Printf(" by %s", result.ToUser)
-	}
-	if result.ToTimestamp != "" {
-		fmt.Printf(" at %s", result.ToTimestamp)
-	}
-	fmt.Println()
-	fmt.Println()
-
-	// Diff content (strip HTML tags for terminal)
 	if result.Diff == "" {
 		fmt.Println("No differences found.")
 	} else {

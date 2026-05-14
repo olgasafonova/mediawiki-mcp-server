@@ -65,28 +65,43 @@ func runPage(cmd *cobra.Command, args []string) error {
 	return runPageSingle(cmd, client, ctx, args[0])
 }
 
+func runPageSection(cmd *cobra.Command, client *wiki.Client, ctx context.Context, title string, sectionIdx int) error {
+	result, err := client.GetSections(ctx, wiki.GetSectionsArgs{
+		Title:   title,
+		Section: sectionIdx,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get section: %w", err)
+	}
+	if isJSON(cmd) {
+		return printJSON(result)
+	}
+	if result.SectionContent != "" {
+		fmt.Println(result.SectionContent)
+	} else {
+		fmt.Printf("Section %d not found in %q\n", sectionIdx, title)
+	}
+	return nil
+}
+
+func printPageHeader(result wiki.PageContent) {
+	fmt.Printf("# %s", result.Title)
+	if result.Timestamp != "" {
+		fmt.Printf("    [rev:%d %s]", result.Revision, result.Timestamp)
+	}
+	fmt.Println()
+	if result.Truncated {
+		fmt.Println("(content truncated)")
+	}
+	fmt.Println()
+}
+
 func runPageSingle(cmd *cobra.Command, client *wiki.Client, ctx context.Context, title string) error {
 	format, _ := cmd.Flags().GetString("format")
 	sectionIdx, _ := cmd.Flags().GetInt("section")
 
-	// If requesting a specific section, use GetSections
 	if sectionIdx >= 0 {
-		result, err := client.GetSections(ctx, wiki.GetSectionsArgs{
-			Title:   title,
-			Section: sectionIdx,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to get section: %w", err)
-		}
-		if isJSON(cmd) {
-			return printJSON(result)
-		}
-		if result.SectionContent != "" {
-			fmt.Println(result.SectionContent)
-		} else {
-			fmt.Printf("Section %d not found in %q\n", sectionIdx, title)
-		}
-		return nil
+		return runPageSection(cmd, client, ctx, title, sectionIdx)
 	}
 
 	result, err := client.GetPage(ctx, wiki.GetPageArgs{
@@ -101,17 +116,8 @@ func runPageSingle(cmd *cobra.Command, client *wiki.Client, ctx context.Context,
 		return printJSON(result)
 	}
 
-	// Human-readable: header + content
 	if !isQuiet(cmd) {
-		fmt.Printf("# %s", result.Title)
-		if result.Timestamp != "" {
-			fmt.Printf("    [rev:%d %s]", result.Revision, result.Timestamp)
-		}
-		fmt.Println()
-		if result.Truncated {
-			fmt.Println("(content truncated)")
-		}
-		fmt.Println()
+		printPageHeader(result)
 	}
 	fmt.Println(result.Content)
 	return nil
@@ -196,31 +202,38 @@ func runPageSections(cmd *cobra.Command, client *wiki.Client, ctx context.Contex
 
 func runPageInfo(cmd *cobra.Command, client *wiki.Client, ctx context.Context, titles []string) error {
 	if len(titles) > 1 {
-		result, err := client.GetPagesInfoBatch(ctx, wiki.GetPagesInfoBatchArgs{Titles: titles})
-		if err != nil {
-			return fmt.Errorf("failed to get info: %w", err)
-		}
-		if isJSON(cmd) {
-			return printJSON(result)
-		}
-		tw := table()
-		fmt.Fprintf(tw, "TITLE\tSIZE\tLAST REVISION\tREDIRECT\n")
-		for _, p := range result.Pages {
-			if !p.Exists {
-				fmt.Fprintf(tw, "%s\t-\t-\t(not found)\n", p.Title)
-				continue
-			}
-			redirect := ""
-			if p.Redirect {
-				redirect = "-> " + p.RedirectTo
-			}
-			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", p.Title, p.Length, p.LastRevision, redirect)
-		}
-		_ = tw.Flush()
-		return nil
+		return runPageInfoBatch(cmd, client, ctx, titles)
 	}
+	return runPageInfoSingle(cmd, client, ctx, titles[0])
+}
 
-	result, err := client.GetPageInfo(ctx, wiki.PageInfoArgs{Title: titles[0]})
+func runPageInfoBatch(cmd *cobra.Command, client *wiki.Client, ctx context.Context, titles []string) error {
+	result, err := client.GetPagesInfoBatch(ctx, wiki.GetPagesInfoBatchArgs{Titles: titles})
+	if err != nil {
+		return fmt.Errorf("failed to get info: %w", err)
+	}
+	if isJSON(cmd) {
+		return printJSON(result)
+	}
+	tw := table()
+	fmt.Fprintf(tw, "TITLE\tSIZE\tLAST REVISION\tREDIRECT\n")
+	for _, p := range result.Pages {
+		if !p.Exists {
+			fmt.Fprintf(tw, "%s\t-\t-\t(not found)\n", p.Title)
+			continue
+		}
+		redirect := ""
+		if p.Redirect {
+			redirect = "-> " + p.RedirectTo
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", p.Title, p.Length, p.LastRevision, redirect)
+	}
+	_ = tw.Flush()
+	return nil
+}
+
+func runPageInfoSingle(cmd *cobra.Command, client *wiki.Client, ctx context.Context, title string) error {
+	result, err := client.GetPageInfo(ctx, wiki.PageInfoArgs{Title: title})
 	if err != nil {
 		return fmt.Errorf("failed to get info: %w", err)
 	}

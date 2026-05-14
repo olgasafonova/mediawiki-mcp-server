@@ -29,6 +29,134 @@ Specify pages as arguments or use --category to check all pages in a category.`,
 	return cmd
 }
 
+type lintOpts struct {
+	pages        []string
+	category     string
+	glossaryPage string
+	limit        int
+	checks       map[string]bool
+}
+
+func parseLintOpts(cmd *cobra.Command, args []string) (lintOpts, error) {
+	category, _ := cmd.Flags().GetString("category")
+	if len(args) == 0 && category == "" {
+		return lintOpts{}, fmt.Errorf("specify page titles as arguments or use --category")
+	}
+	glossaryPage, _ := cmd.Flags().GetString("glossary-page")
+	limit, _ := cmd.Flags().GetInt("limit")
+	checksFlag, _ := cmd.Flags().GetString("check")
+	return lintOpts{
+		pages:        args,
+		category:     category,
+		glossaryPage: glossaryPage,
+		limit:        limit,
+		checks:       parseChecks(checksFlag),
+	}, nil
+}
+
+type lintResults struct {
+	term  *wiki.CheckTerminologyResult
+	links *wiki.FindBrokenInternalLinksResult
+}
+
+func runLintChecks(ctx context.Context, client *wiki.Client, opts lintOpts) (lintResults, error) {
+	var out lintResults
+	if opts.checks["terminology"] {
+		r, err := client.CheckTerminology(ctx, wiki.CheckTerminologyArgs{
+			Pages:        opts.pages,
+			Category:     opts.category,
+			GlossaryPage: opts.glossaryPage,
+			Limit:        opts.limit,
+		})
+		if err != nil {
+			return out, fmt.Errorf("terminology check failed: %w", err)
+		}
+		out.term = &r
+	}
+	if opts.checks["links"] {
+		r, err := client.FindBrokenInternalLinks(ctx, wiki.FindBrokenInternalLinksArgs{
+			Pages:    opts.pages,
+			Category: opts.category,
+			Limit:    opts.limit,
+		})
+		if err != nil {
+			return out, fmt.Errorf("broken links check failed: %w", err)
+		}
+		out.links = &r
+	}
+	return out, nil
+}
+
+func printLintJSON(r lintResults) error {
+	combined := map[string]interface{}{}
+	if r.term != nil {
+		combined["terminology"] = r.term
+	}
+	if r.links != nil {
+		combined["broken_links"] = r.links
+	}
+	return printJSON(combined)
+}
+
+func printTerminologyIssues(r *wiki.CheckTerminologyResult) {
+	if r == nil || r.IssuesFound == 0 {
+		return
+	}
+	fmt.Printf("Terminology Issues (%d):\n", r.IssuesFound)
+	for _, page := range r.Pages {
+		if page.IssueCount == 0 {
+			continue
+		}
+		for _, issue := range page.Issues {
+			fmt.Printf("  %s: %q should be %q (line %d)\n",
+				page.Title, issue.Incorrect, issue.Correct, issue.Line)
+		}
+	}
+	fmt.Println()
+}
+
+func printBrokenLinks(r *wiki.FindBrokenInternalLinksResult) {
+	if r == nil || r.BrokenCount == 0 {
+		return
+	}
+	fmt.Printf("Broken Internal Links (%d):\n", r.BrokenCount)
+	for _, page := range r.Pages {
+		if page.BrokenCount == 0 {
+			continue
+		}
+		for _, link := range page.BrokenLinks {
+			if link.Line > 0 {
+				fmt.Printf("  %s -> %s (line %d)\n", page.Title, link.Target, link.Line)
+			} else {
+				fmt.Printf("  %s -> %s\n", page.Title, link.Target)
+			}
+		}
+	}
+	fmt.Println()
+}
+
+func printLintSummary(r lintResults) (termIssues, brokenLinks int) {
+	pagesChecked := 0
+	parts := []string{}
+	if r.term != nil {
+		termIssues = r.term.IssuesFound
+		pagesChecked = r.term.PagesChecked
+		parts = append(parts, fmt.Sprintf("%d terminology issue%s",
+			termIssues, plural(termIssues)))
+	}
+	if r.links != nil {
+		brokenLinks = r.links.BrokenCount
+		if r.links.PagesChecked > pagesChecked {
+			pagesChecked = r.links.PagesChecked
+		}
+		parts = append(parts, fmt.Sprintf("%d broken link%s",
+			brokenLinks, plural(brokenLinks)))
+	}
+	fmt.Printf("%s across %d page%s\n",
+		strings.Join(parts, ", "), pagesChecked, plural(pagesChecked))
+	return termIssues, brokenLinks
+}
+
 func runLint(cmd *cobra.Command, args []string) error {
 	client, err := newWikiClient(cmd)
 	if err != nil {
@@ -36,120 +164,27 @@ func runLint(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	category, _ := cmd.Flags().GetString("category")
-	glossaryPage, _ := cmd.Flags().GetString("glossary-page")
-	limit, _ := cmd.Flags().GetInt("limit")
-	checksFlag, _ := cmd.Flags().GetString("check")
-
-	if len(args) == 0 && category == "" {
-		return fmt.Errorf("specify page titles as arguments or use --category")
+	opts, err := parseLintOpts(cmd, args)
+	if err != nil {
+		return err
 	}
 
-	checks := parseChecks(checksFlag)
-	ctx := context.Background()
-
-	var termResult *wiki.CheckTerminologyResult
-	var linksResult *wiki.FindBrokenInternalLinksResult
-
-	if checks["terminology"] {
-		r, err := client.CheckTerminology(ctx, wiki.CheckTerminologyArgs{
-			Pages:        args,
-			Category:     category,
-			GlossaryPage: glossaryPage,
-			Limit:        limit,
-		})
-		if err != nil {
-			return fmt.Errorf("terminology check failed: %w", err)
-		}
-		termResult = &r
-	}
-
-	if checks["links"] {
-		r, err := client.FindBrokenInternalLinks(ctx, wiki.FindBrokenInternalLinksArgs{
-			Pages:    args,
-			Category: category,
-			Limit:    limit,
-		})
-		if err != nil {
-			return fmt.Errorf("broken links check failed: %w", err)
-		}
-		linksResult = &r
+	results, err := runLintChecks(context.Background(), client, opts)
+	if err != nil {
+		return err
 	}
 
 	if isJSON(cmd) {
-		combined := map[string]interface{}{}
-		if termResult != nil {
-			combined["terminology"] = termResult
-		}
-		if linksResult != nil {
-			combined["broken_links"] = linksResult
-		}
-		return printJSON(combined)
+		return printLintJSON(results)
 	}
 
-	// Human-readable output
-	totalTermIssues := 0
-	totalBrokenLinks := 0
-	pagesChecked := 0
+	printTerminologyIssues(results.term)
+	printBrokenLinks(results.links)
+	termIssues, brokenLinks := printLintSummary(results)
 
-	if termResult != nil {
-		totalTermIssues = termResult.IssuesFound
-		pagesChecked = termResult.PagesChecked
-		if termResult.IssuesFound > 0 {
-			fmt.Printf("Terminology Issues (%d):\n", termResult.IssuesFound)
-			for _, page := range termResult.Pages {
-				if page.IssueCount == 0 {
-					continue
-				}
-				for _, issue := range page.Issues {
-					fmt.Printf("  %s: %q should be %q (line %d)\n",
-						page.Title, issue.Incorrect, issue.Correct, issue.Line)
-				}
-			}
-			fmt.Println()
-		}
-	}
-
-	if linksResult != nil {
-		totalBrokenLinks = linksResult.BrokenCount
-		if linksResult.PagesChecked > pagesChecked {
-			pagesChecked = linksResult.PagesChecked
-		}
-		if linksResult.BrokenCount > 0 {
-			fmt.Printf("Broken Internal Links (%d):\n", linksResult.BrokenCount)
-			for _, page := range linksResult.Pages {
-				if page.BrokenCount == 0 {
-					continue
-				}
-				for _, link := range page.BrokenLinks {
-					if link.Line > 0 {
-						fmt.Printf("  %s -> %s (line %d)\n", page.Title, link.Target, link.Line)
-					} else {
-						fmt.Printf("  %s -> %s\n", page.Title, link.Target)
-					}
-				}
-			}
-			fmt.Println()
-		}
-	}
-
-	// Summary line
-	parts := []string{}
-	if termResult != nil {
-		parts = append(parts, fmt.Sprintf("%d terminology issue%s",
-			totalTermIssues, plural(totalTermIssues)))
-	}
-	if linksResult != nil {
-		parts = append(parts, fmt.Sprintf("%d broken link%s",
-			totalBrokenLinks, plural(totalBrokenLinks)))
-	}
-	fmt.Printf("%s across %d page%s\n",
-		strings.Join(parts, ", "), pagesChecked, plural(pagesChecked))
-
-	if totalTermIssues > 0 || totalBrokenLinks > 0 {
+	if termIssues > 0 || brokenLinks > 0 {
 		os.Exit(4)
 	}
-
 	return nil
 }
 

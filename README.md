@@ -447,6 +447,12 @@ wiki config         # verify setup
 
 You can also override the URL per-invocation with `--url`.
 
+### Session caching
+
+On auth-required wikis (private/corporate), the CLI caches the login session at `~/.config/wiki/sessions.json` (mode `0600`) so an agent running many `wiki` commands in a row doesn't re-authenticate on every invocation. The cache is keyed by a hash of the wiki API URL, so multiple wikis stay isolated. Sessions expire after 12 hours regardless of cookie expiry; server-side invalidation triggers a transparent re-login.
+
+Set `WIKI_NO_SESSION_CACHE=1` to disable disk caching (CI, ephemeral containers, hosts with no writable home dir). Use `XDG_CONFIG_HOME` to relocate the cache directory.
+
 ### Commands
 
 | Command | What it does |
@@ -832,6 +838,8 @@ curl http://localhost:8080/status
 | `MEDIAWIKI_PASSWORD` | No | Bot password |
 | `MEDIAWIKI_TIMEOUT` | No | Request timeout (default: `30s`) |
 | `MCP_AUTH_TOKEN` | No | Bearer token for HTTP authentication |
+| `WIKI_NO_SESSION_CACHE` | No | Set to any non-empty value to disable the `wiki` CLI session cache |
+| `XDG_CONFIG_HOME` | No | Overrides session cache location (default: `~/.config/wiki/sessions.json`) |
 
 ---
 
