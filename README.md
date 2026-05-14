@@ -460,7 +460,7 @@ You can also override the URL per-invocation with `--url`.
 | `wiki recent` | Recent changes |
 | `wiki history <page>` | Revision history |
 | `wiki diff <page>` | Compare revisions |
-| `wiki links [external\|backlinks\|broken\|orphans\|batch]` | Link analysis |
+| `wiki links [external\|backlinks\|broken\|check\|orphaned]` | Link analysis |
 | `wiki list [pages\|categories\|members\|users]` | Listing queries |
 | `wiki publish <file.md> <page-title>` | Convert Markdown to wikitext and publish (add `--preview` to skip publish) |
 | `wiki similar <page>` | Find pages with similar content |
