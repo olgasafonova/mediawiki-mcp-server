@@ -4,8 +4,23 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-05-14
+
 ### Added
+- **`wiki stale-pages`** CLI command. Lists pages not edited in N days (default 90) with `--days`, `--category`, `--namespace`, `--limit` filters. Wraps the existing `mediawiki_get_stale_pages` MCP tool so the CLI surface matches MCP coverage.
+- **`wiki similar <page>`** CLI command. Finds pages whose content overlaps with a source page; includes a similarity score, common terms, and existing-link indicators. Flags: `--limit`, `--category`, `--min-score`. Wraps the existing `mediawiki_find_similar_pages` MCP tool.
 - `wiki` CLI now returns typed exit codes so shell scripts can branch on failure category: `2` usage error, `3` not found (HTTP 404), `5` wiki API error (other 4xx/5xx), `6` auth error (HTTP 401/403), `7` rate limit (HTTP 429), `10` config error. Adapted from the cli-printing-press canonical map; `4` remains reserved for `wiki lint` findings (existing public API), so auth errors use `6` instead of `4`. Plain errors still exit `1`. `wiki.APIError` from the wiki client is auto-classified by status; commands can also return `usageErr`/`notFoundErr`/`authErr`/`apiErr`/`rateLimitErr`/`configErr` directly. Cobra flag-parse errors (unknown flag, missing required arg) auto-wrap to exit `2`.
+- **Claude Code plugin scaffold.** New `.claude-plugin/` directory with `marketplace.json`, `plugin.json`, and a first skill `wiki-publish` that shells out to the `wiki publish` CLI. Install via `/plugin marketplace add olgasafonova/mediawiki-mcp-server`. Design rationale and the full surface map are in [`MULTI-SURFACE-DISTRIBUTION.md`](MULTI-SURFACE-DISTRIBUTION.md): the Go module is the shared knowledge layer; MCP server, `wiki` CLI, and this plugin are surfaces over it.
+
+### Changed
+- **Breaking (write tools only): `rationale` is now a required parameter on 7 destructive MCP tools** — `mediawiki_edit_page`, `mediawiki_find_replace`, `mediawiki_apply_formatting`, `mediawiki_bulk_replace`, `mediawiki_upload_file`, `mediawiki_move_page`, `mediawiki_manage_categories`. The agent must supply a one-sentence "why" with each write call; the value is logged to the tool audit trail and the `mcp.tool.rationale` OTel span attribute. Rationale is **optional** (recorded when supplied, ignored when omitted) on the 35 read-only tools. Pattern source: Teddy Riker, "Designing for Agents" (Ramp). Read-only integrations require no changes; write integrations must add the `rationale` field.
+- `tools/handlers.go` dispatcher refactored from a 41-case method switch + 41-case type switch to a name→closure map; the non-generic dispatcher method is gone, closures call the generic `register[Args, Result]` helper directly via type inference. `logExecution` split into `appendArgAttrs` + `appendResultAttrs`. Code Health 7.64 → 9.53 (Yellow → Green). No public API change.
+- `wiki/` package reorganized: monolithic read path consolidated into `wiki/read.go`; helpers extracted across `links.go`, `quality.go`, `search.go`, `write.go` to lift per-file Code Health scores. No public API change.
+
+### Dependencies
+- Bumped `golang.org/x/text` (security fix)
+- Bumped `github.com/modelcontextprotocol/go-sdk`
+- Bumped `github.com/olgasafonova/mcp-servercard-go` to v0.3.0
 
 ## [1.30.0] - 2026-05-03
 
