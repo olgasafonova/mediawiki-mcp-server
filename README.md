@@ -6,7 +6,13 @@ Connect your AI assistant to any MediaWiki wiki, or script it directly from the 
 [![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/mediawiki-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/mediawiki-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Works with:** Claude Desktop, Claude Code, Cursor, ChatGPT, n8n, and any MCP-compatible tool. Also ships a `wiki` CLI for shell scripts and CI pipelines, see [Use from the Terminal](#use-from-the-terminal).
+**Three ways to use it:**
+
+1. **MCP server** — Claude Desktop, Claude Code, Cursor, ChatGPT, n8n, VS Code, Google ADK, or any MCP-compatible tool ([setup](#get-started)).
+2. **`wiki` CLI** — same API client, same auth, no AI needed. For shell pipelines, CI checks, cron jobs ([Use from the Terminal](#use-from-the-terminal)).
+3. **Claude Code plugin** — `/plugin marketplace add olgasafonova/mediawiki-mcp-server` adds wiki skills directly to Claude Code ([details](.claude-plugin/README.md)).
+
+All three share one Go module; see [MULTI-SURFACE-DISTRIBUTION.md](MULTI-SURFACE-DISTRIBUTION.md) for the design.
 
 ---
 
@@ -18,6 +24,7 @@ Connect your AI assistant to any MediaWiki wiki, or script it directly from the 
 | [TIETO_SETUP.md](TIETO_SETUP.md) | Connect to Tieto's Public 360° Wiki (beginner-friendly) |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design |
+| [MULTI-SURFACE-DISTRIBUTION.md](MULTI-SURFACE-DISTRIBUTION.md) | Why one Go module powers three surfaces (MCP + CLI + plugin) |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 | [SECURITY.md](SECURITY.md) | Security policies |
 | [WIKI_USE_CASES.md](WIKI_USE_CASES.md) | Detailed workflows |
@@ -26,16 +33,20 @@ Connect your AI assistant to any MediaWiki wiki, or script it directly from the 
 
 ## What Can You Do?
 
-Once connected, just ask your AI:
+The same operation works from a prompt (via MCP) or directly in your shell (via the `wiki` CLI):
 
-| You say... | What happens |
-|------------|--------------|
-| *"What does our wiki say about onboarding?"* | AI searches and summarizes relevant pages |
-| *"Find all pages mentioning the API"* | Full-text search across your wiki |
-| *"Who edited the Release Notes last week?"* | Shows revision history |
-| *"Are there broken links on the Docs page?"* | Checks all external URLs |
-| *"Strike out John Smith on the Team page"* | Applies formatting (requires auth) |
-| *"Convert this README to wiki format"* | Transforms Markdown → MediaWiki markup ✨ |
+| Goal | Prompt your AI | From your terminal |
+|------|---------------|--------------------|
+| Search the wiki | *"What does our wiki say about onboarding?"* | `wiki search "onboarding"` |
+| Read a page | *"Show me the Getting Started page"* | `wiki page "Getting Started"` |
+| Find broken links | *"Are there broken links on the Docs page?"* | `wiki links broken --json` |
+| Find stale content | *"Which pages haven't been updated in 90 days?"* | `wiki stale-pages --days 90` |
+| Cross-link suggestions | *"What pages are similar to the API Reference?"* | `wiki similar "API Reference"` |
+| Audit wiki health | *"Run a health check on the wiki"* | `wiki audit --json` |
+| Publish markdown | *"Publish this README to the wiki"* | `wiki publish README.md "Page Title"` |
+| Strike a name | *"Strike out John Smith on the Team page"* | `wiki replace "Team" --find "John Smith" --replace "<s>John Smith</s>"` |
+
+The CLI returns typed exit codes for CI-friendly branching; see [Exit codes](#exit-codes).
 
 ---
 
@@ -75,6 +86,7 @@ Your wiki's API URL is usually:
 |----------|---------------|
 | Claude Desktop (Mac/Windows) | [Setup instructions](#claude-desktop) |
 | Claude Code CLI | [Setup instructions](#claude-code-cli) |
+| Claude Code plugin (skills via marketplace) | `/plugin marketplace add olgasafonova/mediawiki-mcp-server` |
 | Cursor | [Setup instructions](#cursor) |
 | ChatGPT | [Setup instructions](#chatgpt) |
 | n8n | [Setup instructions](#n8n) |
