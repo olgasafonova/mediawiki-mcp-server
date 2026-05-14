@@ -12,8 +12,6 @@ Connect your AI assistant to any MediaWiki wiki, or script it directly from the 
 2. **`wiki` CLI** — same API client, same auth, no AI needed. For shell pipelines, CI checks, cron jobs ([Use from the Terminal](#use-from-the-terminal)).
 3. **Claude Code plugin** — `/plugin marketplace add olgasafonova/mediawiki-mcp-server` adds wiki skills directly to Claude Code ([details](.claude-plugin/README.md)).
 
-All three share one Go module; see [MULTI-SURFACE-DISTRIBUTION.md](MULTI-SURFACE-DISTRIBUTION.md) for the design.
-
 ---
 
 ## Documentation
@@ -24,7 +22,6 @@ All three share one Go module; see [MULTI-SURFACE-DISTRIBUTION.md](MULTI-SURFACE
 | [TIETO_SETUP.md](TIETO_SETUP.md) | Connect to Tieto's Public 360° Wiki (beginner-friendly) |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design |
-| [MULTI-SURFACE-DISTRIBUTION.md](MULTI-SURFACE-DISTRIBUTION.md) | Why one Go module powers three surfaces (MCP + CLI + plugin) |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 | [SECURITY.md](SECURITY.md) | Security policies |
 | [WIKI_USE_CASES.md](WIKI_USE_CASES.md) | Detailed workflows |
