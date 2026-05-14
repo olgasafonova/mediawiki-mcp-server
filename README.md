@@ -469,6 +469,11 @@ You can also override the URL per-invocation with `--url`.
 | `wiki move <from> <to>` | Rename a page (leaves a redirect; `--no-redirect` to suppress) |
 | `wiki upload <filename>` | Upload from `--file` or `--url` |
 | `wiki categories <page>` | Add/remove categories with `--add`/`--remove` (`--preview` to dry-run) |
+| `wiki info` | Show wiki installation details and content statistics |
+| `wiki grep page <title> <query>` | Find text in a single page (supports `--regex` and `--context`) |
+| `wiki grep file <filename> <query>` | Find text in a wiki-hosted PDF or text file (needs `pdftotext` for PDFs) |
+| `wiki compare-topic <topic>` | Compare how a topic is described across pages and surface inconsistencies |
+| `wiki translations --base ... --languages ...` | Find missing language translations for a set of base pages |
 | `wiki config` | Show or verify configuration |
 | `wiki version` | Print CLI version |
 
@@ -1216,6 +1221,10 @@ mediawiki-mcp-server/
 │   │   ├── move.go            # `wiki move`
 │   │   ├── upload.go          # `wiki upload`
 │   │   ├── categories.go      # `wiki categories`
+│   │   ├── info.go            # `wiki info`
+│   │   ├── grep.go            # `wiki grep {page,file}`
+│   │   ├── comparetopic.go    # `wiki compare-topic`
+│   │   ├── translations.go    # `wiki translations`
 │   │   └── errors_test.go     # Exit code tests
 │   ├── benchmark/             # Performance benchmarking
 │   │   └── main.go

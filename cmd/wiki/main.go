@@ -50,6 +50,10 @@ func main() {
 		newMoveCmd(),
 		newUploadCmd(),
 		newCategoriesCmd(),
+		newInfoCmd(),
+		newGrepCmd(),
+		newCompareTopicCmd(),
+		newTranslationsCmd(),
 		newConfigCmd(),
 		newVersionCmd(),
 	)
