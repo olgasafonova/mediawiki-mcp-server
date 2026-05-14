@@ -58,7 +58,7 @@ func readSessionFile() (map[string]wiki.SessionState, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // G304: path derived from home dir, not user input
+	data, err := os.ReadFile(path) // #nosec G304 -- path derived from home dir/XDG_CONFIG_HOME, not user input
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]wiki.SessionState{}, nil

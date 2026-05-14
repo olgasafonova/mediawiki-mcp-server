@@ -87,7 +87,7 @@ func (c *Client) RestoreSession(s SessionState) error {
 	if c.httpClient.Jar != nil && len(s.Cookies) > 0 {
 		raw := make([]*http.Cookie, 0, len(s.Cookies))
 		for _, ck := range s.Cookies {
-			//nolint:gosec // G124: HttpOnly/SameSite are server-issued attributes; we replay client-side jar cookies as-is.
+			// #nosec G124 -- HttpOnly/SameSite are server-issued attributes; we replay client-side jar cookies as-is.
 			raw = append(raw, &http.Cookie{
 				Name:    ck.Name,
 				Value:   ck.Value,
