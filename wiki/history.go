@@ -36,12 +36,15 @@ func (c *Client) GetRecentChanges(ctx context.Context, args RecentChangesArgs) (
 		params.Set("rccontinue", args.ContinueFrom)
 	}
 
+	// rcdir defaults to "older" — same caller-friendly swap as GetRevisions.
+	// args.Start is the lower (older) bound, args.End is the upper (newer)
+	// bound. See the comment in GetRevisions for the full reasoning.
 	if args.Start != "" {
-		params.Set("rcstart", args.Start)
+		params.Set("rcend", args.Start)
 	}
 
 	if args.End != "" {
-		params.Set("rcend", args.End)
+		params.Set("rcstart", args.End)
 	}
 
 	resp, err := c.apiRequest(ctx, params)

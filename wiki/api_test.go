@@ -808,6 +808,9 @@ func TestGetRecentChanges_WithContinuation(t *testing.T) {
 }
 
 func TestGetRecentChanges_WithAllOptions(t *testing.T) {
+	const wantStart = "2024-01-14T00:00:00Z" // lower bound (older)
+	const wantEnd = "2024-01-15T00:00:00Z"   // upper bound (newer)
+
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 
@@ -818,11 +821,14 @@ func TestGetRecentChanges_WithAllOptions(t *testing.T) {
 		if r.FormValue("rctype") == "" {
 			t.Error("Expected rctype to be set")
 		}
-		if r.FormValue("rcstart") == "" {
-			t.Error("Expected rcstart to be set")
+		// Same swap as GetRevisions: caller's Start (lower bound) maps to
+		// rcend (older bound) and caller's End (upper bound) maps to rcstart
+		// (newer bound) under default rcdir=older.
+		if got := r.FormValue("rcstart"); got != wantEnd {
+			t.Errorf("rcstart = %q, want %q (caller's End)", got, wantEnd)
 		}
-		if r.FormValue("rcend") == "" {
-			t.Error("Expected rcend to be set")
+		if got := r.FormValue("rcend"); got != wantStart {
+			t.Errorf("rcend = %q, want %q (caller's Start)", got, wantStart)
 		}
 
 		response := map[string]interface{}{
@@ -842,12 +848,42 @@ func TestGetRecentChanges_WithAllOptions(t *testing.T) {
 		Limit:        10,
 		Namespace:    0,
 		Type:         "edit",
-		Start:        "2024-01-15T00:00:00Z",
-		End:          "2024-01-14T00:00:00Z",
+		Start:        wantStart,
+		End:          wantEnd,
 		ContinueFrom: "test-token",
 	})
 	if err != nil {
 		t.Fatalf("GetRecentChanges failed: %v", err)
+	}
+}
+
+// TestGetRecentChanges_EmptyTimeWindow verifies that an empty-window response
+// returns an empty result rather than a full-history fallback. Regression test
+// matching TestGetRevisions_EmptyTimeWindow.
+func TestGetRecentChanges_EmptyTimeWindow(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"query": map[string]interface{}{
+				"recentchanges": []interface{}{},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.GetRecentChanges(context.Background(), RecentChangesArgs{
+		Start: "2026-04-17T00:00:00Z",
+		End:   "2026-05-15T23:59:59Z",
+	})
+	if err != nil {
+		t.Fatalf("GetRecentChanges failed: %v", err)
+	}
+	if len(result.Changes) != 0 {
+		t.Errorf("Changes length = %d, want 0 (empty window must not fall back to full history)", len(result.Changes))
 	}
 }
 

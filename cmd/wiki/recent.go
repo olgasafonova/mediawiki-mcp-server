@@ -20,8 +20,8 @@ func newRecentCmd() *cobra.Command {
 	cmd.Flags().IntP("limit", "n", 50, "Maximum changes to return (max 500)")
 	cmd.Flags().String("type", "", "Filter by type: edit, new, log")
 	cmd.Flags().Int("namespace", -1, "Filter by namespace (-1 for all)")
-	cmd.Flags().String("start", "", "Start timestamp (ISO 8601)")
-	cmd.Flags().String("end", "", "End timestamp (ISO 8601)")
+	cmd.Flags().String("start", "", "Lower time bound (ISO 8601, e.g. 2026-04-17T00:00:00Z) — return changes on or after this timestamp")
+	cmd.Flags().String("end", "", "Upper time bound (ISO 8601) — return changes on or before this timestamp (default: now)")
 	cmd.Flags().String("aggregate", "", "Aggregate by: user, page, or type")
 	cmd.Flags().String("continue", "", "Continue token for pagination")
 

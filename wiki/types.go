@@ -276,8 +276,8 @@ type RecentChangesArgs struct {
 	Namespace    int    `json:"namespace,omitempty" jsonschema:"Filter by namespace (-1 for all)"`
 	Type         string `json:"type,omitempty" jsonschema:"Filter by type: 'edit', 'new', 'log', or empty for all"`
 	ContinueFrom string `json:"continue_from,omitempty" jsonschema:"Continue token for pagination"`
-	Start        string `json:"start,omitempty" jsonschema:"Start timestamp (ISO 8601)"`
-	End          string `json:"end,omitempty" jsonschema:"End timestamp (ISO 8601)"`
+	Start        string `json:"start,omitempty" jsonschema:"Lower time bound (ISO 8601). Returns changes on or after this timestamp."`
+	End          string `json:"end,omitempty" jsonschema:"Upper time bound (ISO 8601). Returns changes on or before this timestamp."`
 	AggregateBy  string `json:"aggregate_by,omitempty" jsonschema:"Aggregate results by: 'user', 'page', or 'type'. Returns counts instead of raw changes. Recommended for large result sets."`
 }
 
