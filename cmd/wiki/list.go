@@ -68,29 +68,13 @@ func runListPages(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
-	if len(result.Pages) == 0 {
-		fmt.Println("No pages found.")
-		return nil
-	}
-
-	fmt.Printf("Pages (%d returned)", result.ReturnedCount)
+	header := fmt.Sprintf("Pages (%d returned)", result.ReturnedCount)
 	if result.TotalEstimate > 0 {
-		fmt.Printf(", ~%d estimated total", result.TotalEstimate)
-	}
-	fmt.Println()
-	fmt.Println()
-
-	tw := table()
-	fmt.Fprintf(tw, "ID\tTITLE\n")
-	for _, p := range result.Pages {
-		fmt.Fprintf(tw, "%d\t%s\n", p.PageID, p.Title)
-	}
-	_ = tw.Flush()
-
-	if result.HasMore {
-		fmt.Printf("\nMore pages available. Use --continue %q to see next page.\n", result.ContinueFrom)
+		header += fmt.Sprintf(", ~%d estimated total", result.TotalEstimate)
 	}
 
+	printIDTitleTable(header, "No pages found.", "pages",
+		result.Pages, result.HasMore, result.ContinueFrom)
 	return nil
 }
 
@@ -191,29 +175,14 @@ func runListMembers(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
-	if len(result.Members) == 0 {
-		fmt.Printf("No members found in category %q.\n", category)
-		return nil
-	}
-
-	fmt.Printf("Category %q", result.Category)
+	header := fmt.Sprintf("Category %q", result.Category)
 	if result.HasMore {
-		fmt.Printf(" (showing %d)", len(result.Members))
-	}
-	fmt.Println()
-	fmt.Println()
-
-	tw := table()
-	fmt.Fprintf(tw, "ID\tTITLE\n")
-	for _, m := range result.Members {
-		fmt.Fprintf(tw, "%d\t%s\n", m.PageID, m.Title)
-	}
-	_ = tw.Flush()
-
-	if result.HasMore {
-		fmt.Printf("\nMore members available. Use --continue %q to see next page.\n", result.ContinueFrom)
+		header += fmt.Sprintf(" (showing %d)", len(result.Members))
 	}
 
+	emptyMsg := fmt.Sprintf("No members found in category %q.", category)
+	printIDTitleTable(header, emptyMsg, "members",
+		result.Members, result.HasMore, result.ContinueFrom)
 	return nil
 }
 
