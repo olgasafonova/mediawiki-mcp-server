@@ -960,6 +960,20 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 
 	req.Header.Set("User-Agent", c.config.UserAgent)
 
+	// Forward session cookies from the API client's jar onto the download
+	// request. Required for MediaWiki instances that gate file access behind
+	// a login (the $wgUploadDirectory + img_auth.php pattern common on
+	// corporate wikis): the file-serving endpoint refuses anonymous reads
+	// even when the bot is authenticated for api.php. The standard cookie jar
+	// is domain-scoped (RFC 6265), so cookies set for the wiki host are only
+	// forwarded when fileURL is on the same host — no credential leakage to
+	// arbitrary external hosts.
+	if c.httpClient != nil && c.httpClient.Jar != nil {
+		for _, cookie := range c.httpClient.Jar.Cookies(req.URL) {
+			req.AddCookie(cookie)
+		}
+	}
+
 	resp, err := httpClient.Do(req) // #nosec G107 G704 -- URL validated by validateFileURL; request goes through downloadClient (safeDialer + CheckRedirect)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download: %w", err)

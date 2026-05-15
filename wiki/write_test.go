@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -1241,6 +1242,48 @@ func TestDownloadFile_Success(t *testing.T) {
 	}
 	if string(content) != "Test file content" {
 		t.Errorf("content = %q, want 'Test file content'", string(content))
+	}
+}
+
+// TestDownloadFile_ForwardsSessionCookie covers MediaWiki wikis that gate file
+// access via img_auth.php — the file-serving endpoint returns 403 without a
+// session cookie even when the bot is authenticated for api.php. Regression
+// test for mediawiki-mcp-server-crd.
+func TestDownloadFile_ForwardsSessionCookie(t *testing.T) {
+	const wantCookieName = "session_token"
+	const wantCookieValue = "secret-bot-session"
+	const wantBody = "secret payload only visible with cookie"
+
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(wantCookieName)
+		if err != nil || c.Value != wantCookieValue {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("Forbidden"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(wantBody))
+	}))
+	defer fileServer.Close()
+
+	client := createMockClient(t, fileServer)
+	defer client.Close()
+	client.allowPrivateDownloadForTest = true
+
+	// Seed the API client's cookie jar as if the bot had logged in for this
+	// wiki host. The download path should forward the cookie automatically.
+	jarURL, _ := url.Parse(fileServer.URL)
+	client.httpClient.Jar.SetCookies(jarURL, []*http.Cookie{
+		{Name: wantCookieName, Value: wantCookieValue, Path: "/"},
+	})
+
+	ctx := context.Background()
+	content, err := client.downloadFile(ctx, fileServer.URL+"/img_auth.php/test.png")
+	if err != nil {
+		t.Fatalf("downloadFile returned error (cookie not forwarded?): %v", err)
+	}
+	if string(content) != wantBody {
+		t.Errorf("content = %q, want %q", string(content), wantBody)
 	}
 }
 
