@@ -612,8 +612,8 @@ type GetRevisionsArgs struct {
 	BaseArgs
 	Title string `json:"title" jsonschema:"Page title to get revision history for"`
 	Limit int    `json:"limit,omitempty" jsonschema:"Max revisions to return (default 20, max 100)"`
-	Start string `json:"start,omitempty" jsonschema:"Start from this timestamp (ISO 8601, newer first)"`
-	End   string `json:"end,omitempty" jsonschema:"End at this timestamp (ISO 8601)"`
+	Start string `json:"start,omitempty" jsonschema:"Lower time bound (ISO 8601). Returns revisions on or after this timestamp."`
+	End   string `json:"end,omitempty" jsonschema:"Upper time bound (ISO 8601). Returns revisions on or before this timestamp."`
 	User  string `json:"user,omitempty" jsonschema:"Filter to revisions by this user"`
 }
 
@@ -670,8 +670,8 @@ type GetUserContributionsArgs struct {
 	User      string `json:"user" jsonschema:"Username to get contributions for"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Max contributions to return (default 50, max 500)"`
 	Namespace int    `json:"namespace,omitempty" jsonschema:"Filter by namespace (-1 for all)"`
-	Start     string `json:"start,omitempty" jsonschema:"Start from this timestamp (ISO 8601, newer first)"`
-	End       string `json:"end,omitempty" jsonschema:"End at this timestamp (ISO 8601)"`
+	Start     string `json:"start,omitempty" jsonschema:"Lower time bound (ISO 8601). Returns contributions on or after this timestamp."`
+	End       string `json:"end,omitempty" jsonschema:"Upper time bound (ISO 8601). Returns contributions on or before this timestamp."`
 }
 
 // GetUserContributionsResult contains a user's edit history.

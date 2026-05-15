@@ -21,8 +21,8 @@ With --user flag (no title), shows that user's contributions.`,
 	}
 
 	cmd.Flags().IntP("limit", "n", 20, "Maximum results to return")
-	cmd.Flags().String("start", "", "Start timestamp (ISO 8601)")
-	cmd.Flags().String("end", "", "End timestamp (ISO 8601)")
+	cmd.Flags().String("start", "", "Lower time bound (ISO 8601, e.g. 2026-04-17T00:00:00Z) — return revisions on or after this timestamp")
+	cmd.Flags().String("end", "", "Upper time bound (ISO 8601) — return revisions on or before this timestamp (default: now)")
 	cmd.Flags().String("user", "", "Show contributions for this user (instead of page history)")
 
 	return cmd

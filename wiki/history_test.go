@@ -513,7 +513,28 @@ func TestCompareRevisions_MissingToRev(t *testing.T) {
 }
 
 func TestGetRevisions_WithAllOptions(t *testing.T) {
+	const wantStart = "2024-01-01T00:00:00Z"
+	const wantEnd = "2024-12-31T23:59:59Z"
+
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Verify time-window mapping: with the default rvdir=older the API needs
+		// rvstart=newer (caller's End) and rvend=older (caller's Start). A
+		// previous version of this code mapped Start→rvstart directly, which
+		// reversed the window — leading to "full history fallback" when the
+		// requested window was in the future relative to the page's edits.
+		if got := r.FormValue("rvstart"); got != wantEnd {
+			t.Errorf("rvstart = %q, want %q (caller's End)", got, wantEnd)
+		}
+		if got := r.FormValue("rvend"); got != wantStart {
+			t.Errorf("rvend = %q, want %q (caller's Start)", got, wantStart)
+		}
+		if got := r.FormValue("rvuser"); got != "TestUser" {
+			t.Errorf("rvuser = %q, want %q", got, "TestUser")
+		}
+		if got := r.FormValue("rvlimit"); got != "5" {
+			t.Errorf("rvlimit = %q, want %q", got, "5")
+		}
+
 		response := map[string]interface{}{
 			"query": map[string]interface{}{
 				"pages": map[string]interface{}{
@@ -537,8 +558,8 @@ func TestGetRevisions_WithAllOptions(t *testing.T) {
 		Title: "Test Page",
 		Limit: 5,
 		User:  "TestUser",
-		Start: "2024-01-01T00:00:00Z",
-		End:   "2024-12-31T23:59:59Z",
+		Start: wantStart,
+		End:   wantEnd,
 	})
 	if err != nil {
 		t.Fatalf("GetRevisions failed: %v", err)
@@ -546,7 +567,18 @@ func TestGetRevisions_WithAllOptions(t *testing.T) {
 }
 
 func TestGetUserContributions_WithOptions(t *testing.T) {
+	const wantStart = "2024-01-01T00:00:00Z"
+	const wantEnd = "2024-12-31T23:59:59Z"
+
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Same swap as GetRevisions — see TestGetRevisions_WithAllOptions.
+		if got := r.FormValue("ucstart"); got != wantEnd {
+			t.Errorf("ucstart = %q, want %q (caller's End)", got, wantEnd)
+		}
+		if got := r.FormValue("ucend"); got != wantStart {
+			t.Errorf("ucend = %q, want %q (caller's Start)", got, wantStart)
+		}
+
 		response := map[string]interface{}{
 			"query": map[string]interface{}{
 				"usercontribs": []interface{}{},
@@ -564,10 +596,50 @@ func TestGetUserContributions_WithOptions(t *testing.T) {
 		User:      "TestUser",
 		Limit:     10,
 		Namespace: 0,
-		Start:     "2024-01-01T00:00:00Z",
-		End:       "2024-12-31T23:59:59Z",
+		Start:     wantStart,
+		End:       wantEnd,
 	})
 	if err != nil {
 		t.Fatalf("GetUserContributions failed: %v", err)
+	}
+}
+
+// TestGetRevisions_EmptyTimeWindow verifies that when the wiki returns no
+// revisions in the requested window, the caller gets an empty result rather
+// than a fallback to full history. Regression test for the --start swap bug.
+func TestGetRevisions_EmptyTimeWindow(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"query": map[string]interface{}{
+				"pages": map[string]interface{}{
+					"42": map[string]interface{}{
+						"pageid":    float64(42),
+						"title":     "Quiet Page",
+						"revisions": []interface{}{},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.GetRevisions(context.Background(), GetRevisionsArgs{
+		Title: "Quiet Page",
+		Start: "2026-04-17T00:00:00Z",
+		End:   "2026-05-15T23:59:59Z",
+	})
+	if err != nil {
+		t.Fatalf("GetRevisions failed: %v", err)
+	}
+	if result.Count != 0 {
+		t.Errorf("Count = %d, want 0 (empty window must not fall back to full history)", result.Count)
+	}
+	if len(result.Revisions) != 0 {
+		t.Errorf("Revisions length = %d, want 0", len(result.Revisions))
 	}
 }

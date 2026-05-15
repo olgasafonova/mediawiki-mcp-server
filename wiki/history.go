@@ -125,11 +125,15 @@ func (c *Client) GetRevisions(ctx context.Context, args GetRevisionsArgs) (GetRe
 	params.Set("rvprop", "ids|timestamp|user|size|comment|flags")
 	params.Set("rvlimit", strconv.Itoa(limit))
 
+	// rvdir defaults to "older" → MediaWiki iterates newest→oldest, requiring
+	// rvstart to be the NEWER bound and rvend the OLDER bound. We expose
+	// caller-friendly semantics where args.Start is the lower (older) time
+	// bound and args.End is the upper (newer) bound, so swap them on the way in.
 	if args.Start != "" {
-		params.Set("rvstart", args.Start)
+		params.Set("rvend", args.Start)
 	}
 	if args.End != "" {
-		params.Set("rvend", args.End)
+		params.Set("rvstart", args.End)
 	}
 	if args.User != "" {
 		params.Set("rvuser", args.User)
@@ -296,11 +300,13 @@ func (c *Client) GetUserContributions(ctx context.Context, args GetUserContribut
 	if args.Namespace >= 0 {
 		params.Set("ucnamespace", strconv.Itoa(args.Namespace))
 	}
+	// ucdir defaults to "older" — same caller-friendly swap as GetRevisions.
+	// See the comment in GetRevisions for the full reasoning.
 	if args.Start != "" {
-		params.Set("ucstart", args.Start)
+		params.Set("ucend", args.Start)
 	}
 	if args.End != "" {
-		params.Set("ucend", args.End)
+		params.Set("ucstart", args.End)
 	}
 
 	resp, err := c.apiRequest(ctx, params)
