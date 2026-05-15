@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
@@ -49,13 +50,20 @@ func runUpload(cmd *cobra.Command, args []string) error {
 		return usageErr(fmt.Errorf("--file and --url are mutually exclusive"))
 	}
 
-	// Resolve local path to absolute so the wiki client doesn't depend on cwd.
+	// Read the file locally on the user's behalf and hand the bytes to the
+	// wiki client via FileData. The client deliberately refuses to read
+	// arbitrary local files itself (MCP-safety), so the CLI is the right
+	// layer to do filesystem I/O.
+	var fileData []byte
 	if filePath != "" {
 		abs, err := filepath.Abs(filePath)
 		if err != nil {
 			return fmt.Errorf("resolve %s: %w", filePath, err)
 		}
-		filePath = abs
+		fileData, err = os.ReadFile(abs) // #nosec G304 -- path supplied via CLI flag by the invoking user
+		if err != nil {
+			return fmt.Errorf("read %s: %w", abs, err)
+		}
 	}
 
 	client, err := newWikiClient(cmd)
@@ -66,7 +74,7 @@ func runUpload(cmd *cobra.Command, args []string) error {
 
 	result, err := client.UploadFile(context.Background(), wiki.UploadFileArgs{
 		Filename:       filename,
-		FilePath:       filePath,
+		FileData:       fileData,
 		FileURL:        fileURL,
 		Text:           text,
 		Comment:        comment,

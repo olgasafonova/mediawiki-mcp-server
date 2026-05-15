@@ -942,11 +942,20 @@ type RelatedPage struct {
 // ========== Upload File Types ==========
 
 // UploadFileArgs contains parameters for uploading a file to the wiki.
+//
+// Three mutually-exclusive content sources:
+//   - FileURL: wiki fetches the URL itself (subject to host allowlist + SSRF guards).
+//   - FileData: caller supplies the bytes directly. Used by the `wiki` CLI,
+//     which reads the local file on the user's behalf. JSON-hidden so MCP
+//     callers cannot smuggle arbitrary bytes through the tool surface.
+//   - FilePath: rejected at the client layer — the MCP server doesn't read
+//     local files. Kept for backwards compatibility / explicit error messaging.
 type UploadFileArgs struct {
 	BaseWriteArgs
 	Filename       string `json:"filename" jsonschema:"Target filename on the wiki (e.g., 'Example.png')"`
-	FilePath       string `json:"file_path,omitempty" jsonschema:"Local file path to upload"`
+	FilePath       string `json:"file_path,omitempty" jsonschema:"Local file path to upload (rejected via MCP; CLI use FileData)"`
 	FileURL        string `json:"file_url,omitempty" jsonschema:"URL to fetch and upload (alternative to file_path)"`
+	FileData       []byte `json:"-"` // CLI-only: bytes read locally by the caller. Not exposed via MCP.
 	Text           string `json:"text,omitempty" jsonschema:"File description page content (wikitext)"`
 	Comment        string `json:"comment,omitempty" jsonschema:"Upload comment for the log"`
 	IgnoreWarnings bool   `json:"ignore_warnings,omitempty" jsonschema:"Ignore duplicate/overwrite warnings"`

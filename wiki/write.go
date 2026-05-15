@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -574,8 +575,8 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 	if args.Filename == "" {
 		return UploadFileResult{}, fmt.Errorf("filename is required")
 	}
-	if args.FilePath == "" && args.FileURL == "" {
-		return UploadFileResult{}, fmt.Errorf("either file_path or file_url is required")
+	if args.FilePath == "" && args.FileURL == "" && len(args.FileData) == 0 {
+		return UploadFileResult{}, fmt.Errorf("either file_path, file_url, or file_data is required")
 	}
 
 	if err := c.EnsureLoggedIn(ctx); err != nil {
@@ -594,7 +595,7 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 			Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			Operation:   AuditOpUpload,
 			Title:       "File:" + args.Filename,
-			ContentHash: hashContent(args.FileURL + args.FilePath), // Hash the source
+			ContentHash: hashContent(args.FileURL + args.FilePath + string(args.FileData)), // Hash the source
 			ContentSize: 0,
 			Summary:     args.Comment,
 			WikiURL:     c.config.BaseURL,
@@ -609,7 +610,7 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		Operation:   AuditOpUpload,
 		Title:       "File:" + result.Filename,
-		ContentHash: hashContent(args.FileURL + args.FilePath),
+		ContentHash: hashContent(args.FileURL + args.FilePath + string(args.FileData)),
 		ContentSize: result.Size,
 		Summary:     args.Comment,
 		WikiURL:     c.config.BaseURL,
@@ -626,6 +627,15 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 }
 
 // performUpload executes a single upload attempt with a fresh CSRF token.
+//
+// Branch order matters:
+//  1. FileURL → wiki fetches the URL itself (subject to host allowlist + SSRF
+//     guards in uploadFromURL).
+//  2. FileData → caller supplied bytes directly (CLI path). Uploaded via
+//     multipart POST without touching the local filesystem.
+//  3. FilePath → falls through to uploadFromFile, where readLocalFile rejects
+//     the request. Preserves the "MCP server doesn't read arbitrary local
+//     files" stance.
 func (c *Client) performUpload(ctx context.Context, args UploadFileArgs) (UploadFileResult, error) {
 	token, err := c.getCSRFToken(ctx)
 	if err != nil {
@@ -634,6 +644,9 @@ func (c *Client) performUpload(ctx context.Context, args UploadFileArgs) (Upload
 
 	if args.FileURL != "" {
 		return c.uploadFromURL(ctx, args, token)
+	}
+	if len(args.FileData) > 0 {
+		return c.uploadFromBytes(ctx, args, args.FileData, token)
 	}
 	return c.uploadFromFile(ctx, args, token)
 }
@@ -689,14 +702,22 @@ func (c *Client) uploadFromURL(ctx context.Context, args UploadFileArgs, token s
 	return c.parseUploadResponse(resp, args.Filename)
 }
 
-// uploadFromFile uploads a local file using multipart form
+// uploadFromFile uploads a local file by path. The MCP server is not
+// permitted to read arbitrary local files, so readLocalFile rejects this
+// path. The CLI uses uploadFromBytes (via FileData) instead.
 func (c *Client) uploadFromFile(ctx context.Context, args UploadFileArgs, token string) (UploadFileResult, error) {
-	// Read file
 	fileData, err := c.readLocalFile(args.FilePath)
 	if err != nil {
 		return UploadFileResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
+	return c.uploadFromBytes(ctx, args, fileData, token)
+}
 
+// uploadFromBytes uploads file content from an in-memory byte slice via
+// multipart/form-data POST. Used by callers that already have the bytes
+// (notably the `wiki` CLI, which reads the local file on the user's behalf
+// and passes them through UploadFileArgs.FileData).
+func (c *Client) uploadFromBytes(ctx context.Context, args UploadFileArgs, fileData []byte, token string) (UploadFileResult, error) {
 	// Create multipart request
 	boundary := "----WikiUploadBoundary" + strconv.FormatInt(time.Now().UnixNano(), 36)
 
@@ -821,11 +842,28 @@ func (c *Client) parseUploadResponse(resp map[string]interface{}, filename strin
 	return result, nil
 }
 
-// parseJSONResponse parses a JSON response from http.Response
+// parseJSONResponse decodes an *http.Response body as JSON into target.
+// Used by the multipart upload path, which cannot reuse the form-encoded
+// apiRequest helper. Bounded read to defend against runaway bodies.
 func (c *Client) parseJSONResponse(resp *http.Response, target interface{}) error {
-	// Import would be needed: "encoding/json"
-	// For now, return error indicating this needs implementation
-	return fmt.Errorf("JSON parsing not implemented for multipart upload")
+	if resp == nil || resp.Body == nil {
+		return fmt.Errorf("nil response body")
+	}
+	// Cap the response body to a sane size. Upload responses are small (a few
+	// hundred bytes of metadata) — multi-megabyte responses signal a wrong-
+	// content-type or attacker-shaped server reply.
+	const maxRespBytes = 1 << 20 // 1 MiB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRespBytes))
+	if err != nil {
+		return fmt.Errorf("read upload response: %w", err)
+	}
+	if len(body) == 0 {
+		return fmt.Errorf("empty upload response (status %d)", resp.StatusCode)
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		return fmt.Errorf("decode upload response: %w (body: %.200q)", err, string(body))
+	}
+	return nil
 }
 
 // getFileURL retrieves the download URL and type for a wiki file

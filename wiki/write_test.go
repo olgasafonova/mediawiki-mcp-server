@@ -1,9 +1,11 @@
 package wiki
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1409,6 +1411,123 @@ func TestUploadFile_MissingSource(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("Expected error for missing source")
+	}
+}
+
+func TestUploadFile_FromBytes_Success(t *testing.T) {
+	const wantFilename = "WikiCliBytesTest.png"
+	wantBytes := []byte("\x89PNG\r\n\x1a\nmock-png-bytes")
+
+	loginStep := 0
+	uploadHits := 0
+	var sawContentType string
+	var sawFileBytes []byte
+
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Multipart upload bypasses r.ParseForm — route on Content-Type first.
+		ct := r.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "multipart/form-data") {
+			uploadHits++
+			sawContentType = ct
+			if err := r.ParseMultipartForm(32 << 20); err == nil {
+				if f, _, err := r.FormFile("file"); err == nil {
+					sawFileBytes, _ = io.ReadAll(f)
+					_ = f.Close()
+				}
+			}
+			response := map[string]interface{}{
+				"upload": map[string]interface{}{
+					"result":   "Success",
+					"filename": wantFilename,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		_ = r.ParseForm()
+		action := r.FormValue("action")
+
+		if action == "query" {
+			meta := r.FormValue("meta")
+			if meta == "tokens" {
+				tokenType := r.FormValue("type")
+				if tokenType == "login" {
+					response := map[string]interface{}{
+						"query": map[string]interface{}{
+							"tokens": map[string]interface{}{
+								"logintoken": "test-login-token+\\",
+							},
+						},
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(response)
+					return
+				}
+				response := map[string]interface{}{
+					"query": map[string]interface{}{
+						"tokens": map[string]interface{}{
+							"csrftoken": "test-csrf-token+\\",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(response)
+				return
+			}
+		}
+
+		if action == "login" {
+			loginStep++
+			result := "NeedToken"
+			if loginStep > 1 {
+				result = "Success"
+			}
+			response := map[string]interface{}{
+				"login": map[string]interface{}{
+					"result":     result,
+					"lguserid":   float64(1),
+					"lgusername": "TestUser",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":{}}`))
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	client.config.Username = "TestUser"
+	client.config.Password = "TestPass"
+	defer client.Close()
+
+	result, err := client.UploadFile(context.Background(), UploadFileArgs{
+		Filename: wantFilename,
+		FileData: wantBytes,
+		Comment:  "bytes-path smoke",
+	})
+	if err != nil {
+		t.Fatalf("UploadFile returned error: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("Success = %v, want true", result.Success)
+	}
+	if result.Filename != wantFilename {
+		t.Errorf("Filename = %q, want %q", result.Filename, wantFilename)
+	}
+	if uploadHits != 1 {
+		t.Errorf("upload endpoint hits = %d, want 1", uploadHits)
+	}
+	if !strings.HasPrefix(sawContentType, "multipart/form-data") {
+		t.Errorf("Content-Type = %q, want multipart/form-data (FileData path must use multipart)", sawContentType)
+	}
+	if !bytes.Equal(sawFileBytes, wantBytes) {
+		t.Errorf("file bytes on the wire = %q, want %q", sawFileBytes, wantBytes)
 	}
 }
 
