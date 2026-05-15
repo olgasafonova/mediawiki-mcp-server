@@ -12,8 +12,8 @@ import (
 func newLinksCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "links",
-		Short: "Link analysis — external links, backlinks, broken links, orphans",
-		Long:  "Inspect and validate links on wiki pages. Find external URLs, backlinks, broken internal links, and orphaned pages.",
+		Short: "Link analysis — external, backlinks, broken, check, orphaned",
+		Long:  "Inspect and validate links on wiki pages. Find external URLs, backlinks, broken internal links, orphaned pages, and verify reachability of external URLs.",
 	}
 
 	cmd.AddCommand(
