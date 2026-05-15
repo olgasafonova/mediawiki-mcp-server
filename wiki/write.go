@@ -981,6 +981,23 @@ func (c *Client) downloadFile(ctx context.Context, fileURL string) ([]byte, erro
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		// Surface the known bot-password + img_auth.php gotcha with an
+		// actionable message rather than a bare status code. Wikis that gate
+		// file access via img_auth.php check user-level auth (UserID/UserName/
+		// Token cookies), which the legacy `action=login` bot-password flow
+		// doesn't establish — only a BPsession cookie. The session is fine
+		// for api.php but the file-serving endpoint rejects it. Tracked as
+		// mediawiki-mcp-server-xum.
+		if resp.StatusCode == http.StatusForbidden &&
+			c.config.HasCredentials() &&
+			strings.Contains(req.URL.Path, "/img_auth.php") {
+			return nil, fmt.Errorf(
+				"download failed with status 403: %s is gated behind img_auth.php and refused the bot-password session. "+
+					"Bot-password logins authenticate against api.php but img_auth.php enforces user-level auth this flow does not establish. "+
+					"This is a wiki-side limitation, not a CLI bug. Workarounds: download the file manually from the wiki UI, "+
+					"or ask a wiki admin to grant additional rights to your bot password at Special:BotPasswords",
+				req.URL.Host)
+		}
 		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 

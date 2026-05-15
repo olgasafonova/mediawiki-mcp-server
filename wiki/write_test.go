@@ -1287,6 +1287,64 @@ func TestDownloadFile_ForwardsSessionCookie(t *testing.T) {
 	}
 }
 
+// TestDownloadFile_Forbidden_ImgAuthMessage covers the actionable error we
+// surface when img_auth.php returns 403 to a credentialed client — the
+// bot-password + wiki-side auth-gating combination that no amount of cookie
+// forwarding can fix. Companion regression test for mediawiki-mcp-server-xum.
+func TestDownloadFile_Forbidden_ImgAuthMessage(t *testing.T) {
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("Forbidden"))
+	}))
+	defer fileServer.Close()
+
+	client := createMockClient(t, fileServer)
+	defer client.Close()
+	client.allowPrivateDownloadForTest = true
+	// Credentials configured signals "we are an authenticated bot session"
+	client.config.Username = "TestUser@BotName"
+	client.config.Password = "test-pass"
+
+	_, err := client.downloadFile(context.Background(), fileServer.URL+"/img_auth.php/f/fc/Test.png")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !strings.Contains(err.Error(), "img_auth.php") {
+		t.Errorf("error should mention img_auth.php gotcha, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Special:BotPasswords") {
+		t.Errorf("error should point user to the workaround, got: %v", err)
+	}
+}
+
+// TestDownloadFile_Forbidden_GenericFor403WithoutImgAuth confirms the
+// actionable message only fires for the specific img_auth.php shape — generic
+// 403s on other paths still return the original status-code error so we don't
+// mislead users on unrelated permission problems.
+func TestDownloadFile_Forbidden_GenericFor403WithoutImgAuth(t *testing.T) {
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer fileServer.Close()
+
+	client := createMockClient(t, fileServer)
+	defer client.Close()
+	client.allowPrivateDownloadForTest = true
+	client.config.Username = "TestUser@BotName"
+	client.config.Password = "test-pass"
+
+	_, err := client.downloadFile(context.Background(), fileServer.URL+"/images/some/path.png")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if strings.Contains(err.Error(), "img_auth.php") {
+		t.Errorf("generic 403 should not get the img_auth.php message; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "status 403") {
+		t.Errorf("should still surface status 403; got: %v", err)
+	}
+}
+
 func TestDownloadFile_NotFound(t *testing.T) {
 	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
