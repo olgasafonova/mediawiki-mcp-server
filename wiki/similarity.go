@@ -126,42 +126,41 @@ func isNumeric(s string) bool {
 	return true
 }
 
+// stringSet builds a set from a slice of strings.
+func stringSet(terms []string) map[string]bool {
+	s := make(map[string]bool, len(terms))
+	for _, t := range terms {
+		s[t] = true
+	}
+	return s
+}
+
+// setIntersectionSize returns the count of elements present in both sets.
+func setIntersectionSize(a, b map[string]bool) int {
+	n := 0
+	for term := range a {
+		if b[term] {
+			n++
+		}
+	}
+	return n
+}
+
 // calculateJaccardSimilarity calculates Jaccard similarity between two term sets
 func calculateJaccardSimilarity(termsA, termsB []string) float64 {
 	if len(termsA) == 0 && len(termsB) == 0 {
 		return 0
 	}
 
-	setA := make(map[string]bool)
-	for _, term := range termsA {
-		setA[term] = true
-	}
+	setA := stringSet(termsA)
+	setB := stringSet(termsB)
 
-	setB := make(map[string]bool)
-	for _, term := range termsB {
-		setB[term] = true
-	}
-
-	// Calculate intersection
-	intersection := 0
-	for term := range setA {
-		if setB[term] {
-			intersection++
-		}
-	}
-
-	// Calculate union
-	union := len(setA)
-	for term := range setB {
-		if !setA[term] {
-			union++
-		}
-	}
+	intersection := setIntersectionSize(setA, setB)
+	union := len(setA) + len(setB) - intersection
 
 	if union == 0 {
 		return 0
 	}
-
 	return float64(intersection) / float64(union)
 }
 
