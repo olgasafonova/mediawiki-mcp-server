@@ -457,6 +457,73 @@ func (c *Client) InvalidateCachePrefix(prefix string) {
 }
 
 // apiRequest makes a request to the MediaWiki API with rate limiting and circuit breaker
+// acquireRateLimitSlot reserves a semaphore slot for the request, blocking on
+// context cancellation. Returns a release function that callers must defer.
+func (c *Client) acquireRateLimitSlot(ctx context.Context) (release func(), err error) {
+	release = func() { <-c.semaphore }
+	select {
+	case c.semaphore <- struct{}{}:
+		return release, nil
+	default:
+		// Semaphore full, we'll wait but record it
+		metrics.RateLimitWaits.Inc()
+		select {
+		case c.semaphore <- struct{}{}:
+			return release, nil
+		case <-ctx.Done():
+			metrics.RateLimitRejections.Inc()
+			return nil, fmt.Errorf("context canceled while waiting for rate limiter: %w", ctx.Err())
+		}
+	}
+}
+
+// handleNonOKResponse classifies a non-200 response into either a terminal
+// error or a retryable error. The bool return is true when the caller should
+// retry the request; false means the error should be returned immediately.
+//
+// SECURITY (HG-2): never echo the raw response body to the MCP caller. Bodies
+// may contain HTML error pages, MITM proxy responses, or echoed login form
+// parameters. Log truncated bodies for server-side diagnostics only.
+func (c *Client) handleNonOKResponse(ctx context.Context, resp *http.Response, body []byte, attempt int) (retryable bool, err error) {
+	status := resp.StatusCode
+	// SECURITY: 3xx responses indicate the wiki tried to redirect the
+	// authenticated request. Refuse to retry or follow.
+	if status >= 300 && status < 400 {
+		location := resp.Header.Get("Location")
+		return false, fmt.Errorf("wiki returned redirect %d (refused; API client does not follow redirects): Location=%q", status, location)
+	}
+	// Don't retry client errors (4xx) except rate limiting (429)
+	if status >= 400 && status < 500 && status != 429 {
+		apiErr := NewAPIError(status, body)
+		c.logger.Warn("API client error response",
+			"status", status,
+			"body_snippet", apiErr.BodySnippet)
+		return false, apiErr
+	}
+	// Honor Retry-After on 429
+	if status == 429 {
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
+				c.logger.Warn("Rate limited, waiting",
+					"retry_after", seconds,
+					"attempt", attempt+1)
+				select {
+				case <-time.After(time.Duration(seconds) * time.Second):
+				case <-ctx.Done():
+					return false, fmt.Errorf("context canceled during rate limit wait: %w", ctx.Err())
+				}
+			}
+		}
+	}
+	// 5xx (and 429 without parseable Retry-After) are retryable
+	apiErr := NewAPIError(status, body)
+	c.logger.Warn("API returned non-OK status",
+		"status", status,
+		"attempt", attempt+1,
+		"body_snippet", apiErr.BodySnippet)
+	return true, apiErr
+}
+
 func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]interface{}, error) {
 	if !c.config.IsConfigured() {
 		return nil, fmt.Errorf("MEDIAWIKI_URL is not configured. Set the MEDIAWIKI_URL environment variable to your wiki's API endpoint (e.g. https://wiki.example.com/api.php)")
@@ -475,21 +542,11 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 		}
 	}
 
-	// Acquire semaphore slot (rate limiting)
-	select {
-	case c.semaphore <- struct{}{}:
-		defer func() { <-c.semaphore }()
-	default:
-		// Semaphore full, we'll wait but record it
-		metrics.RateLimitWaits.Inc()
-		select {
-		case c.semaphore <- struct{}{}:
-			defer func() { <-c.semaphore }()
-		case <-ctx.Done():
-			metrics.RateLimitRejections.Inc()
-			return nil, fmt.Errorf("context canceled while waiting for rate limiter: %w", ctx.Err())
-		}
+	release, err := c.acquireRateLimitSlot(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 
 	// Check context before proceeding
 	if err := ctx.Err(); err != nil {
@@ -542,55 +599,11 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 
 		// Handle different status codes appropriately
 		if resp.StatusCode != http.StatusOK {
-			// SECURITY: 3xx responses indicate the wiki tried to redirect the
-			// authenticated request. CheckRedirect returns ErrUseLastResponse
-			// which surfaces the 3xx body here. Refuse to retry or follow;
-			// surface a clear configuration/integrity error to the caller.
-			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-				location := resp.Header.Get("Location")
-				return nil, fmt.Errorf("wiki returned redirect %d (refused; API client does not follow redirects): Location=%q", resp.StatusCode, location)
+			retryable, err := c.handleNonOKResponse(ctx, resp, body, attempt)
+			if !retryable {
+				return nil, err
 			}
-
-			// Don't retry client errors (4xx) except rate limiting (429)
-			if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 429 {
-				// SECURITY (HG-2): never echo the raw response body to the
-				// MCP caller. The body may contain HTML error pages, MITM
-				// proxy responses, or echoed login form parameters. Log the
-				// truncated body for server-side diagnostics; surface only
-				// the structured error to the caller.
-				apiErr := NewAPIError(resp.StatusCode, body)
-				c.logger.Warn("API client error response",
-					"status", resp.StatusCode,
-					"body_snippet", apiErr.BodySnippet)
-				return nil, apiErr
-			}
-
-			// Handle rate limiting with Retry-After header
-			if resp.StatusCode == 429 {
-				if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-					if seconds, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
-						c.logger.Warn("Rate limited, waiting",
-							"retry_after", seconds,
-							"attempt", attempt+1)
-						select {
-						case <-time.After(time.Duration(seconds) * time.Second):
-						case <-ctx.Done():
-							return nil, fmt.Errorf("context canceled during rate limit wait: %w", ctx.Err())
-						}
-						continue
-					}
-				}
-			}
-
-			// SECURITY (HG-2): structured error retains status + correlation
-			// without echoing the raw body. Body snippet captured for server-
-			// side logging only; never reaches the MCP caller.
-			apiErr := NewAPIError(resp.StatusCode, body)
-			lastErr = apiErr
-			c.logger.Warn("API returned non-OK status",
-				"status", resp.StatusCode,
-				"attempt", attempt+1,
-				"body_snippet", apiErr.BodySnippet)
+			lastErr = err
 			continue
 		}
 
