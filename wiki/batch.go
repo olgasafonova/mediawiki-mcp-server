@@ -10,6 +10,70 @@ import (
 // MaxBatchSize is the maximum number of pages that can be fetched in a single batch
 const MaxBatchSize = 50
 
+type pageBuildStatus int
+
+const (
+	pageStatusOK pageBuildStatus = iota
+	pageStatusMissing
+	pageStatusError
+)
+
+// extractMainContent navigates revisions[0].slots.main and returns the content
+// string plus revision metadata. Returns ("", "", 0, errMsg) on shape errors.
+func extractMainContent(page map[string]interface{}) (content, timestamp string, revid int, errMsg string) {
+	revisions := getSlice(page["revisions"])
+	if len(revisions) == 0 {
+		return "", "", 0, "no revisions found"
+	}
+	rev := getMap(revisions[0])
+	if rev == nil {
+		return "", "", 0, "invalid revision data"
+	}
+	slots := getMap(rev["slots"])
+	if slots == nil {
+		return "", "", 0, "invalid slots data"
+	}
+	main := getMap(slots["main"])
+	if main == nil {
+		return "", "", 0, "invalid main slot"
+	}
+	content = getString(main["*"])
+	if content == "" {
+		content = getString(main["content"])
+	}
+	return content, getString(rev["timestamp"]), getInt(rev["revid"]), ""
+}
+
+// buildPageContentResult converts one MediaWiki page object into a
+// PageContentResult and reports its status (OK, missing, error).
+func buildPageContentResult(page map[string]interface{}, format string) (PageContentResult, pageBuildStatus) {
+	pageResult := PageContentResult{
+		Title:  getString(page["title"]),
+		Format: format,
+	}
+	if _, missing := page["missing"]; missing {
+		pageResult.Exists = false
+		return pageResult, pageStatusMissing
+	}
+	pageResult.Exists = true
+	pageResult.PageID = getInt(page["pageid"])
+
+	content, timestamp, revid, errMsg := extractMainContent(page)
+	if errMsg != "" {
+		pageResult.Error = errMsg
+		return pageResult, pageStatusError
+	}
+	pageResult.Content = content
+	pageResult.Revision = revid
+	pageResult.Timestamp = timestamp
+	if len(content) > CharacterLimit {
+		truncated, _ := truncateContent(content, CharacterLimit)
+		pageResult.Content = truncated
+		pageResult.Truncated = true
+	}
+	return pageResult, pageStatusOK
+}
+
 // GetPagesBatch retrieves content for multiple pages in a single API call.
 // This is significantly more efficient than calling GetPage individually.
 func (c *Client) GetPagesBatch(ctx context.Context, args GetPagesBatchArgs) (GetPagesBatchResult, error) {
@@ -77,71 +141,14 @@ func (c *Client) GetPagesBatch(ctx context.Context, args GetPagesBatchArgs) (Get
 		if page == nil {
 			continue
 		}
-
-		pageTitle := getString(page["title"])
-		pageResult := PageContentResult{
-			Title:  pageTitle,
-			Format: format,
-		}
-
-		// Check if page is missing
-		if _, missing := page["missing"]; missing {
-			pageResult.Exists = false
+		pageResult, status := buildPageContentResult(page, format)
+		switch status {
+		case pageStatusMissing:
 			result.MissingCount++
-			result.Pages = append(result.Pages, pageResult)
-			foundTitles[pageTitle] = true
-			continue
+		case pageStatusOK:
+			result.FoundCount++
 		}
-
-		pageResult.Exists = true
-		pageResult.PageID = getInt(page["pageid"])
-		result.FoundCount++
-		foundTitles[pageTitle] = true
-
-		revisions := getSlice(page["revisions"])
-		if len(revisions) == 0 {
-			pageResult.Error = "no revisions found"
-			result.Pages = append(result.Pages, pageResult)
-			continue
-		}
-
-		rev := getMap(revisions[0])
-		if rev == nil {
-			pageResult.Error = "invalid revision data"
-			result.Pages = append(result.Pages, pageResult)
-			continue
-		}
-
-		slots := getMap(rev["slots"])
-		if slots == nil {
-			pageResult.Error = "invalid slots data"
-			result.Pages = append(result.Pages, pageResult)
-			continue
-		}
-
-		main := getMap(slots["main"])
-		if main == nil {
-			pageResult.Error = "invalid main slot"
-			result.Pages = append(result.Pages, pageResult)
-			continue
-		}
-
-		content := getString(main["*"])
-		if content == "" {
-			content = getString(main["content"])
-		}
-
-		pageResult.Content = content
-		pageResult.Revision = getInt(rev["revid"])
-		pageResult.Timestamp = getString(rev["timestamp"])
-
-		// Truncate if necessary
-		if len(content) > CharacterLimit {
-			truncated, _ := truncateContent(content, CharacterLimit)
-			pageResult.Content = truncated
-			pageResult.Truncated = true
-		}
-
+		foundTitles[pageResult.Title] = true
 		result.Pages = append(result.Pages, pageResult)
 	}
 

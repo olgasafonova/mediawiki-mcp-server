@@ -140,49 +140,33 @@ type ToolMetrics struct {
 	FalseNegatives int // times this tool should have been selected but wasn't
 }
 
-// LoadToolSelectionSuite loads tool selection tests from a JSON file
-func LoadToolSelectionSuite(path string) (*ToolSelectionSuite, error) {
+// loadSuite is the shared JSON-from-file decoder used by every eval suite
+// loader. Centralizing it removes duplication and keeps error wrapping uniform.
+func loadSuite[T any](path string) (*T, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is controlled by eval framework
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
-
-	var suite ToolSelectionSuite
+	var suite T
 	if err := json.Unmarshal(data, &suite); err != nil {
 		return nil, fmt.Errorf("parsing JSON: %w", err)
 	}
-
 	return &suite, nil
+}
+
+// LoadToolSelectionSuite loads tool selection tests from a JSON file
+func LoadToolSelectionSuite(path string) (*ToolSelectionSuite, error) {
+	return loadSuite[ToolSelectionSuite](path)
 }
 
 // LoadConfusionPairSuite loads confusion pair tests from a JSON file
 func LoadConfusionPairSuite(path string) (*ConfusionPairSuite, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is controlled by eval framework
-	if err != nil {
-		return nil, fmt.Errorf("reading file: %w", err)
-	}
-
-	var suite ConfusionPairSuite
-	if err := json.Unmarshal(data, &suite); err != nil {
-		return nil, fmt.Errorf("parsing JSON: %w", err)
-	}
-
-	return &suite, nil
+	return loadSuite[ConfusionPairSuite](path)
 }
 
 // LoadArgumentSuite loads argument correctness tests from a JSON file
 func LoadArgumentSuite(path string) (*ArgumentSuite, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is controlled by eval framework
-	if err != nil {
-		return nil, fmt.Errorf("reading file: %w", err)
-	}
-
-	var suite ArgumentSuite
-	if err := json.Unmarshal(data, &suite); err != nil {
-		return nil, fmt.Errorf("parsing JSON: %w", err)
-	}
-
-	return &suite, nil
+	return loadSuite[ArgumentSuite](path)
 }
 
 // ToolSelector is an interface that an LLM or mock can implement for testing

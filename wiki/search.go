@@ -97,6 +97,50 @@ func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, err
 }
 
 // SearchInPage searches for text within a specific wiki page
+// compileSearchRegex compiles the search query, either as a user regex or as
+// quoted literal text. It enforces a length cap on user regex input.
+func compileSearchRegex(query string, useRegex bool) (*regexp.Regexp, error) {
+	if useRegex {
+		if len(query) > 500 {
+			return nil, fmt.Errorf("regex pattern too long (max 500 characters)")
+		}
+		re, err := regexp.Compile("(?i)" + query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex: %w", err)
+		}
+		return re, nil
+	}
+	return regexp.MustCompile("(?i)" + regexp.QuoteMeta(query)), nil
+}
+
+// collectLineMatches returns all PageMatches for the regex against a single
+// line, including surrounding context.
+func collectLineMatches(re *regexp.Regexp, lines []string, lineNum, contextLines int) []PageMatch {
+	matches := re.FindAllStringIndex(lines[lineNum], -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	startLine := lineNum - contextLines
+	if startLine < 0 {
+		startLine = 0
+	}
+	endLine := lineNum + contextLines + 1
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+	contextStr := strings.Join(lines[startLine:endLine], "\n")
+	out := make([]PageMatch, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, PageMatch{
+			Line:    lineNum + 1,
+			Column:  match[0] + 1,
+			Text:    lines[lineNum][match[0]:match[1]],
+			Context: contextStr,
+		})
+	}
+	return out
+}
+
 func (c *Client) SearchInPage(ctx context.Context, args SearchInPageArgs) (SearchInPageResult, error) {
 	if args.Title == "" {
 		return SearchInPageResult{}, fmt.Errorf("title is required")
@@ -105,19 +149,9 @@ func (c *Client) SearchInPage(ctx context.Context, args SearchInPageArgs) (Searc
 		return SearchInPageResult{}, fmt.Errorf("query is required")
 	}
 
-	// Validate regex upfront before fetching the page
-	var re *regexp.Regexp
-	if args.UseRegex {
-		if len(args.Query) > 500 {
-			return SearchInPageResult{}, fmt.Errorf("regex pattern too long (max 500 characters)")
-		}
-		var err error
-		re, err = regexp.Compile("(?i)" + args.Query)
-		if err != nil {
-			return SearchInPageResult{}, fmt.Errorf("invalid regex: %w", err)
-		}
-	} else {
-		re = regexp.MustCompile("(?i)" + regexp.QuoteMeta(args.Query))
+	re, err := compileSearchRegex(args.Query, args.UseRegex)
+	if err != nil {
+		return SearchInPageResult{}, err
 	}
 
 	// Get page content
@@ -138,29 +172,8 @@ func (c *Client) SearchInPage(ctx context.Context, args SearchInPageArgs) (Searc
 	}
 
 	lines := strings.Split(page.Content, "\n")
-
-	for lineNum, line := range lines {
-		matches := re.FindAllStringIndex(line, -1)
-		for _, match := range matches {
-			// Build context from surrounding lines
-			startLine := lineNum - contextLines
-			if startLine < 0 {
-				startLine = 0
-			}
-			endLine := lineNum + contextLines + 1
-			if endLine > len(lines) {
-				endLine = len(lines)
-			}
-
-			contextStr := strings.Join(lines[startLine:endLine], "\n")
-
-			result.Matches = append(result.Matches, PageMatch{
-				Line:    lineNum + 1,
-				Column:  match[0] + 1,
-				Text:    line[match[0]:match[1]],
-				Context: contextStr,
-			})
-		}
+	for lineNum := range lines {
+		result.Matches = append(result.Matches, collectLineMatches(re, lines, lineNum, contextLines)...)
 	}
 
 	result.MatchCount = len(result.Matches)
@@ -491,6 +504,41 @@ func (c *Client) analyzeTopicOnPage(ctx context.Context, title, topic string) (T
 	return mention, extractTopicValues(page.Content, topic, contexts, title), true
 }
 
+// compareValuePair returns an Inconsistency when two page-value refs disagree
+// after normalization. The second return is false when there is nothing to report.
+func compareValuePair(valueType string, a, b pageValueRef) (Inconsistency, bool) {
+	if a.page == b.page {
+		return Inconsistency{}, false
+	}
+	v1 := normalizeValue(a.value)
+	v2 := normalizeValue(b.value)
+	if v1 == v2 || v1 == "" || v2 == "" {
+		return Inconsistency{}, false
+	}
+	return Inconsistency{
+		Type:        valueType,
+		Description: fmt.Sprintf("%s values differ", valueType),
+		PageA:       a.page,
+		PageB:       b.page,
+		ValueA:      a.value,
+		ValueB:      b.value,
+	}, true
+}
+
+// collectInconsistenciesForType returns all inconsistent value pairs within a
+// single value type's page-value refs.
+func collectInconsistenciesForType(valueType string, pageValues []pageValueRef) []Inconsistency {
+	var out []Inconsistency
+	for i := 0; i < len(pageValues)-1; i++ {
+		for j := i + 1; j < len(pageValues); j++ {
+			if inc, ok := compareValuePair(valueType, pageValues[i], pageValues[j]); ok {
+				out = append(out, inc)
+			}
+		}
+	}
+	return out
+}
+
 // detectValueInconsistencies pairs up cross-page values of the same type and
 // reports any that disagree once normalized.
 func detectValueInconsistencies(allValues map[string][]pageValueRef) []Inconsistency {
@@ -499,25 +547,7 @@ func detectValueInconsistencies(allValues map[string][]pageValueRef) []Inconsist
 		if len(pageValues) < 2 {
 			continue
 		}
-		for i := 0; i < len(pageValues)-1; i++ {
-			for j := i + 1; j < len(pageValues); j++ {
-				if pageValues[i].page == pageValues[j].page {
-					continue
-				}
-				v1 := normalizeValue(pageValues[i].value)
-				v2 := normalizeValue(pageValues[j].value)
-				if v1 != v2 && v1 != "" && v2 != "" {
-					inconsistencies = append(inconsistencies, Inconsistency{
-						Type:        valueType,
-						Description: fmt.Sprintf("%s values differ", valueType),
-						PageA:       pageValues[i].page,
-						PageB:       pageValues[j].page,
-						ValueA:      pageValues[i].value,
-						ValueB:      pageValues[j].value,
-					})
-				}
-			}
-		}
+		inconsistencies = append(inconsistencies, collectInconsistenciesForType(valueType, pageValues)...)
 	}
 	return inconsistencies
 }
