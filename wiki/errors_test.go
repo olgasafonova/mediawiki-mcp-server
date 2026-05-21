@@ -350,22 +350,25 @@ func TestConfigError_Error(t *testing.T) {
 
 func TestValidateWikiURL(t *testing.T) {
 	tests := []struct {
-		name        string
-		url         string
-		expectError bool
-		errorMsg    string
+		name          string
+		url           string
+		allowInsecure bool
+		expectError   bool
+		errorMsg      string
 	}{
-		{"Valid HTTPS", "https://wiki.example.com/api.php", false, ""},
-		{"Valid HTTPS with path", "https://wiki.example.com/w/api.php", false, ""},
-		{"HTTP rejected", "http://wiki.example.com/api.php", true, "HTTPS"},
-		{"Missing api.php", "https://wiki.example.com/", true, "api.php"},
-		{"Invalid URL no scheme", "not-a-url", true, "HTTPS"}, // Go parses with empty scheme
-		{"Empty scheme", "://wiki.example.com/api.php", true, ""},
+		{"Valid HTTPS", "https://wiki.example.com/api.php", false, false, ""},
+		{"Valid HTTPS with path", "https://wiki.example.com/w/api.php", false, false, ""},
+		{"HTTP rejected", "http://wiki.example.com/api.php", false, true, "HTTPS"},
+		{"HTTP allowed with opt-in", "http://wiki.example.com/api.php", true, false, ""},
+		{"Missing api.php", "https://wiki.example.com/", false, true, "api.php"},
+		{"Invalid URL no scheme", "not-a-url", false, true, "HTTPS"}, // Go parses with empty scheme
+		{"Empty scheme", "://wiki.example.com/api.php", false, true, ""},
+		{"Invalid scheme rejected even with opt-in", "ftp://wiki.example.com/api.php", true, true, "http or https"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateWikiURL(tt.url)
+			err := validateWikiURL(tt.url, tt.allowInsecure)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error for URL %q", tt.url)
 			}

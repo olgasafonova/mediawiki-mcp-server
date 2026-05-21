@@ -60,8 +60,9 @@ Or in your MCP configuration:
 		}
 	}
 
-	// Validate URL format and enforce HTTPS
-	if err := validateWikiURL(baseURL); err != nil {
+	// Validate URL format and enforce HTTPS (unless MEDIAWIKI_ALLOW_INSECURE=true)
+	allowInsecure, _ := strconv.ParseBool(os.Getenv("MEDIAWIKI_ALLOW_INSECURE"))
+	if err := validateWikiURL(baseURL, allowInsecure); err != nil {
 		return nil, err
 	}
 
@@ -116,8 +117,8 @@ Examples:
 	}, nil
 }
 
-// validateWikiURL validates the wiki URL format and enforces HTTPS
-func validateWikiURL(rawURL string) error {
+// validateWikiURL validates the wiki URL format and enforces HTTPS unless allowInsecure is set
+func validateWikiURL(rawURL string, allowInsecure bool) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return &ConfigError{
@@ -130,8 +131,8 @@ Example:
 		}
 	}
 
-	// Enforce HTTPS for security (credentials are transmitted)
-	if parsed.Scheme != "https" {
+	// Enforce HTTPS for security (credentials are transmitted), unless explicitly opted out
+	if parsed.Scheme != "https" && !allowInsecure {
 		return &ConfigError{
 			Field:   "MEDIAWIKI_URL",
 			Message: fmt.Sprintf("URL must use HTTPS for security (got %q scheme)", parsed.Scheme),
@@ -142,6 +143,18 @@ Fixed:    ` + strings.Replace(rawURL, "http://", "https://", 1) + `
 
 If your wiki doesn't support HTTPS, set MEDIAWIKI_ALLOW_INSECURE=true
 (not recommended for production use).`,
+		}
+	}
+
+	// Only http and https are accepted, even with allowInsecure
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return &ConfigError{
+			Field:   "MEDIAWIKI_URL",
+			Message: fmt.Sprintf("URL scheme must be http or https (got %q)", parsed.Scheme),
+			Suggestion: `Provide a valid URL to your wiki's API endpoint.
+
+Example:
+  export MEDIAWIKI_URL="https://wiki.example.com/api.php"`,
 		}
 	}
 
