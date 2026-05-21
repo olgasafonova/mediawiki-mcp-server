@@ -1072,13 +1072,14 @@ func TestParseUploadResponse_Error(t *testing.T) {
 	}
 }
 
-func TestReadLocalFile(t *testing.T) {
+func TestUploadFromFileRefused(t *testing.T) {
 	client := createTestClient(t)
 	defer client.Close()
 
-	_, err := client.readLocalFile("/some/path")
+	// The MCP server refuses local-path uploads; callers must use file_url or file_data.
+	_, err := client.uploadFromFile(context.Background(), UploadFileArgs{FilePath: "/some/path"}, "tok")
 	if err == nil {
-		t.Error("Expected error for local file read")
+		t.Error("Expected error for local file upload via path")
 	}
 }
 
