@@ -117,6 +117,40 @@ Examples:
 	}, nil
 }
 
+// validateWikiURLScheme accepts only https, or http when allowInsecure is true.
+// Without opt-in, any non-https scheme returns the HTTPS-required error — that
+// covers the common case of plain hostnames where url.Parse leaves the scheme
+// empty. With opt-in, schemes other than http/https still get rejected.
+func validateWikiURLScheme(rawURL, scheme string, allowInsecure bool) error {
+	switch {
+	case scheme == "https":
+		return nil
+	case allowInsecure && scheme == "http":
+		return nil
+	case allowInsecure:
+		return &ConfigError{
+			Field:   "MEDIAWIKI_URL",
+			Message: fmt.Sprintf("URL scheme must be http or https (got %q)", scheme),
+			Suggestion: `Provide a valid URL to your wiki's API endpoint.
+
+Example:
+  export MEDIAWIKI_URL="https://wiki.example.com/api.php"`,
+		}
+	default:
+		return &ConfigError{
+			Field:   "MEDIAWIKI_URL",
+			Message: fmt.Sprintf("URL must use HTTPS for security (got %q scheme)", scheme),
+			Suggestion: `Change the URL scheme from "http" to "https".
+
+Your URL: ` + rawURL + `
+Fixed:    ` + strings.Replace(rawURL, "http://", "https://", 1) + `
+
+If your wiki doesn't support HTTPS, set MEDIAWIKI_ALLOW_INSECURE=true
+(not recommended for production use).`,
+		}
+	}
+}
+
 // validateWikiURL validates the wiki URL format and enforces HTTPS unless allowInsecure is set
 func validateWikiURL(rawURL string, allowInsecure bool) error {
 	parsed, err := url.Parse(rawURL)
@@ -131,31 +165,8 @@ Example:
 		}
 	}
 
-	// Enforce HTTPS for security (credentials are transmitted), unless explicitly opted out
-	if parsed.Scheme != "https" && !allowInsecure {
-		return &ConfigError{
-			Field:   "MEDIAWIKI_URL",
-			Message: fmt.Sprintf("URL must use HTTPS for security (got %q scheme)", parsed.Scheme),
-			Suggestion: `Change the URL scheme from "http" to "https".
-
-Your URL: ` + rawURL + `
-Fixed:    ` + strings.Replace(rawURL, "http://", "https://", 1) + `
-
-If your wiki doesn't support HTTPS, set MEDIAWIKI_ALLOW_INSECURE=true
-(not recommended for production use).`,
-		}
-	}
-
-	// Only http and https are accepted, even with allowInsecure
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return &ConfigError{
-			Field:   "MEDIAWIKI_URL",
-			Message: fmt.Sprintf("URL scheme must be http or https (got %q)", parsed.Scheme),
-			Suggestion: `Provide a valid URL to your wiki's API endpoint.
-
-Example:
-  export MEDIAWIKI_URL="https://wiki.example.com/api.php"`,
-		}
+	if err := validateWikiURLScheme(rawURL, parsed.Scheme, allowInsecure); err != nil {
+		return err
 	}
 
 	// Check for api.php endpoint
