@@ -3,6 +3,7 @@ package tools
 import (
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
@@ -132,13 +133,42 @@ func TestRecoverPanic(t *testing.T) {
 
 	registry := NewHandlerRegistry(client, logger)
 
-	// Test that recoverPanic doesn't panic itself
+	// Test that recoverPanic doesn't panic itself, and that it writes a
+	// structured error to *errPtr so the MCP caller sees an error rather
+	// than a silent (nil, zero, nil) fake-success response. This is the
+	// HG-1 contract for destructive write tools (EditPage, BulkReplace,
+	// MovePage) where masked failure is silently destructive.
+	var gotErr error
 	func() {
-		defer registry.recoverPanic("test_tool")
+		defer registry.recoverPanic("test_tool", &gotErr)
 		panic("test panic")
 	}()
 
-	// If we get here, panic was recovered successfully
+	if gotErr == nil {
+		t.Fatal("recoverPanic must write a non-nil error to *errPtr; got nil (silent-nil dispatcher bug)")
+	}
+	if !strings.Contains(gotErr.Error(), "test_tool") {
+		t.Errorf("error should mention the tool name; got %q", gotErr.Error())
+	}
+	if !strings.Contains(gotErr.Error(), "correlation_id=") {
+		t.Errorf("error should include correlation_id for log correlation; got %q", gotErr.Error())
+	}
+
+	// Test the no-panic path: errPtr must not be touched when no panic.
+	var noPanicErr error
+	func() {
+		defer registry.recoverPanic("test_tool", &noPanicErr)
+		// no panic here
+	}()
+	if noPanicErr != nil {
+		t.Errorf("recoverPanic must not write to *errPtr when there is no panic; got %v", noPanicErr)
+	}
+
+	// Test nil errPtr safety: should not crash even if caller passes nil.
+	func() {
+		defer registry.recoverPanic("test_tool", nil)
+		panic("test panic with nil errPtr")
+	}()
 }
 
 func TestLogExecution(t *testing.T) {
