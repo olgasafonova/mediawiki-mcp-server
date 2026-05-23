@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -242,6 +244,14 @@ func (h *HandlerRegistry) buildTool(spec ToolSpec) *mcp.Tool {
 
 // register wraps a typed client method with panic recovery, metrics, tracing,
 // and logging, then attaches it to the MCP server.
+//
+// The dispatcher closure uses NAMED return values so the deferred recoverPanic
+// can reassign `err` on panic. Without named returns, Go cannot mutate the
+// return values from a deferred function and a panic-then-recover would surface
+// as `(nil, zero, nil)` to the MCP caller — looking like a successful empty
+// response. This is especially dangerous for destructive write tools (EditPage,
+// BulkReplace, MovePage) where masked-failure-as-success is silently destructive.
+// See HG-1 in rules/code-review-prompts.md.
 func register[Args, Result any](
 	h *HandlerRegistry,
 	server *mcp.Server,
@@ -249,8 +259,8 @@ func register[Args, Result any](
 	spec ToolSpec,
 	method func(context.Context, Args) (Result, error),
 ) {
-	mcp.AddTool(server, tool, func(ctx context.Context, req *mcp.CallToolRequest, args Args) (*mcp.CallToolResult, Result, error) {
-		defer h.recoverPanic(spec.Name)
+	mcp.AddTool(server, tool, func(ctx context.Context, req *mcp.CallToolRequest, args Args) (res *mcp.CallToolResult, out Result, err error) {
+		defer h.recoverPanic(spec.Name, &err)
 
 		ctx, span := tracing.StartSpan(ctx, "mcp.tool."+spec.Name)
 		defer span.End()
@@ -288,15 +298,40 @@ func register[Args, Result any](
 	})
 }
 
-// recoverPanic recovers from panics in tool handlers.
-func (h *HandlerRegistry) recoverPanic(toolName string) {
-	if rec := recover(); rec != nil {
-		metrics.PanicsRecovered.WithLabelValues(toolName).Inc()
-		h.logger.Error("Panic recovered",
-			"tool", toolName,
-			"panic", rec,
-			"stack", string(debug.Stack()))
+// recoverPanic recovers from panics in tool handlers and converts them into a
+// structured error with a correlation ID. The panic value and stack are logged
+// server-side; only the correlation ID reaches the MCP caller.
+//
+// MUST be called as `defer h.recoverPanic(spec.Name, &err)` from a function
+// with NAMED return values. Without named returns the deferred reassignment
+// is a no-op and panics surface as silent fake-success responses — a HIGH
+// severity failure mode for destructive write tools (EditPage, BulkReplace,
+// MovePage) where masked-failure-as-success is silently destructive.
+func (h *HandlerRegistry) recoverPanic(toolName string, errPtr *error) {
+	rec := recover()
+	if rec == nil {
+		return
 	}
+	corrID := newCorrelationID()
+	metrics.PanicsRecovered.WithLabelValues(toolName).Inc()
+	h.logger.Error("Panic recovered",
+		"tool", toolName,
+		"correlation_id", corrID,
+		"panic", rec,
+		"stack", string(debug.Stack()))
+	if errPtr != nil {
+		*errPtr = fmt.Errorf("%s: internal error (correlation_id=%s)", toolName, corrID)
+	}
+}
+
+// newCorrelationID returns a short hex string for log correlation. Falls back
+// to a timestamp-based ID if crypto/rand is unavailable (vanishingly rare).
+func newCorrelationID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("ts-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // logExecution logs tool execution details. Rationale is always logged
