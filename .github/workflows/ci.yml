@@ -139,4 +139,3 @@ jobs:
             ext=".exe"
           fi
           go build -ldflags="-s -w" -o mediawiki-mcp-server-${{ matrix.goos }}-${{ matrix.goarch }}${ext} .
-          retention-days: 7
