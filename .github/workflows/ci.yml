@@ -139,10 +139,3 @@ jobs:
             ext=".exe"
           fi
           go build -ldflags="-s -w" -o mediawiki-mcp-server-${{ matrix.goos }}-${{ matrix.goarch }}${ext} .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: mediawiki-mcp-server-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: mediawiki-mcp-server-${{ matrix.goos }}-${{ matrix.goarch }}*
-          retention-days: 7
