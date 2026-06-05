@@ -3,7 +3,25 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
 )
+
+func TestPrintIDTitleTableNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("printIDTitleTable panicked: %v", r)
+		}
+	}()
+	// Empty path.
+	printIDTitleTable("Header", "none found", "pages", nil, false, "")
+	// Populated path with continuation hint.
+	items := []wiki.PageSummary{
+		{PageID: 1, Title: "Alpha"},
+		{PageID: 2, Title: "Beta"},
+	}
+	printIDTitleTable("Header", "none", "pages", items, true, "cont-token")
+}
 
 func TestTruncate(t *testing.T) {
 	tests := []struct {
