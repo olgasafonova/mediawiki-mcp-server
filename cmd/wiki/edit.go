@@ -15,15 +15,17 @@ func newEditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <title>",
 		Short: "Create or edit a wiki page",
-		Long: `Edit a wiki page with new content. Content can be provided via --content flag
-or piped from stdin:
+		Long: `Edit a wiki page with new content. Content can be provided via --content flag,
+--file flag, or piped from stdin:
 
   wiki edit "Page Title" --content "= Hello ="
+  wiki edit "Page Title" --file page.wiki --summary "Update from file"
   cat page.wiki | wiki edit "Page Title" --summary "Update from file"`,
 		Args: cobra.ExactArgs(1),
 		RunE: runEdit,
 	}
 
+	cmd.Flags().StringP("file", "f", "", "Path to file containing wikitext content")
 	cmd.Flags().String("content", "", "Page content in wikitext format")
 	cmd.Flags().String("summary", "", "Edit summary explaining the change")
 	cmd.Flags().Bool("minor", false, "Mark as minor edit")
@@ -52,6 +54,18 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		content, err = readStdin()
 		if err != nil {
 			return fmt.Errorf("failed to read stdin: %w", err)
+		}
+	}
+
+	// If still empty, try --file
+	if content == "" {
+		filePath, _ := cmd.Flags().GetString("file")
+		if filePath != "" {
+			fileBytes, err := os.ReadFile(filePath)
+			if err != nil {
+				return fmt.Errorf("failed to read file: %w", err)
+			}
+			content = string(fileBytes)
 		}
 	}
 
