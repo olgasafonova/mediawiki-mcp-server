@@ -76,7 +76,9 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Human-readable output
-	if result.NewPage {
+	if !result.Success {
+		fmt.Printf("Failed to edit %s: %s\n", result.Title, result.Message)
+	} else if result.NewPage {
 		fmt.Printf("Created %s (rev: %d)\n", result.Title, result.RevisionID)
 	} else {
 		fmt.Printf("Edited %s (rev: %d)\n", result.Title, result.RevisionID)
