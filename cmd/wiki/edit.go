@@ -49,23 +49,23 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	bot, _ := cmd.Flags().GetBool("bot")
 	section, _ := cmd.Flags().GetString("section")
 
-	// If --content is empty, try reading from stdin
-	if content == "" {
-		content, err = readStdin()
-		if err != nil {
-			return fmt.Errorf("failed to read stdin: %w", err)
-		}
-	}
-
-	// If still empty, try --file
+	// If --content is empty, try --file
 	if content == "" {
 		filePath, _ := cmd.Flags().GetString("file")
 		if filePath != "" {
-			fileBytes, err := os.ReadFile(filePath)
+			fileBytes, err := os.ReadFile(filePath) // #nosec G304 -- path supplied via CLI flag by the invoking user
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
 			content = string(fileBytes)
+		}
+	}
+
+	// If still empty, try reading from stdin
+	if content == "" {
+		content, err = readStdin()
+		if err != nil {
+			return fmt.Errorf("failed to read stdin: %w", err)
 		}
 	}
 
