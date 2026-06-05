@@ -120,7 +120,7 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 	if status := getString(edit["result"]); status != "Success" {
 		msg := fmt.Sprintf("Edit failed: %s", status)
 		if info := getString(edit["info"]); info != "" {
-			msg += fmt.Sprintf(" — %s", info)
+			msg += fmt.Sprintf(" - %s", info)
 		}
 		if captcha := getMap(edit["captcha"]); captcha != nil {
 			msg += fmt.Sprintf(" (CAPTCHA: %s)", getString(captcha["type"]))

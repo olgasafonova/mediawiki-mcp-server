@@ -4,6 +4,9 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **`wiki edit` no longer reports a false success when an edit is blocked.** The MediaWiki edit API returns `result: "Failure"` inside a `200 OK` body when a CAPTCHA (ConfirmEdit) or AbuseFilter blocks the edit. The CLI previously checked only the new-page flag and printed `Edited <page> (rev: 0)`. It now prints `Failed to edit <page>: <reason>`, and the client surfaces the CAPTCHA type and `info` reason in the message (e.g. `Edit failed: Failure (CAPTCHA: simple)`). The MCP path already exposed `success: false` via structured content; this fixes the human-readable CLI surface. Thanks to @strk for the fix.
+
 ## [1.31.0] - 2026-05-14
 
 ### Added
