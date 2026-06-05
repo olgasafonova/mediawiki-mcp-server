@@ -118,15 +118,21 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 	}
 
 	if status := getString(edit["result"]); status != "Success" {
+		msg := fmt.Sprintf("Edit failed: %s", status)
+		if info := getString(edit["info"]); info != "" {
+			msg += fmt.Sprintf(" - %s", info)
+		}
+		if captcha := getMap(edit["captcha"]); captcha != nil {
+			msg += fmt.Sprintf(" (CAPTCHA: %s)", getString(captcha["type"]))
+		}
 		c.logAudit(c.buildAuditEntry(
 			AuditOpEdit, args.Title, args.Content, args.Summary,
-			args.Minor, args.Bot, false, 0, 0,
-			fmt.Sprintf("Edit failed: %s", status),
+			args.Minor, args.Bot, false, 0, 0, msg,
 		))
 		return EditResult{
 			Success: false,
 			Title:   args.Title,
-			Message: fmt.Sprintf("Edit failed: %s", status),
+			Message: msg,
 		}, nil
 	}
 

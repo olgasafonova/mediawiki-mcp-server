@@ -251,6 +251,69 @@ func TestEditPage_EditFailed(t *testing.T) {
 	}
 }
 
+// TestEditPage_EditFailedDetails covers the failure-message enrichment: the
+// MediaWiki edit API returns result="Failure" inside a 200 body when a CAPTCHA
+// (ConfirmEdit) or AbuseFilter blocks the edit. The message must surface the
+// captcha type and the info reason so the CLI/agent sees why the edit failed
+// instead of a bare "Edit failed: Failure".
+func TestEditPage_EditFailedDetails(t *testing.T) {
+	tests := []struct {
+		name      string
+		edit      map[string]interface{}
+		wantParts []string
+	}{
+		{
+			name: "captcha",
+			edit: map[string]interface{}{
+				"result":  "Failure",
+				"captcha": map[string]interface{}{"type": "simple", "id": "1234"},
+			},
+			wantParts: []string{"Edit failed: Failure", "(CAPTCHA: simple)"},
+		},
+		{
+			name: "info",
+			edit: map[string]interface{}{
+				"result": "Failure",
+				"info":   "Hit AbuseFilter rule",
+			},
+			wantParts: []string{"Edit failed: Failure", "Hit AbuseFilter rule"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.FormValue("action") == "edit" {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"edit": tt.edit})
+					return
+				}
+				w.WriteHeader(http.StatusBadRequest)
+			})
+			defer server.Close()
+
+			client := createMockClient(t, server)
+			defer client.Close()
+
+			result, err := client.EditPage(context.Background(), EditPageArgs{
+				Title:   "Test Page",
+				Content: "Content",
+			})
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if result.Success {
+				t.Error("Expected success to be false")
+			}
+			for _, part := range tt.wantParts {
+				if !strings.Contains(result.Message, part) {
+					t.Errorf("Message = %q, want substring %q", result.Message, part)
+				}
+			}
+		})
+	}
+}
+
 func TestEditPage_BadTokenRetry(t *testing.T) {
 	attempts := 0
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
