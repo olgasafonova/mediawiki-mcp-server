@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -1299,6 +1301,89 @@ func TestLogin_NeedToken(t *testing.T) {
 
 	// Exercises the NeedToken path
 	t.Logf("Login NeedToken result: err=%v, requestCount=%d", err, requestCount)
+}
+
+func TestLogin_ResetsCookiesOnNoSession(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		action := r.FormValue("action")
+
+		if action == "query" {
+			meta := r.FormValue("meta")
+			if meta == "userinfo" {
+				// Return anon (no valid session) so checkExistingSession fails
+				response := map[string]interface{}{
+					"query": map[string]interface{}{
+						"userinfo": map[string]interface{}{
+							"id":   float64(0),
+							"name": "",
+							"anon": "",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(response)
+				return
+			}
+			if meta == "tokens" && r.FormValue("type") == "login" {
+				response := map[string]interface{}{
+					"query": map[string]interface{}{
+						"tokens": map[string]interface{}{
+							"logintoken": "test-login-token+\\",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(response)
+				return
+			}
+		}
+
+		if action == "login" {
+			response := map[string]interface{}{
+				"login": map[string]interface{}{
+					"result":     "Success",
+					"lguserid":   float64(1),
+					"lgusername": "TestUser",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":{}}`))
+	}))
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	// Seed a stale cookie into the jar (simulates expired RestoreSession)
+	jarURL, _ := url.Parse(server.URL)
+	client.httpClient.Jar.SetCookies(jarURL, []*http.Cookie{
+		{Name: "stale_session", Value: "expired", Path: "/"},
+	})
+
+	ctx := context.Background()
+	err := client.login(ctx)
+	if err != nil {
+		t.Fatalf("login failed: %v", err)
+	}
+	if !client.loggedIn {
+		t.Error("Expected loggedIn = true after successful login")
+	}
+
+	// Verify the stale cookie was cleared (the jar was reset before the login
+	// token request, so the only cookies present are from the login response)
+	cookies := client.httpClient.Jar.Cookies(jarURL)
+	t.Logf("Cookies in jar after login: %v", cookies)
+	for _, c := range cookies {
+		if c.Name == "stale_session" {
+			t.Error("stale_session cookie should have been cleared by resetCookies()")
+		}
+	}
 }
 
 func TestCSRFToken(t *testing.T) {

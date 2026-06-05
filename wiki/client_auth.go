@@ -79,6 +79,12 @@ func (c *Client) login(ctx context.Context) error {
 		return nil
 	}
 
+	// No valid session — clear leftover cookies from RestoreSession so the
+	// login token request and login call share a clean session. Stale cookies
+	// would otherwise cause "Unable to continue login. Your session most
+	// likely timed out." from the wiki.
+	c.resetCookies()
+
 	// Get login token
 	params := url.Values{}
 	params.Set("action", "query")
