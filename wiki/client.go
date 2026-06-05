@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/olgasafonova/mediawiki-mcp-server/metrics"
 )
+
+// tokenPattern matches token values in API response bodies for redaction in debug logs.
+var tokenPattern = regexp.MustCompile(`"(?:logintoken|csrftoken)":"[^"]*"`)
 
 // CacheEntry holds cached data with expiration and LRU tracking
 type CacheEntry struct {
@@ -346,6 +350,11 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 		// Note: Don't set Accept-Encoding manually - Go's http.Transport handles
 		// compression automatically when DisableCompression is false
 
+		c.logger.Debug("API request",
+			"action", action,
+			"url", c.config.BaseURL,
+			"attempt", attempt+1)
+
 		resp, err := c.httpClient.Do(req) // #nosec G704 -- URL is the configured wiki API endpoint, not user-controlled
 		if err != nil {
 			lastErr = fmt.Errorf("request failed: %w", err)
@@ -366,6 +375,9 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 
 		// Handle different status codes appropriately
 		if resp.StatusCode != http.StatusOK {
+			c.logger.Debug("API non-OK response",
+				"status", resp.StatusCode,
+				"body_preview", redactTokens(string(body[:min(len(body), 500)])))
 			retryable, err := c.handleNonOKResponse(ctx, resp, body, attempt)
 			if !retryable {
 				return nil, err
@@ -373,6 +385,10 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 			lastErr = err
 			continue
 		}
+
+		c.logger.Debug("API response",
+			"status", resp.StatusCode,
+			"body_preview", redactTokens(string(body[:min(len(body), 500)])))
 
 		var result map[string]interface{}
 		if err := json.Unmarshal(body, &result); err != nil {
@@ -412,3 +428,8 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 // after use, so we must not reuse them across edit requests.
 // EnsureLoggedIn ensures the client is logged in (for wikis requiring auth for read)
 // truncateContent truncates content if it exceeds the limit
+
+// redactTokens replaces token values in a JSON response string for safe debug logging.
+func redactTokens(s string) string {
+	return tokenPattern.ReplaceAllString(s, `"$1":"[REDACTED]"`)
+}

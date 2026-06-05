@@ -29,6 +29,7 @@ func main() {
 	root.PersistentFlags().String("url", "", "Wiki API URL (overrides MEDIAWIKI_URL)")
 	root.PersistentFlags().Bool("json", false, "Output as JSON")
 	root.PersistentFlags().BoolP("quiet", "q", false, "Suppress non-essential output")
+	root.PersistentFlags().BoolP("verbose", "v", false, "Verbose output (debug logging)")
 
 	// Register commands
 	root.AddCommand(
