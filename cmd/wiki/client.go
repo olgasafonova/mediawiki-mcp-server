@@ -28,9 +28,13 @@ func newWikiClient(cmd *cobra.Command) (*wiki.Client, error) {
 		return nil, fmt.Errorf("configuration error: %w", err)
 	}
 
-	// CLI uses a quiet logger; MCP server is chattier
+	// CLI logger level
+	logLevel := slog.LevelWarn
+	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+		logLevel = slog.LevelDebug
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
+		Level: logLevel,
 	}))
 
 	client := wiki.NewClient(cfg, logger)
