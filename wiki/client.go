@@ -406,6 +406,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 // Returns true if already authenticated, false otherwise
 // resetCookies clears all cookies to allow fresh login
 // login authenticates with the wiki using bot password
+
 // loginFresh performs login with guaranteed fresh cookies (no retry)
 // getCSRFToken gets a CSRF token for editing
 // after use, so we must not reuse them across edit requests.
