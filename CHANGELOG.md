@@ -6,6 +6,7 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ### Added
 - **`wiki` CLI `--verbose` / `-v` flag.** Lowers the logger level from `Warn` to `Debug`, making existing debug/info log lines visible. Also adds new `Debug` log lines showing the API action, URL, and attempt count before each request, plus response status and redacted body preview (token fields like `logintoken`/`csrftoken` are replaced with `[REDACTED]`). Thanks to @strk for the feature.
+- **Interactive CAPTCHA prompting for `edit` and `publish` CLI commands.** When a CAPTCHA is required, the CLI now prompts interactively via `/dev/tty` (or stdin as fallback) for the answer and retries the request. Plain-text non-interactive mode (CI/piped stdin) exits with a hint instead of looping infinitely. Thanks to @strk for the implementation.
 
 ### Changed
 - `make build` and `make install` now also build and install the `wiki` CLI binary via `go install ./cmd/wiki/`. The local build target produces `wiki-cli` to avoid collision with the `wiki/` package directory.

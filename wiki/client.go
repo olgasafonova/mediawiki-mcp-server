@@ -19,7 +19,7 @@ import (
 )
 
 // tokenPattern matches token values in API response bodies for redaction in debug logs.
-var tokenPattern = regexp.MustCompile(`"(?:logintoken|csrftoken)":"[^"]*"`)
+var tokenPattern = regexp.MustCompile(`"(logintoken|csrftoken)":"[^"]*"`)
 
 // CacheEntry holds cached data with expiration and LRU tracking
 type CacheEntry struct {
