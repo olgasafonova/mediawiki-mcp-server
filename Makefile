@@ -2,6 +2,7 @@
 
 # Variables
 BINARY_NAME=mediawiki-mcp-server
+BINARY_NAME_WIKI=wiki-cli
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-w -s -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
@@ -22,21 +23,28 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: build
-build: ## Build the binary
+build: ## Build server and wiki binaries
 	$(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME) .
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME_WIKI) ./cmd/wiki/
 
 .PHONY: build-linux
 build-linux: ## Build for Linux (amd64)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-linux-amd64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME_WIKI)-linux-amd64 ./cmd/wiki/
 
 .PHONY: build-all
 build-all: ## Build for all platforms
 	@mkdir -p dist
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-amd64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME_WIKI)-darwin-amd64 ./cmd/wiki/
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-arm64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME_WIKI)-darwin-arm64 ./cmd/wiki/
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-amd64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME_WIKI)-linux-amd64 ./cmd/wiki/
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-arm64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME_WIKI)-linux-arm64 ./cmd/wiki/
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-windows-amd64.exe .
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME_WIKI)-windows-amd64.exe ./cmd/wiki/
 
 .PHONY: run
 run: build ## Build and run the server (stdio mode)
@@ -86,8 +94,8 @@ deps: ## Download dependencies
 
 .PHONY: clean
 clean: ## Clean build artifacts
-	rm -f $(BINARY_NAME)
-	rm -f $(BINARY_NAME)-*
+	rm -f $(BINARY_NAME) $(BINARY_NAME_WIKI)
+	rm -f $(BINARY_NAME)-* $(BINARY_NAME_WIKI)-*
 	rm -rf dist/
 	rm -f coverage.out coverage.html
 
@@ -108,8 +116,9 @@ docker-compose-down: ## Stop docker-compose
 	docker-compose down
 
 .PHONY: install
-install: build ## Install binary to GOPATH/bin
-	cp $(BINARY_NAME) $(GOPATH)/bin/
+install: ## Install binaries to GOPATH/bin
+	go install $(LDFLAGS) .
+	go install $(LDFLAGS) ./cmd/wiki/
 
 .PHONY: checksums
 checksums: ## Generate checksums for dist binaries
