@@ -117,8 +117,8 @@ docker-compose-down: ## Stop docker-compose
 
 .PHONY: install
 install: ## Install binaries to GOPATH/bin
-	go install .
-	go install ./cmd/wiki/
+	go install $(LDFLAGS) .
+	go install $(LDFLAGS) ./cmd/wiki/
 
 .PHONY: checksums
 checksums: ## Generate checksums for dist binaries
