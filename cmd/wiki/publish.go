@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,7 +83,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		summary = fmt.Sprintf("Published from %s", filepath.Base(filePath))
 	}
 
-	result, err := client.EditPage(context.Background(), wiki.EditPageArgs{
+	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
 		Title:   pageTitle,
 		Content: wikitext,
 		Summary: summary,
@@ -94,8 +93,20 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("publish failed: %w", err)
 	}
 
+	// CAPTCHA retry loop
+	for !result.Success && result.CaptchaType != "" {
+		if isJSON(cmd) {
+			break
+		}
+		result = promptAndRetryCaptcha(cmd, client, pageTitle, wikitext, summary, minor, false, "", result)
+	}
+
 	if isJSON(cmd) {
 		return printJSON(result)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("publish failed: %s", result.Message)
 	}
 
 	fmt.Printf("Published %s -> %s (rev: %d)\n", filepath.Base(filePath), result.Title, result.RevisionID)

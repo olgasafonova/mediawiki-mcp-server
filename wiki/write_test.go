@@ -266,7 +266,7 @@ func TestEditPage_EditFailedDetails(t *testing.T) {
 			name: "captcha",
 			edit: map[string]interface{}{
 				"result":  "Failure",
-				"captcha": map[string]interface{}{"type": "simple", "id": "1234"},
+				"captcha": map[string]interface{}{"type": "simple", "id": "1234", "question": "What is 2+2?"},
 			},
 			wantParts: []string{"Edit failed: Failure", "(CAPTCHA: simple)"},
 		},
@@ -310,7 +310,58 @@ func TestEditPage_EditFailedDetails(t *testing.T) {
 					t.Errorf("Message = %q, want substring %q", result.Message, part)
 				}
 			}
+			if tt.name == "captcha" {
+				if result.CaptchaType != "simple" {
+					t.Errorf("CaptchaType = %q, want 'simple'", result.CaptchaType)
+				}
+				if result.CaptchaID != "1234" {
+					t.Errorf("CaptchaID = %q, want '1234'", result.CaptchaID)
+				}
+				if result.CaptchaQuestion != "What is 2+2?" {
+					t.Errorf("CaptchaQuestion = %q, want 'What is 2+2?'", result.CaptchaQuestion)
+				}
+			}
 		})
+	}
+}
+
+func TestEditPage_CaptchaArgsPassthrough(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		action := r.FormValue("action")
+		if action == "edit" {
+			if r.FormValue("captchaid") != "789" {
+				t.Error("Expected captchaid=789 in API request")
+			}
+			if r.FormValue("captchaword") != "test-answer" {
+				t.Error("Expected captchaword=test-answer in API request")
+			}
+			response := map[string]interface{}{
+				"edit": map[string]interface{}{
+					"result":   "Success",
+					"pageid":   float64(123),
+					"title":    "Test Page",
+					"newrevid": float64(456),
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	_, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:       "Test Page",
+		Content:     "Content",
+		CaptchaID:   "789",
+		CaptchaWord: "test-answer",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
 	}
 }
 

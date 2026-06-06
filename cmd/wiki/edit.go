@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -73,7 +74,7 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("content is required (use --content or pipe from stdin)")
 	}
 
-	result, err := client.EditPage(context.Background(), wiki.EditPageArgs{
+	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
 		Title:   title,
 		Content: content,
 		Summary: summary,
@@ -83,6 +84,14 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("edit failed: %w", err)
+	}
+
+	// CAPTCHA retry loop
+	for !result.Success && result.CaptchaType != "" {
+		if isJSON(cmd) {
+			break
+		}
+		result = promptAndRetryCaptcha(cmd, client, title, content, summary, minor, bot, section, result)
 	}
 
 	if isJSON(cmd) {
@@ -99,6 +108,69 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// promptAndRetryCaptcha prompts the user for a CAPTCHA answer and retries
+// the edit. Tries /dev/tty first, then os.Stdin if it's a terminal. Prints
+// a hint to stderr when no interactive prompt is available.
+func promptAndRetryCaptcha(cmd *cobra.Command, client *wiki.Client, title, content, summary string, minor, bot bool, section string, original wiki.EditResult) wiki.EditResult {
+	question := original.CaptchaQuestion
+	if question == "" {
+		question = fmt.Sprintf("CAPTCHA type: %s", original.CaptchaType)
+	}
+
+	var in io.Reader
+	var out io.Writer
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		defer tty.Close()
+		in = tty
+		out = tty
+	} else if info, statErr := os.Stdin.Stat(); statErr == nil && info.Mode()&os.ModeCharDevice != 0 {
+		in = os.Stdin
+		out = os.Stderr
+	}
+
+	if in != nil {
+		br := bufio.NewReader(in)
+		for {
+			fmt.Fprintf(out, "CAPTCHA required: %s\nAnswer: ", question)
+			line, readErr := br.ReadString('\n')
+			answer := strings.TrimSpace(line)
+			if readErr != nil && answer == "" {
+				break
+			}
+			if answer != "" {
+				return retryEditWithCaptcha(cmd.Context(), client, title, content, summary, minor, bot, section, original, answer)
+			}
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "CAPTCHA required but no interactive input available (pass --json to see CAPTCHA details)\n")
+	original.CaptchaType = ""
+	return original
+}
+
+func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, content, summary string, minor, bot bool, section string, original wiki.EditResult, answer string) wiki.EditResult {
+	result, err := client.EditPage(ctx, wiki.EditPageArgs{
+		Title:       title,
+		Content:     content,
+		Summary:     summary,
+		Minor:       minor,
+		Bot:         bot,
+		Section:     section,
+		CaptchaID:   original.CaptchaID,
+		CaptchaWord: answer,
+	})
+	if err != nil {
+		return wiki.EditResult{
+			Success: false,
+			Title:   title,
+			Message: fmt.Sprintf("Edit failed on CAPTCHA retry: %v", err),
+		}
+	}
+
+	return result
 }
 
 // readStdin reads all available data from stdin if it's not a terminal.
