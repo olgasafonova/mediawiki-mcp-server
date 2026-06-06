@@ -76,6 +76,12 @@ func buildEditAPIParams(args EditPageArgs, token string) url.Values {
 	if args.Section != "" {
 		params.Set("section", args.Section)
 	}
+	if args.CaptchaID != "" {
+		params.Set("captchaid", args.CaptchaID)
+	}
+	if args.CaptchaWord != "" {
+		params.Set("captchaword", args.CaptchaWord)
+	}
 	return params
 }
 
@@ -119,17 +125,24 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 		if info := getString(edit["info"]); info != "" {
 			msg += fmt.Sprintf(" - %s", info)
 		}
+		var captchaType, captchaID, captchaQuestion string
 		if captcha := getMap(edit["captcha"]); captcha != nil {
-			msg += fmt.Sprintf(" (CAPTCHA: %s)", getString(captcha["type"]))
+			captchaType = getString(captcha["type"])
+			captchaID = getString(captcha["id"])
+			captchaQuestion = getString(captcha["question"])
+			msg += fmt.Sprintf(" (CAPTCHA: %s)", captchaType)
 		}
 		c.logAudit(c.buildAuditEntry(
 			AuditOpEdit, args.Title, args.Content, args.Summary,
 			args.Minor, args.Bot, false, 0, 0, msg,
 		))
 		return EditResult{
-			Success: false,
-			Title:   args.Title,
-			Message: msg,
+			Success:         false,
+			Title:           args.Title,
+			Message:         msg,
+			CaptchaType:     captchaType,
+			CaptchaID:       captchaID,
+			CaptchaQuestion: captchaQuestion,
 		}, nil
 	}
 

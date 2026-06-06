@@ -5,22 +5,27 @@ package wiki
 // EditPageArgs contains parameters for creating or editing a wiki page.
 type EditPageArgs struct {
 	BaseWriteArgs
-	Title   string `json:"title" jsonschema:"Page title to edit or create"`
-	Content string `json:"content" jsonschema:"New page content in wikitext format"`
-	Summary string `json:"summary,omitempty" jsonschema:"Edit summary explaining the change"`
-	Minor   bool   `json:"minor,omitempty" jsonschema:"Mark as minor edit"`
-	Bot     bool   `json:"bot,omitempty" jsonschema:"Mark as bot edit (requires bot flag)"`
-	Section string `json:"section,omitempty" jsonschema:"Section to edit ('new' for new section, number for existing)"`
+	Title       string `json:"title" jsonschema:"Page title to edit or create"`
+	Content     string `json:"content" jsonschema:"New page content in wikitext format"`
+	Summary     string `json:"summary,omitempty" jsonschema:"Edit summary explaining the change"`
+	Minor       bool   `json:"minor,omitempty" jsonschema:"Mark as minor edit"`
+	Bot         bool   `json:"bot,omitempty" jsonschema:"Mark as bot edit (requires bot flag)"`
+	Section     string `json:"section,omitempty" jsonschema:"Section to edit ('new' for new section, number for existing)"`
+	CaptchaID   string `json:"captcha_id,omitempty" jsonschema:"CAPTCHA ID from a previous failed attempt, required when answering a CAPTCHA"`
+	CaptchaWord string `json:"captcha_word,omitempty" jsonschema:"User-provided answer to the CAPTCHA challenge"`
 }
 
 // EditResult contains the result of a page edit operation.
 type EditResult struct {
-	Success    bool   `json:"success"`
-	Title      string `json:"title"`
-	PageID     int    `json:"page_id"`
-	RevisionID int    `json:"revision_id"`
-	NewPage    bool   `json:"new_page"`
-	Message    string `json:"message"`
+	Success         bool   `json:"success"`
+	Title           string `json:"title"`
+	PageID          int    `json:"page_id"`
+	RevisionID      int    `json:"revision_id"`
+	NewPage         bool   `json:"new_page"`
+	Message         string `json:"message"`
+	CaptchaType     string `json:"captcha_type,omitempty"`
+	CaptchaID       string `json:"captcha_id,omitempty"`
+	CaptchaQuestion string `json:"captcha_question,omitempty"`
 }
 
 // EditRevisionInfo contains revision tracking info for edit operations
