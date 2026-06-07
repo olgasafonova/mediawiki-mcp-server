@@ -27,6 +27,8 @@ PARAMETERS:
 
 RETURNS: Includes revision ID, diff URL, and undo instructions.
 
+NOTE: Requires authentication (bot password). Anonymous sessions cannot edit.
+
 WARNING: This overwrites entire page content unless section is specified.`,
 		ReadOnly:    false,
 		Destructive: true,
@@ -53,7 +55,9 @@ PARAMETERS:
 - preview: Preview changes without saving (default true for safety)
 - summary: Edit summary
 
-RETURNS: Match count and preview of changes. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.`,
+RETURNS: Match count and preview of changes. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.
+
+NOTE: Requires authentication (bot password) to apply changes. Anonymous sessions cannot edit.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -83,7 +87,9 @@ PARAMETERS:
 - preview: Preview changes (default true)
 - summary: Edit summary
 
-RETURNS: Preview of formatting applied. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.`,
+RETURNS: Preview of formatting applied. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.
+
+NOTE: Requires authentication (bot password) to apply changes. Anonymous sessions cannot edit.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -112,7 +118,9 @@ PARAMETERS:
 
 WARNING: Always use preview=true first to verify matches before applying.
 
-RETURNS: Changes per page. Set preview=false to apply all changes. Includes revision ID, diff URL, and undo instructions.`,
+RETURNS: Changes per page. Set preview=false to apply all changes. Includes revision ID, diff URL, and undo instructions.
+
+NOTE: Requires authentication (bot password) to apply changes. Anonymous sessions cannot edit.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -229,7 +237,7 @@ PARAMETERS:
 
 RETURNS: Includes revision ID, diff URL, and undo instructions.
 
-WARNING: Requires move permissions. Creates a redirect from the old title by default.`,
+WARNING: Requires authentication (bot password) and move permissions. Creates a redirect from the old title by default.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,
@@ -253,7 +261,9 @@ PARAMETERS:
 - preview: Preview changes without saving (default false)
 - summary: Edit summary
 
-RETURNS: Which categories were added, removed, already present, or not found. Includes revision ID, diff URL, and undo instructions.`,
+RETURNS: Which categories were added, removed, already present, or not found. Includes revision ID, diff URL, and undo instructions.
+
+NOTE: Requires authentication (bot password) to apply changes. Anonymous sessions cannot edit.`,
 		ReadOnly:    false,
 		Destructive: true, // HG-3: edits page content (changes category set via EditPage)
 		Idempotent:  false,
