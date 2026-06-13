@@ -22,6 +22,7 @@ type EditResult struct {
 	PageID          int    `json:"page_id"`
 	RevisionID      int    `json:"revision_id"`
 	NewPage         bool   `json:"new_page"`
+	PageURL         string `json:"page_url,omitempty"`
 	Message         string `json:"message"`
 	CaptchaType     string `json:"captcha_type,omitempty"`
 	CaptchaID       string `json:"captcha_id,omitempty"`

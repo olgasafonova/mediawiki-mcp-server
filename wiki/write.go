@@ -86,7 +86,7 @@ func buildEditAPIParams(args EditPageArgs, token string) url.Values {
 }
 
 // editResultFromAPI converts a successful edit API response into an EditResult.
-func editResultFromAPI(edit map[string]interface{}) EditResult {
+func (c *Client) editResultFromAPI(edit map[string]interface{}) EditResult {
 	r := EditResult{
 		Success:    true,
 		Title:      getString(edit["title"]),
@@ -98,6 +98,7 @@ func editResultFromAPI(edit map[string]interface{}) EditResult {
 	if r.NewPage {
 		r.Message = "Page created successfully"
 	}
+	r.PageURL = c.pageURL(r.Title)
 	return r
 }
 
@@ -146,7 +147,7 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 		}, nil
 	}
 
-	editResult := editResultFromAPI(edit)
+	editResult := c.editResultFromAPI(edit)
 	op := AuditOpEdit
 	if editResult.NewPage {
 		op = AuditOpCreate
@@ -490,6 +491,18 @@ func (c *Client) buildEditRevisionInfo(title string, oldRevision, newRevision in
 			Instruction: undoInstruction,
 			WikiURL:     undoURL,
 		}
+}
+
+// pageURL builds the human-readable page URL for the given title, derived
+// from the configured API endpoint (api.php -> index.php). Returns an empty
+// string if the title is empty or the API URL is unconfigured.
+func (c *Client) pageURL(title string) string {
+	if title == "" || c.config.BaseURL == "" {
+		return ""
+	}
+	wikiBaseURL := strings.TrimSuffix(c.config.BaseURL, "api.php") + "index.php"
+	encodedTitle := url.QueryEscape(strings.ReplaceAll(title, " ", "_"))
+	return fmt.Sprintf("%s?title=%s", wikiBaseURL, encodedTitle)
 }
 
 // extractNormalizedTitleMap reads the "normalized" array from a MediaWiki query
