@@ -86,7 +86,10 @@ func buildEditAPIParams(args EditPageArgs, token string) url.Values {
 }
 
 // editResultFromAPI converts a successful edit API response into an EditResult.
-func (c *Client) editResultFromAPI(edit map[string]interface{}) EditResult {
+// It uses ctx to fetch (and cache) site info for building a pretty page URL;
+// any failure to obtain site info is non-fatal — the index.php?title= form
+// is used as a fallback.
+func (c *Client) editResultFromAPI(ctx context.Context, edit map[string]interface{}) EditResult {
 	r := EditResult{
 		Success:    true,
 		Title:      getString(edit["title"]),
@@ -98,7 +101,7 @@ func (c *Client) editResultFromAPI(edit map[string]interface{}) EditResult {
 	if r.NewPage {
 		r.Message = "Page created successfully"
 	}
-	r.PageURL = c.pageURL(r.Title)
+	r.PageURL = c.pageURL(ctx, r.Title)
 	return r
 }
 
@@ -147,7 +150,7 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 		}, nil
 	}
 
-	editResult := c.editResultFromAPI(edit)
+	editResult := c.editResultFromAPI(ctx, edit)
 	op := AuditOpEdit
 	if editResult.NewPage {
 		op = AuditOpCreate
@@ -493,16 +496,38 @@ func (c *Client) buildEditRevisionInfo(title string, oldRevision, newRevision in
 		}
 }
 
-// pageURL builds the human-readable page URL for the given title, derived
-// from the configured API endpoint (api.php -> index.php). Returns an empty
-// string if the title is empty or the API URL is unconfigured.
-func (c *Client) pageURL(title string) string {
+// pageURL builds the human-readable page URL for the given title.
+//
+// It tries to use the wiki's pretty URL form (e.g. /wiki/Foo_Bar) derived
+// from siteinfo's Server and ArticlePath (cached after the first call).
+// When siteinfo is unavailable, it falls back to the universal
+// index.php?title= form derived from the configured API endpoint.
+//
+// Returns an empty string if the title is empty or the API URL is
+// unconfigured.
+func (c *Client) pageURL(ctx context.Context, title string) string {
 	if title == "" || c.config.BaseURL == "" {
 		return ""
 	}
-	wikiBaseURL := strings.TrimSuffix(c.config.BaseURL, "api.php") + "index.php"
-	encodedTitle := url.QueryEscape(strings.ReplaceAll(title, " ", "_"))
-	return fmt.Sprintf("%s?title=%s", wikiBaseURL, encodedTitle)
+
+	pathTitle := strings.ReplaceAll(title, " ", "_")
+
+	if info, err := c.GetWikiInfo(ctx, WikiInfoArgs{}); err == nil && info.Server != "" && info.ArticlePath != "" {
+		if strings.Contains(info.ArticlePath, "$1") {
+			// Path-escape the title, then unescape slashes so subpage
+			// slashes survive (e.g. User:Alice/Sandbox stays as
+			// User:Alice/Sandbox, not User:Alice%2FSandbox).
+			escaped := strings.ReplaceAll(url.PathEscape(pathTitle), "%2F", "/")
+			return info.Server + strings.Replace(info.ArticlePath, "$1", escaped, 1)
+		}
+	}
+
+	wikiBaseURL := strings.TrimSuffix(c.config.BaseURL, "api.php")
+	if !strings.HasSuffix(wikiBaseURL, "/") {
+		wikiBaseURL += "/"
+	}
+	wikiBaseURL += "index.php"
+	return fmt.Sprintf("%s?title=%s", wikiBaseURL, url.QueryEscape(pathTitle))
 }
 
 // extractNormalizedTitleMap reads the "normalized" array from a MediaWiki query

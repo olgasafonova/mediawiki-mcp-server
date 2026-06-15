@@ -600,6 +600,85 @@ func TestGetWikiInfo_Success(t *testing.T) {
 	}
 }
 
+func TestPageURL_PrettyFromSiteInfo(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Only siteinfo matters here
+		response := map[string]interface{}{
+			"query": map[string]interface{}{
+				"general": map[string]interface{}{
+					"server":      "https://wiki.example.com",
+					"articlepath": "/wiki/$1",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	got := client.pageURL(context.Background(), "LLM-based Chat Assistant")
+	want := "https://wiki.example.com/wiki/LLM-based_Chat_Assistant"
+	if got != want {
+		t.Errorf("pageURL() = %q, want %q", got, want)
+	}
+}
+
+func TestPageURL_PreservesSubpageSlashes(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"query": map[string]interface{}{
+				"general": map[string]interface{}{
+					"server":      "https://wiki.example.com",
+					"articlepath": "/wiki/$1",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	got := client.pageURL(context.Background(), "User:Alice/Sandbox")
+	want := "https://wiki.example.com/wiki/User:Alice/Sandbox"
+	if got != want {
+		t.Errorf("pageURL() = %q, want %q", got, want)
+	}
+}
+
+func TestPageURL_FallbackOnSiteInfoFailure(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	got := client.pageURL(context.Background(), "Main Page")
+	want := server.URL + "/index.php?title=Main_Page"
+	if got != want {
+		t.Errorf("pageURL() = %q, want %q", got, want)
+	}
+}
+
+func TestPageURL_EmptyInputs(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	if got := client.pageURL(context.Background(), ""); got != "" {
+		t.Errorf("pageURL(\"\") = %q, want empty", got)
+	}
+}
+
 func TestGetPageInfo_Success(t *testing.T) {
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		response := map[string]interface{}{
