@@ -626,6 +626,32 @@ func TestPageURL_PrettyFromSiteInfo(t *testing.T) {
 	}
 }
 
+func TestPageURL_SchemeRelativeServer(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// MediaWiki can return server in scheme-relative form on some installs.
+		response := map[string]interface{}{
+			"query": map[string]interface{}{
+				"general": map[string]interface{}{
+					"server":      "//wiki.example.com",
+					"articlepath": "/wiki/$1",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	got := client.pageURL(context.Background(), "LLM-based Chat Assistant")
+	want := "http://wiki.example.com/wiki/LLM-based_Chat_Assistant"
+	if got != want {
+		t.Errorf("pageURL() = %q, want %q", got, want)
+	}
+}
+
 func TestPageURL_PreservesSubpageSlashes(t *testing.T) {
 	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
 		response := map[string]interface{}{

@@ -503,6 +503,14 @@ func (c *Client) buildEditRevisionInfo(title string, oldRevision, newRevision in
 // When siteinfo is unavailable, it falls back to the universal
 // index.php?title= form derived from the configured API endpoint.
 //
+// MediaWiki's `server` field in siteinfo can be returned in three forms:
+//   - absolute:   "https://wiki.example.com"
+//   - scheme-less: "//wiki.example.com"  (some installations)
+//   - protocol-relative with a port:  "//wiki.example.com:443"
+//
+// In the scheme-less case we borrow the scheme from the configured API
+// endpoint so the printed URL is clickable from a terminal.
+//
 // Returns an empty string if the title is empty or the API URL is
 // unconfigured.
 func (c *Client) pageURL(ctx context.Context, title string) string {
@@ -514,11 +522,12 @@ func (c *Client) pageURL(ctx context.Context, title string) string {
 
 	if info, err := c.GetWikiInfo(ctx, WikiInfoArgs{}); err == nil && info.Server != "" && info.ArticlePath != "" {
 		if strings.Contains(info.ArticlePath, "$1") {
+			server := ensureServerScheme(info.Server, c.config.BaseURL)
 			// Path-escape the title, then unescape slashes so subpage
 			// slashes survive (e.g. User:Alice/Sandbox stays as
 			// User:Alice/Sandbox, not User:Alice%2FSandbox).
 			escaped := strings.ReplaceAll(url.PathEscape(pathTitle), "%2F", "/")
-			return info.Server + strings.Replace(info.ArticlePath, "$1", escaped, 1)
+			return server + strings.Replace(info.ArticlePath, "$1", escaped, 1)
 		}
 	}
 
@@ -528,6 +537,19 @@ func (c *Client) pageURL(ctx context.Context, title string) string {
 	}
 	wikiBaseURL += "index.php"
 	return fmt.Sprintf("%s?title=%s", wikiBaseURL, url.QueryEscape(pathTitle))
+}
+
+// ensureServerScheme returns server with a scheme. If server is scheme-relative
+// (e.g. "//wiki.example.com") the scheme from apiBase is prepended. Otherwise
+// server is returned unchanged.
+func ensureServerScheme(server, apiBase string) string {
+	if !strings.HasPrefix(server, "//") {
+		return server
+	}
+	if u, err := url.Parse(apiBase); err == nil && u.Scheme != "" {
+		return u.Scheme + ":" + server
+	}
+	return server
 }
 
 // extractNormalizedTitleMap reads the "normalized" array from a MediaWiki query
