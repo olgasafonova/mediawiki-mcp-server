@@ -106,6 +106,9 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Edited %s (rev: %d)\n", result.Title, result.RevisionID)
 	}
+	if result.Success && result.PageURL != "" {
+		fmt.Printf("URL: %s\n", result.PageURL)
+	}
 
 	return nil
 }

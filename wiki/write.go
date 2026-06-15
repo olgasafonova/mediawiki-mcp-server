@@ -86,7 +86,10 @@ func buildEditAPIParams(args EditPageArgs, token string) url.Values {
 }
 
 // editResultFromAPI converts a successful edit API response into an EditResult.
-func editResultFromAPI(edit map[string]interface{}) EditResult {
+// It uses ctx to fetch (and cache) site info for building a pretty page URL;
+// any failure to obtain site info is non-fatal — the index.php?title= form
+// is used as a fallback.
+func (c *Client) editResultFromAPI(ctx context.Context, edit map[string]interface{}) EditResult {
 	r := EditResult{
 		Success:    true,
 		Title:      getString(edit["title"]),
@@ -98,6 +101,7 @@ func editResultFromAPI(edit map[string]interface{}) EditResult {
 	if r.NewPage {
 		r.Message = "Page created successfully"
 	}
+	r.PageURL = c.pageURL(ctx, r.Title)
 	return r
 }
 
@@ -146,7 +150,7 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 		}, nil
 	}
 
-	editResult := editResultFromAPI(edit)
+	editResult := c.editResultFromAPI(ctx, edit)
 	op := AuditOpEdit
 	if editResult.NewPage {
 		op = AuditOpCreate
@@ -490,6 +494,62 @@ func (c *Client) buildEditRevisionInfo(title string, oldRevision, newRevision in
 			Instruction: undoInstruction,
 			WikiURL:     undoURL,
 		}
+}
+
+// pageURL builds the human-readable page URL for the given title.
+//
+// It tries to use the wiki's pretty URL form (e.g. /wiki/Foo_Bar) derived
+// from siteinfo's Server and ArticlePath (cached after the first call).
+// When siteinfo is unavailable, it falls back to the universal
+// index.php?title= form derived from the configured API endpoint.
+//
+// MediaWiki's `server` field in siteinfo can be returned in three forms:
+//   - absolute:   "https://wiki.example.com"
+//   - scheme-less: "//wiki.example.com"  (some installations)
+//   - protocol-relative with a port:  "//wiki.example.com:443"
+//
+// In the scheme-less case we borrow the scheme from the configured API
+// endpoint so the printed URL is clickable from a terminal.
+//
+// Returns an empty string if the title is empty or the API URL is
+// unconfigured.
+func (c *Client) pageURL(ctx context.Context, title string) string {
+	if title == "" || c.config.BaseURL == "" {
+		return ""
+	}
+
+	pathTitle := strings.ReplaceAll(title, " ", "_")
+
+	if info, err := c.GetWikiInfo(ctx, WikiInfoArgs{}); err == nil && info.Server != "" && info.ArticlePath != "" {
+		if strings.Contains(info.ArticlePath, "$1") {
+			server := ensureServerScheme(info.Server, c.config.BaseURL)
+			// Path-escape the title, then unescape slashes so subpage
+			// slashes survive (e.g. User:Alice/Sandbox stays as
+			// User:Alice/Sandbox, not User:Alice%2FSandbox).
+			escaped := strings.ReplaceAll(url.PathEscape(pathTitle), "%2F", "/")
+			return server + strings.Replace(info.ArticlePath, "$1", escaped, 1)
+		}
+	}
+
+	wikiBaseURL := strings.TrimSuffix(c.config.BaseURL, "api.php")
+	if !strings.HasSuffix(wikiBaseURL, "/") {
+		wikiBaseURL += "/"
+	}
+	wikiBaseURL += "index.php"
+	return fmt.Sprintf("%s?title=%s", wikiBaseURL, url.QueryEscape(pathTitle))
+}
+
+// ensureServerScheme returns server with a scheme. If server is scheme-relative
+// (e.g. "//wiki.example.com") the scheme from apiBase is prepended. Otherwise
+// server is returned unchanged.
+func ensureServerScheme(server, apiBase string) string {
+	if !strings.HasPrefix(server, "//") {
+		return server
+	}
+	if u, err := url.Parse(apiBase); err == nil && u.Scheme != "" {
+		return u.Scheme + ":" + server
+	}
+	return server
 }
 
 // extractNormalizedTitleMap reads the "normalized" array from a MediaWiki query
