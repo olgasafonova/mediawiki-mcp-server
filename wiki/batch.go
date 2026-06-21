@@ -74,17 +74,47 @@ func buildPageContentResult(page map[string]interface{}, format string) (PageCon
 	return pageResult, pageStatusOK
 }
 
+// capBatchTitles validates the title list is non-empty and caps it at
+// MaxBatchSize, returning a descriptive error when empty.
+func capBatchTitles(titles []string) ([]string, error) {
+	if len(titles) == 0 {
+		return nil, fmt.Errorf("at least one title is required")
+	}
+	if len(titles) > MaxBatchSize {
+		return titles[:MaxBatchSize], nil
+	}
+	return titles, nil
+}
+
+// normalizeTitles returns the per-title normalized form, preserving order.
+func normalizeTitles(titles []string) []string {
+	normalized := make([]string, len(titles))
+	for i, t := range titles {
+		normalized[i] = normalizePageTitle(t)
+	}
+	return normalized
+}
+
+// extractQueryPages pulls the query and pages objects out of an API response,
+// returning shape errors labeled with the given context.
+func extractQueryPages(resp map[string]interface{}, label string) (query, pages map[string]interface{}, err error) {
+	query = getMap(resp["query"])
+	if query == nil {
+		return nil, nil, fmt.Errorf("%s: missing query", label)
+	}
+	pages = getMap(query["pages"])
+	if pages == nil {
+		return nil, nil, fmt.Errorf("%s: missing pages", label)
+	}
+	return query, pages, nil
+}
+
 // GetPagesBatch retrieves content for multiple pages in a single API call.
 // This is significantly more efficient than calling GetPage individually.
 func (c *Client) GetPagesBatch(ctx context.Context, args GetPagesBatchArgs) (GetPagesBatchResult, error) {
-	if len(args.Titles) == 0 {
-		return GetPagesBatchResult{}, fmt.Errorf("at least one title is required")
-	}
-
-	// Enforce batch size limit
-	titles := args.Titles
-	if len(titles) > MaxBatchSize {
-		titles = titles[:MaxBatchSize]
+	titles, err := capBatchTitles(args.Titles)
+	if err != nil {
+		return GetPagesBatchResult{}, err
 	}
 
 	if err := c.EnsureLoggedIn(ctx); err != nil {
@@ -101,19 +131,10 @@ func (c *Client) GetPagesBatch(ctx context.Context, args GetPagesBatchArgs) (Get
 		TotalCount: len(titles),
 	}
 
-	// Normalize all titles
-	normalizedTitles := make([]string, len(titles))
-	titleMap := make(map[string]string) // normalized -> original
-	for i, t := range titles {
-		normalized := normalizePageTitle(t)
-		normalizedTitles[i] = normalized
-		titleMap[normalized] = t
-	}
-
 	// MediaWiki API accepts pipe-separated titles
 	params := url.Values{}
 	params.Set("action", "query")
-	params.Set("titles", strings.Join(normalizedTitles, "|"))
+	params.Set("titles", strings.Join(normalizeTitles(titles), "|"))
 	params.Set("prop", "revisions")
 	params.Set("rvprop", "content|ids|timestamp")
 	params.Set("rvslots", "main")
@@ -122,20 +143,20 @@ func (c *Client) GetPagesBatch(ctx context.Context, args GetPagesBatchArgs) (Get
 	if err != nil {
 		return GetPagesBatchResult{}, fmt.Errorf("API request failed: %w", err)
 	}
-
-	query := getMap(resp["query"])
-	if query == nil {
-		return GetPagesBatchResult{}, fmt.Errorf("unexpected API response: missing 'query' object")
+	query, pages, err := extractQueryPages(resp, "unexpected API response")
+	if err != nil {
+		return GetPagesBatchResult{}, err
 	}
 
-	pages := getMap(query["pages"])
-	if pages == nil {
-		return GetPagesBatchResult{}, fmt.Errorf("unexpected API response: missing 'pages' object")
-	}
+	foundTitles := collectPageContentResults(pages, format, &result)
+	applyNormalizedMappings(query, foundTitles)
+	return result, nil
+}
 
-	// Track which pages we found
+// collectPageContentResults builds a PageContentResult for each page, updating
+// the batch counters, and returns the set of titles seen.
+func collectPageContentResults(pages map[string]interface{}, format string, result *GetPagesBatchResult) map[string]bool {
 	foundTitles := make(map[string]bool)
-
 	for _, pageData := range pages {
 		page := getMap(pageData)
 		if page == nil {
@@ -151,35 +172,30 @@ func (c *Client) GetPagesBatch(ctx context.Context, args GetPagesBatchArgs) (Get
 		foundTitles[pageResult.Title] = true
 		result.Pages = append(result.Pages, pageResult)
 	}
+	return foundTitles
+}
 
-	// Handle normalized titles that weren't found in response
-	if normalized := getMap(query["normalized"]); normalized != nil {
-		// MediaWiki returns normalized mappings
-		for _, n := range getSlice(query["normalized"]) {
-			normMap := getMap(n)
-			if normMap != nil {
-				from := getString(normMap["from"])
-				to := getString(normMap["to"])
-				if from != "" && to != "" {
-					foundTitles[from] = foundTitles[to]
-				}
-			}
+// applyNormalizedMappings propagates found-status across MediaWiki's
+// normalized title mappings (from -> to).
+func applyNormalizedMappings(query map[string]interface{}, foundTitles map[string]bool) {
+	for _, n := range getSlice(query["normalized"]) {
+		normMap := getMap(n)
+		if normMap == nil {
+			continue
+		}
+		from := getString(normMap["from"])
+		to := getString(normMap["to"])
+		if from != "" && to != "" {
+			foundTitles[from] = foundTitles[to]
 		}
 	}
-
-	return result, nil
 }
 
 // GetPagesInfoBatch retrieves metadata for multiple pages in a single API call.
 func (c *Client) GetPagesInfoBatch(ctx context.Context, args GetPagesInfoBatchArgs) (GetPagesInfoBatchResult, error) {
-	if len(args.Titles) == 0 {
-		return GetPagesInfoBatchResult{}, fmt.Errorf("at least one title is required")
-	}
-
-	// Enforce batch size limit
-	titles := args.Titles
-	if len(titles) > MaxBatchSize {
-		titles = titles[:MaxBatchSize]
+	titles, err := capBatchTitles(args.Titles)
+	if err != nil {
+		return GetPagesInfoBatchResult{}, err
 	}
 
 	if err := c.EnsureLoggedIn(ctx); err != nil {
@@ -191,15 +207,9 @@ func (c *Client) GetPagesInfoBatch(ctx context.Context, args GetPagesInfoBatchAr
 		TotalCount: len(titles),
 	}
 
-	// Normalize all titles
-	normalizedTitles := make([]string, len(titles))
-	for i, t := range titles {
-		normalizedTitles[i] = normalizePageTitle(t)
-	}
-
 	params := url.Values{}
 	params.Set("action", "query")
-	params.Set("titles", strings.Join(normalizedTitles, "|"))
+	params.Set("titles", strings.Join(normalizeTitles(titles), "|"))
 	params.Set("prop", "info|categories")
 	params.Set("inprop", "protection|url")
 	params.Set("cllimit", "50")
@@ -209,76 +219,81 @@ func (c *Client) GetPagesInfoBatch(ctx context.Context, args GetPagesInfoBatchAr
 		return GetPagesInfoBatchResult{}, err
 	}
 
-	query := getMap(resp["query"])
-	if query == nil {
-		return GetPagesInfoBatchResult{}, fmt.Errorf("unexpected response format: missing query")
+	_, pages, err := extractQueryPages(resp, "unexpected response format")
+	if err != nil {
+		return GetPagesInfoBatchResult{}, err
 	}
 
-	pages := getMap(query["pages"])
-	if pages == nil {
-		return GetPagesInfoBatchResult{}, fmt.Errorf("unexpected response format: missing pages")
-	}
+	collectPageInfos(pages, &result)
+	return result, nil
+}
 
+// collectPageInfos builds a PageInfo for each page and updates the batch
+// exists/missing counters.
+func collectPageInfos(pages map[string]interface{}, result *GetPagesInfoBatchResult) {
 	for _, pageData := range pages {
 		page := getMap(pageData)
 		if page == nil {
 			continue
 		}
-
-		title := getString(page["title"])
-		info := PageInfo{
-			Title: title,
-		}
-
-		// Check if page exists
-		if _, missing := page["missing"]; missing {
-			info.Exists = false
+		info, exists := buildPageInfo(page)
+		if exists {
+			result.ExistsCount++
+		} else {
 			result.MissingCount++
-			result.Pages = append(result.Pages, info)
-			continue
 		}
-
-		info.Exists = true
-		info.PageID = getInt(page["pageid"])
-		info.Namespace = getInt(page["ns"])
-		info.ContentModel = getString(page["contentmodel"])
-		info.PageLanguage = getString(page["pagelanguage"])
-		info.Length = getInt(page["length"])
-		info.Touched = getString(page["touched"])
-		info.LastRevision = getInt(page["lastrevid"])
-		result.ExistsCount++
-
-		// Categories
-		if cats := getSlice(page["categories"]); cats != nil {
-			for _, cat := range cats {
-				catMap := getMap(cat)
-				if catMap != nil {
-					info.Categories = append(info.Categories, getString(catMap["title"]))
-				}
-			}
-		}
-
-		// Redirect
-		if _, isRedirect := page["redirect"]; isRedirect {
-			info.Redirect = true
-		}
-
-		// Protection
-		if protection := getSlice(page["protection"]); protection != nil {
-			for _, p := range protection {
-				prot := getMap(p)
-				if prot != nil {
-					protType := getString(prot["type"])
-					protLevel := getString(prot["level"])
-					info.Protection = append(info.Protection, fmt.Sprintf("%s: %s", protType, protLevel))
-				}
-			}
-		}
-
 		result.Pages = append(result.Pages, info)
 	}
+}
 
-	return result, nil
+// buildPageInfo converts one MediaWiki page metadata object into a PageInfo and
+// reports whether the page exists.
+func buildPageInfo(page map[string]interface{}) (PageInfo, bool) {
+	info := PageInfo{Title: getString(page["title"])}
+
+	if _, missing := page["missing"]; missing {
+		info.Exists = false
+		return info, false
+	}
+
+	info.Exists = true
+	info.PageID = getInt(page["pageid"])
+	info.Namespace = getInt(page["ns"])
+	info.ContentModel = getString(page["contentmodel"])
+	info.PageLanguage = getString(page["pagelanguage"])
+	info.Length = getInt(page["length"])
+	info.Touched = getString(page["touched"])
+	info.LastRevision = getInt(page["lastrevid"])
+	info.Categories = extractCategoryTitles(page["categories"])
+	if _, isRedirect := page["redirect"]; isRedirect {
+		info.Redirect = true
+	}
+	info.Protection = extractProtectionEntries(page["protection"])
+	return info, true
+}
+
+// extractCategoryTitles returns the category titles from a page's categories
+// slice.
+func extractCategoryTitles(raw interface{}) []string {
+	var titles []string
+	for _, cat := range getSlice(raw) {
+		if catMap := getMap(cat); catMap != nil {
+			titles = append(titles, getString(catMap["title"]))
+		}
+	}
+	return titles
+}
+
+// extractProtectionEntries returns "type: level" strings from a page's
+// protection slice.
+func extractProtectionEntries(raw interface{}) []string {
+	var entries []string
+	for _, p := range getSlice(raw) {
+		if prot := getMap(p); prot != nil {
+			entries = append(entries, fmt.Sprintf("%s: %s", getString(prot["type"]), getString(prot["level"])))
+		}
+	}
+	return entries
 }
 
 // SearchAndRead searches the wiki and reads the top result(s) in one operation.
@@ -288,13 +303,7 @@ func (c *Client) SearchAndRead(ctx context.Context, args SearchAndReadArgs) (Sea
 		return SearchAndReadResult{}, fmt.Errorf("query is required")
 	}
 
-	readCount := args.ReadCount
-	if readCount <= 0 {
-		readCount = 1
-	}
-	if readCount > 5 {
-		readCount = 5
-	}
+	readCount := clampReadCount(args.ReadCount)
 
 	format := args.Format
 	if format == "" {
@@ -325,23 +334,44 @@ func (c *Client) SearchAndRead(ctx context.Context, args SearchAndReadArgs) (Sea
 	if toRead > len(searchResult.Results) {
 		toRead = len(searchResult.Results)
 	}
+	result.Pages = c.readSearchHits(ctx, searchResult.Results[:toRead], format)
 
-	result.Pages = make([]SearchAndReadPage, 0, toRead)
-	for i := 0; i < toRead; i++ {
-		hit := searchResult.Results[i]
+	// Step 3: Include remaining search hits as summaries
+	if len(searchResult.Results) > toRead {
+		result.OtherHits = searchResult.Results[toRead:]
+	}
 
+	result.Message = fmt.Sprintf("Read %d of %d results for '%s'", len(result.Pages), searchResult.TotalHits, args.Query)
+	return result, nil
+}
+
+// clampReadCount bounds the requested read count to the supported 1..5 range.
+func clampReadCount(n int) int {
+	switch {
+	case n <= 0:
+		return 1
+	case n > 5:
+		return 5
+	default:
+		return n
+	}
+}
+
+// readSearchHits fetches each hit's page content, falling back to a snippet-only
+// entry when a page read fails.
+func (c *Client) readSearchHits(ctx context.Context, hits []SearchHit, format string) []SearchAndReadPage {
+	pages := make([]SearchAndReadPage, 0, len(hits))
+	for _, hit := range hits {
 		page, err := c.GetPage(ctx, GetPageArgs{Title: hit.Title, Format: format})
 		if err != nil {
-			// Include the hit but without content
-			result.Pages = append(result.Pages, SearchAndReadPage{
+			pages = append(pages, SearchAndReadPage{
 				Title:   hit.Title,
 				PageID:  hit.PageID,
 				Snippet: hit.Snippet,
 			})
 			continue
 		}
-
-		result.Pages = append(result.Pages, SearchAndReadPage{
+		pages = append(pages, SearchAndReadPage{
 			Title:     page.Title,
 			PageID:    page.PageID,
 			Snippet:   hit.Snippet,
@@ -352,12 +382,5 @@ func (c *Client) SearchAndRead(ctx context.Context, args SearchAndReadArgs) (Sea
 			Truncated: page.Truncated,
 		})
 	}
-
-	// Step 3: Include remaining search hits as summaries
-	if len(searchResult.Results) > toRead {
-		result.OtherHits = searchResult.Results[toRead:]
-	}
-
-	result.Message = fmt.Sprintf("Read %d of %d results for '%s'", len(result.Pages), searchResult.TotalHits, args.Query)
-	return result, nil
+	return pages
 }
