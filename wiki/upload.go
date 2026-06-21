@@ -14,11 +14,8 @@ import (
 
 // UploadFile uploads a file to the wiki
 func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFileResult, error) {
-	if args.Filename == "" {
-		return UploadFileResult{}, fmt.Errorf("filename is required")
-	}
-	if args.FilePath == "" && args.FileURL == "" && len(args.FileData) == 0 {
-		return UploadFileResult{}, fmt.Errorf("either file_path, file_url, or file_data is required")
+	if err := validateUploadArgs(args); err != nil {
+		return UploadFileResult{}, err
 	}
 
 	if err := c.EnsureLoggedIn(ctx); err != nil {
@@ -31,41 +28,47 @@ func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFil
 		result, err = c.performUpload(ctx, args)
 	}
 
-	// Log upload attempt (even if error occurred)
-	if err != nil {
-		c.logAudit(AuditEntry{
-			Timestamp:   time.Now().UTC().Format(time.RFC3339),
-			Operation:   AuditOpUpload,
-			Title:       "File:" + args.Filename,
-			ContentHash: hashContent(args.FileURL + args.FilePath + string(args.FileData)), // Hash the source
-			ContentSize: 0,
-			Summary:     args.Comment,
-			WikiURL:     c.config.BaseURL,
-			Success:     false,
-			Error:       err.Error(),
-		})
-		return result, err
-	}
+	c.logUploadOutcome(args, result, err)
+	return result, err
+}
 
-	// Log upload result
-	c.logAudit(AuditEntry{
+// validateUploadArgs enforces required upload inputs.
+func validateUploadArgs(args UploadFileArgs) error {
+	if args.Filename == "" {
+		return fmt.Errorf("filename is required")
+	}
+	if args.FilePath == "" && args.FileURL == "" && len(args.FileData) == 0 {
+		return fmt.Errorf("either file_path, file_url, or file_data is required")
+	}
+	return nil
+}
+
+// logUploadOutcome records an audit entry for an upload attempt, whether it
+// failed (err != nil) or completed (with its own success flag).
+func (c *Client) logUploadOutcome(args UploadFileArgs, result UploadFileResult, err error) {
+	contentHash := hashContent(args.FileURL + args.FilePath + string(args.FileData))
+	entry := AuditEntry{
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		Operation:   AuditOpUpload,
-		Title:       "File:" + result.Filename,
-		ContentHash: hashContent(args.FileURL + args.FilePath + string(args.FileData)),
-		ContentSize: result.Size,
+		ContentHash: contentHash,
 		Summary:     args.Comment,
 		WikiURL:     c.config.BaseURL,
-		Success:     result.Success,
-		Error: func() string {
-			if !result.Success {
-				return result.Message
-			}
-			return ""
-		}(),
-	})
+	}
+	if err != nil {
+		entry.Title = "File:" + args.Filename
+		entry.Success = false
+		entry.Error = err.Error()
+		c.logAudit(entry)
+		return
+	}
 
-	return result, nil
+	entry.Title = "File:" + result.Filename
+	entry.ContentSize = result.Size
+	entry.Success = result.Success
+	if !result.Success {
+		entry.Error = result.Message
+	}
+	c.logAudit(entry)
 }
 
 // performUpload executes a single upload attempt with a fresh CSRF token.
@@ -248,29 +251,38 @@ func (c *Client) parseUploadResponse(resp map[string]interface{}, filename strin
 		Filename: filename,
 	}
 
-	status := getString(upload["result"])
-	switch status {
+	switch status := getString(upload["result"]); status {
 	case "Success":
-		result.Success = true
-		result.Message = "File uploaded successfully"
-		if imageinfo, ok := upload["imageinfo"].(map[string]interface{}); ok {
-			result.URL = getString(imageinfo["url"])
-			result.Size = getInt(imageinfo["size"])
-		}
+		applyUploadSuccess(upload, &result)
 	case "Warning":
-		result.Success = false
-		result.Message = "Upload has warnings - set ignore_warnings=true to proceed"
-		if warnings, ok := upload["warnings"].(map[string]interface{}); ok {
-			for k, v := range warnings {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("%s: %v", k, v))
-			}
-		}
+		applyUploadWarning(upload, &result)
 	default:
 		result.Success = false
 		result.Message = fmt.Sprintf("Upload status: %s", status)
 	}
 
 	return result, nil
+}
+
+// applyUploadSuccess fills a successful upload result, including image metadata.
+func applyUploadSuccess(upload map[string]interface{}, result *UploadFileResult) {
+	result.Success = true
+	result.Message = "File uploaded successfully"
+	if imageinfo, ok := upload["imageinfo"].(map[string]interface{}); ok {
+		result.URL = getString(imageinfo["url"])
+		result.Size = getInt(imageinfo["size"])
+	}
+}
+
+// applyUploadWarning fills a warning upload result with the reported warnings.
+func applyUploadWarning(upload map[string]interface{}, result *UploadFileResult) {
+	result.Success = false
+	result.Message = "Upload has warnings - set ignore_warnings=true to proceed"
+	if warnings, ok := upload["warnings"].(map[string]interface{}); ok {
+		for k, v := range warnings {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: %v", k, v))
+		}
+	}
 }
 
 // parseJSONResponse decodes an *http.Response body as JSON into target.
