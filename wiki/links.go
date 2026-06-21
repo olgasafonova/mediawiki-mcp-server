@@ -73,19 +73,37 @@ func (c *Client) GetExternalLinks(ctx context.Context, args GetExternalLinksArgs
 	if !ok {
 		return ExternalLinksResult{}, fmt.Errorf("no pages in response")
 	}
+	return firstExternalLinksResult(pages, args.Title)
+}
 
+// firstExternalLinksResult returns the external-links result for the first
+// valid page object, or an error if that page is flagged missing.
+func firstExternalLinksResult(pages map[string]interface{}, requestedTitle string) (ExternalLinksResult, error) {
 	for _, pageData := range pages {
 		page, ok := pageData.(map[string]interface{})
 		if !ok {
 			continue
 		}
 		if _, missing := page["missing"]; missing {
-			return ExternalLinksResult{}, fmt.Errorf("page '%s' does not exist", args.Title)
+			return ExternalLinksResult{}, fmt.Errorf("page '%s' does not exist", requestedTitle)
 		}
 		title, links := extractExternalLinksFromPage(page)
 		return ExternalLinksResult{Title: title, Links: links, Count: len(links)}, nil
 	}
 	return ExternalLinksResult{Links: make([]ExternalLink, 0)}, nil
+}
+
+// extLinksJob is one unit of work for the external-links batch worker pool.
+type extLinksJob struct {
+	index int
+	title string
+}
+
+// extLinksPageResult carries one page's batch outcome plus its original index so
+// results can be reassembled in order.
+type extLinksPageResult struct {
+	index int
+	data  PageExternalLinks
 }
 
 // GetExternalLinksBatch retrieves external links from multiple wiki pages
@@ -96,84 +114,33 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 	}
 
 	// Limit batch size to prevent overwhelming the API
-	maxBatch := 10
+	const maxBatch = 10
 	if len(args.Titles) > maxBatch {
 		args.Titles = args.Titles[:maxBatch]
 	}
 
-	// Worker pool configuration
 	numWorkers := 4 // Limit concurrent API requests
 	if len(args.Titles) < numWorkers {
 		numWorkers = len(args.Titles)
 	}
 
-	// Job and result types
-	type job struct {
-		index int
-		title string
-	}
-	type pageResult struct {
-		index int
-		data  PageExternalLinks
-	}
+	jobs := make(chan extLinksJob, len(args.Titles))
+	results := make(chan extLinksPageResult, len(args.Titles))
 
-	jobs := make(chan job, len(args.Titles))
-	results := make(chan pageResult, len(args.Titles))
-
-	// Start workers
 	var wg sync.WaitGroup
 	for w := 0; w < numWorkers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := range jobs {
-				// Check context cancellation
-				select {
-				case <-ctx.Done():
-					results <- pageResult{
-						index: j.index,
-						data: PageExternalLinks{
-							Title: j.title,
-							Links: make([]ExternalLink, 0),
-							Error: "request canceled",
-						},
-					}
-					continue
-				default:
-				}
-
-				pageLinks, err := c.GetExternalLinks(ctx, GetExternalLinksArgs{Title: j.title})
-				if err != nil {
-					results <- pageResult{
-						index: j.index,
-						data: PageExternalLinks{
-							Title: j.title,
-							Links: make([]ExternalLink, 0),
-							Error: err.Error(),
-						},
-					}
-					continue
-				}
-
-				results <- pageResult{
-					index: j.index,
-					data: PageExternalLinks{
-						Title: pageLinks.Title,
-						Links: pageLinks.Links,
-						Count: pageLinks.Count,
-					},
-				}
-			}
+			c.runExtLinksWorker(ctx, jobs, results)
 		}()
 	}
 
-	// Send jobs to workers
 	for i, title := range args.Titles {
-		jobs <- job{index: i, title: title}
+		jobs <- extLinksJob{index: i, title: title}
 	}
 	close(jobs)
 
-	// Close results channel when all workers complete
 	go func() {
 		wg.Wait()
 		close(results)
@@ -182,7 +149,6 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 	// Collect results maintaining order
 	pageResults := make([]PageExternalLinks, len(args.Titles))
 	totalLinks := 0
-
 	for pr := range results {
 		pageResults[pr.index] = pr.data
 		totalLinks += pr.data.Count
@@ -192,6 +158,36 @@ func (c *Client) GetExternalLinksBatch(ctx context.Context, args GetExternalLink
 		Pages:      pageResults,
 		TotalLinks: totalLinks,
 	}, nil
+}
+
+// runExtLinksWorker drains jobs, fetching each page's external links and
+// emitting an ordered result (including error/cancellation outcomes).
+func (c *Client) runExtLinksWorker(ctx context.Context, jobs <-chan extLinksJob, results chan<- extLinksPageResult) {
+	for j := range jobs {
+		select {
+		case <-ctx.Done():
+			results <- extLinksPageResult{
+				index: j.index,
+				data:  PageExternalLinks{Title: j.title, Links: make([]ExternalLink, 0), Error: "request canceled"},
+			}
+			continue
+		default:
+		}
+
+		pageLinks, err := c.GetExternalLinks(ctx, GetExternalLinksArgs{Title: j.title})
+		if err != nil {
+			results <- extLinksPageResult{
+				index: j.index,
+				data:  PageExternalLinks{Title: j.title, Links: make([]ExternalLink, 0), Error: err.Error()},
+			}
+			continue
+		}
+
+		results <- extLinksPageResult{
+			index: j.index,
+			data:  PageExternalLinks{Title: pageLinks.Title, Links: pageLinks.Links, Count: pageLinks.Count},
+		}
+	}
 }
 
 // CheckLinks checks if URLs are accessible (broken link detection)
