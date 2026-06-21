@@ -318,7 +318,11 @@ func registerToolsAndResources(server *mcp.Server, client *wiki.Client, logger *
 			logger.Warn("Failed to create tool audit logger", "path", auditLogPath, "error", err)
 		} else {
 			registry.WithAuditLogger(toolAuditLogger)
-			cleanup = func() { toolAuditLogger.Close() }
+			cleanup = func() {
+				if err := toolAuditLogger.Close(); err != nil {
+					logger.Warn("Failed to close tool audit logger", "error", err)
+				}
+			}
 			logger.Info("Tool audit logging enabled", "path", auditLogPath)
 		}
 	}
