@@ -47,25 +47,7 @@ func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesRe
 		return ListPagesResult{}, err
 	}
 
-	limit := normalizeLimit(args.Limit, DefaultLimit, MaxLimit)
-
-	params := url.Values{}
-	params.Set("action", "query")
-	params.Set("list", "allpages")
-	params.Set("aplimit", strconv.Itoa(limit))
-
-	if args.Prefix != "" {
-		params.Set("apprefix", args.Prefix)
-	}
-
-	if args.Namespace >= 0 {
-		params.Set("apnamespace", strconv.Itoa(args.Namespace))
-	}
-
-	if args.ContinueFrom != "" {
-		params.Set("apcontinue", args.ContinueFrom)
-	}
-
+	params := buildListPagesParams(args)
 	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
 		return ListPagesResult{}, err
@@ -76,7 +58,46 @@ func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesRe
 		return ListPagesResult{}, fmt.Errorf("unexpected response format: missing query")
 	}
 
-	allpages := getSlice(query["allpages"])
+	pages := parsePageSummaries(getSlice(query["allpages"]))
+	result := ListPagesResult{
+		Pages:         pages,
+		ReturnedCount: len(pages),
+		TotalCount:    len(pages), // Deprecated: kept for backwards compatibility
+	}
+	applyContinuation(resp, &result)
+
+	// Try to get namespace statistics for total estimate (only when no prefix filter)
+	if args.Prefix == "" && args.Namespace >= 0 {
+		if estimate := c.getNamespacePageCount(ctx, args.Namespace); estimate > 0 {
+			result.TotalEstimate = estimate
+		}
+	}
+
+	return result, nil
+}
+
+// buildListPagesParams assembles the allpages query parameters from args.
+func buildListPagesParams(args ListPagesArgs) url.Values {
+	limit := normalizeLimit(args.Limit, DefaultLimit, MaxLimit)
+
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("list", "allpages")
+	params.Set("aplimit", strconv.Itoa(limit))
+	if args.Prefix != "" {
+		params.Set("apprefix", args.Prefix)
+	}
+	if args.Namespace >= 0 {
+		params.Set("apnamespace", strconv.Itoa(args.Namespace))
+	}
+	if args.ContinueFrom != "" {
+		params.Set("apcontinue", args.ContinueFrom)
+	}
+	return params
+}
+
+// parsePageSummaries converts allpages entries into PageSummary values.
+func parsePageSummaries(allpages []interface{}) []PageSummary {
 	pages := make([]PageSummary, 0, len(allpages))
 	for _, p := range allpages {
 		page := getMap(p)
@@ -88,29 +109,20 @@ func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesRe
 			Title:  getString(page["title"]),
 		})
 	}
+	return pages
+}
 
-	result := ListPagesResult{
-		Pages:         pages,
-		ReturnedCount: len(pages),
-		TotalCount:    len(pages), // Deprecated: kept for backwards compatibility
+// applyContinuation sets HasMore/ContinueFrom from the response's continue
+// block, if present.
+func applyContinuation(resp map[string]interface{}, result *ListPagesResult) {
+	cont := getMap(resp["continue"])
+	if cont == nil {
+		return
 	}
-
-	// Check for continuation
-	if cont := getMap(resp["continue"]); cont != nil {
-		if apcontinue := getString(cont["apcontinue"]); apcontinue != "" {
-			result.HasMore = true
-			result.ContinueFrom = apcontinue
-		}
+	if apcontinue := getString(cont["apcontinue"]); apcontinue != "" {
+		result.HasMore = true
+		result.ContinueFrom = apcontinue
 	}
-
-	// Try to get namespace statistics for total estimate (only when no prefix filter)
-	if args.Prefix == "" && args.Namespace >= 0 {
-		if estimate := c.getNamespacePageCount(ctx, args.Namespace); estimate > 0 {
-			result.TotalEstimate = estimate
-		}
-	}
-
-	return result, nil
 }
 
 // GetPageInfo gets metadata about a page
@@ -156,71 +168,57 @@ func (c *Client) GetPageInfo(ctx context.Context, args PageInfoArgs) (PageInfo, 
 		return PageInfo{}, fmt.Errorf("unexpected API response: missing 'pages' object")
 	}
 
+	info, found := firstPageInfo(pages, args.Title)
+	if !found {
+		return PageInfo{}, fmt.Errorf("page '%s' not found", normalizedTitle)
+	}
+	if info.Exists {
+		c.setCache(cacheKey, info, "page_info")
+	}
+	return info, nil
+}
+
+// firstPageInfo returns the PageInfo for the first valid page object in the
+// response map. found is false when no usable page object is present. A page
+// flagged missing yields a non-existent PageInfo carrying the requested title.
+func firstPageInfo(pages map[string]interface{}, requestedTitle string) (info PageInfo, found bool) {
 	for _, pageData := range pages {
 		page, ok := pageData.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		// Check if page exists
 		if _, missing := page["missing"]; missing {
-			return PageInfo{
-				Title:  args.Title,
-				Exists: false,
-			}, nil
+			return PageInfo{Title: requestedTitle, Exists: false}, true
 		}
+		return buildDetailedPageInfo(page), true
+	}
+	return PageInfo{}, false
+}
 
-		info := PageInfo{
-			Title:        getString(page["title"]),
-			PageID:       getInt(page["pageid"]),
-			Namespace:    getInt(page["ns"]),
-			ContentModel: getString(page["contentmodel"]),
-			PageLanguage: getString(page["pagelanguage"]),
-			Length:       getInt(page["length"]),
-			Touched:      getString(page["touched"]),
-			LastRevision: getInt(page["lastrevid"]),
-			Exists:       true,
-		}
-
-		// Categories
-		if cats, ok := page["categories"].([]interface{}); ok {
-			for _, cat := range cats {
-				c, ok := cat.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				info.Categories = append(info.Categories, getString(c["title"]))
-			}
-		}
-
-		// Links count
-		if links, ok := page["links"].([]interface{}); ok {
-			info.Links = len(links)
-		}
-
-		// Redirect
-		if _, isRedirect := page["redirect"]; isRedirect {
-			info.Redirect = true
-		}
-
-		// Protection
-		if protection, ok := page["protection"].([]interface{}); ok {
-			for _, p := range protection {
-				prot, ok := p.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				info.Protection = append(info.Protection, fmt.Sprintf("%s: %s", prot["type"], prot["level"]))
-			}
-		}
-
-		// Cache the result
-		c.setCache(cacheKey, info, "page_info")
-
-		return info, nil
+// buildDetailedPageInfo converts an existing page's metadata object into a
+// PageInfo, including categories, link count, redirect flag, and protection.
+func buildDetailedPageInfo(page map[string]interface{}) PageInfo {
+	info := PageInfo{
+		Title:        getString(page["title"]),
+		PageID:       getInt(page["pageid"]),
+		Namespace:    getInt(page["ns"]),
+		ContentModel: getString(page["contentmodel"]),
+		PageLanguage: getString(page["pagelanguage"]),
+		Length:       getInt(page["length"]),
+		Touched:      getString(page["touched"]),
+		LastRevision: getInt(page["lastrevid"]),
+		Exists:       true,
 	}
 
-	return PageInfo{}, fmt.Errorf("page '%s' not found", normalizedTitle)
+	info.Categories = extractCategoryTitles(page["categories"])
+	if links, ok := page["links"].([]interface{}); ok {
+		info.Links = len(links)
+	}
+	if _, isRedirect := page["redirect"]; isRedirect {
+		info.Redirect = true
+	}
+	info.Protection = extractProtectionEntries(page["protection"])
+	return info
 }
 
 // GetWikiInfo gets information about the wiki
@@ -322,46 +320,51 @@ func (c *Client) ResolveTitle(ctx context.Context, args ResolveTitleArgs) (Resol
 		return ResolveTitleResult{}, fmt.Errorf("search failed: %w", err)
 	}
 
-	// Calculate similarity and rank results
-	titleLower := strings.ToLower(args.Title)
-	for _, hit := range searchResult.Results {
-		hitLower := strings.ToLower(hit.Title)
+	result.Suggestions = rankTitleSuggestions(args.Title, searchResult.Results)
+	if len(result.Suggestions) > maxResults {
+		result.Suggestions = result.Suggestions[:maxResults]
+	}
+	applyResolveMessage(args.Title, &result)
+	return result, nil
+}
 
-		// Calculate simple similarity score
-		similarity := calculateSimilarity(titleLower, hitLower)
-
-		result.Suggestions = append(result.Suggestions, TitleSuggestion{
+// rankTitleSuggestions scores each search hit against the query title and
+// returns suggestions sorted by descending similarity.
+func rankTitleSuggestions(title string, hits []SearchHit) []TitleSuggestion {
+	titleLower := strings.ToLower(title)
+	suggestions := make([]TitleSuggestion, 0, len(hits))
+	for _, hit := range hits {
+		suggestions = append(suggestions, TitleSuggestion{
 			Title:      hit.Title,
 			PageID:     hit.PageID,
-			Similarity: similarity,
+			Similarity: calculateSimilarity(titleLower, strings.ToLower(hit.Title)),
 		})
 	}
 
 	// Sort by similarity (descending)
-	for i := 0; i < len(result.Suggestions)-1; i++ {
-		for j := i + 1; j < len(result.Suggestions); j++ {
-			if result.Suggestions[j].Similarity > result.Suggestions[i].Similarity {
-				result.Suggestions[i], result.Suggestions[j] = result.Suggestions[j], result.Suggestions[i]
+	for i := 0; i < len(suggestions)-1; i++ {
+		for j := i + 1; j < len(suggestions); j++ {
+			if suggestions[j].Similarity > suggestions[i].Similarity {
+				suggestions[i], suggestions[j] = suggestions[j], suggestions[i]
 			}
 		}
 	}
+	return suggestions
+}
 
-	// Limit results
-	if len(result.Suggestions) > maxResults {
-		result.Suggestions = result.Suggestions[:maxResults]
-	}
-
-	if len(result.Suggestions) > 0 && result.Suggestions[0].Similarity > 0.8 {
+// applyResolveMessage sets ResolvedTitle/PageID/Message based on the best
+// suggestion's similarity.
+func applyResolveMessage(title string, result *ResolveTitleResult) {
+	switch {
+	case len(result.Suggestions) > 0 && result.Suggestions[0].Similarity > 0.8:
 		result.ResolvedTitle = result.Suggestions[0].Title
 		result.PageID = result.Suggestions[0].PageID
 		result.Message = fmt.Sprintf("Did you mean '%s'?", result.Suggestions[0].Title)
-	} else if len(result.Suggestions) > 0 {
-		result.Message = fmt.Sprintf("Page '%s' not found. Similar pages found.", args.Title)
-	} else {
-		result.Message = fmt.Sprintf("Page '%s' not found. No similar pages.", args.Title)
+	case len(result.Suggestions) > 0:
+		result.Message = fmt.Sprintf("Page '%s' not found. Similar pages found.", title)
+	default:
+		result.Message = fmt.Sprintf("Page '%s' not found. No similar pages.", title)
 	}
-
-	return result, nil
 }
 
 // calculateSimilarity calculates string similarity (Jaccard-like)
