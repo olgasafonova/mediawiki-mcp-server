@@ -10,38 +10,7 @@ import (
 
 // EditPage creates or edits a page
 func (c *Client) EditPage(ctx context.Context, args EditPageArgs) (EditResult, error) {
-	if args.Title == "" {
-		return EditResult{}, &ValidationError{
-			Field:   "title",
-			Message: "page title is required",
-			Suggestion: `Provide a title for the page you want to edit.
-
-Example:
-  Title: "My Page"
-  Title: "Category:My Category"
-  Title: "User:Username/Subpage"`,
-		}
-	}
-	if args.Content == "" {
-		return EditResult{}, &ValidationError{
-			Field:   "content",
-			Message: "page content is required",
-			Suggestion: `Provide the wikitext content for the page.
-
-Example:
-  Content: "== Section ==\nThis is the page content."
-
-If you want to clear a page, use a single space or redirect instead.`,
-		}
-	}
-
-	// Validate content size
-	if err := ValidateContentSize(args.Content, args.Title, MaxEditSize); err != nil {
-		return EditResult{}, err
-	}
-
-	// Validate content for dangerous patterns
-	if err := ValidateWikitextContent(args.Content, args.Title); err != nil {
+	if err := validateEditArgs(args); err != nil {
 		return EditResult{}, err
 	}
 
@@ -54,6 +23,38 @@ If you want to clear a page, use a single space or redirect instead.`,
 		return EditResult{}, err
 	}
 	return editResult, nil
+}
+
+// validateEditArgs checks required fields and content safety for an edit.
+func validateEditArgs(args EditPageArgs) error {
+	if args.Title == "" {
+		return &ValidationError{
+			Field:   "title",
+			Message: "page title is required",
+			Suggestion: `Provide a title for the page you want to edit.
+
+Example:
+  Title: "My Page"
+  Title: "Category:My Category"
+  Title: "User:Username/Subpage"`,
+		}
+	}
+	if args.Content == "" {
+		return &ValidationError{
+			Field:   "content",
+			Message: "page content is required",
+			Suggestion: `Provide the wikitext content for the page.
+
+Example:
+  Content: "== Section ==\nThis is the page content."
+
+If you want to clear a page, use a single space or redirect instead.`,
+		}
+	}
+	if err := ValidateContentSize(args.Content, args.Title, MaxEditSize); err != nil {
+		return err
+	}
+	return ValidateWikitextContent(args.Content, args.Title)
 }
 
 // performEdit executes a single edit attempt with a fresh CSRF token.
@@ -121,29 +122,7 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 	}
 
 	if status := getString(edit["result"]); status != "Success" {
-		msg := fmt.Sprintf("Edit failed: %s", status)
-		if info := getString(edit["info"]); info != "" {
-			msg += fmt.Sprintf(" - %s", info)
-		}
-		var captchaType, captchaID, captchaQuestion string
-		if captcha := getMap(edit["captcha"]); captcha != nil {
-			captchaType = getString(captcha["type"])
-			captchaID = getString(captcha["id"])
-			captchaQuestion = getString(captcha["question"])
-			msg += fmt.Sprintf(" (CAPTCHA: %s)", captchaType)
-		}
-		c.logAudit(c.buildAuditEntry(
-			AuditOpEdit, args.Title, args.Content, args.Summary,
-			args.Minor, args.Bot, false, 0, 0, msg,
-		))
-		return EditResult{
-			Success:         false,
-			Title:           args.Title,
-			Message:         msg,
-			CaptchaType:     captchaType,
-			CaptchaID:       captchaID,
-			CaptchaQuestion: captchaQuestion,
-		}, nil
+		return c.failedEditResult(args, edit, status), nil
 	}
 
 	editResult := editResultFromAPI(edit)
@@ -156,6 +135,34 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 		args.Minor, args.Bot, true, editResult.PageID, editResult.RevisionID, "",
 	))
 	return editResult, nil
+}
+
+// failedEditResult builds the EditResult (and audit entry) for a non-Success
+// edit API response, including any CAPTCHA challenge details.
+func (c *Client) failedEditResult(args EditPageArgs, edit map[string]interface{}, status string) EditResult {
+	msg := fmt.Sprintf("Edit failed: %s", status)
+	if info := getString(edit["info"]); info != "" {
+		msg += fmt.Sprintf(" - %s", info)
+	}
+	var captchaType, captchaID, captchaQuestion string
+	if captcha := getMap(edit["captcha"]); captcha != nil {
+		captchaType = getString(captcha["type"])
+		captchaID = getString(captcha["id"])
+		captchaQuestion = getString(captcha["question"])
+		msg += fmt.Sprintf(" (CAPTCHA: %s)", captchaType)
+	}
+	c.logAudit(c.buildAuditEntry(
+		AuditOpEdit, args.Title, args.Content, args.Summary,
+		args.Minor, args.Bot, false, 0, 0, msg,
+	))
+	return EditResult{
+		Success:         false,
+		Title:           args.Title,
+		Message:         msg,
+		CaptchaType:     captchaType,
+		CaptchaID:       captchaID,
+		CaptchaQuestion: captchaQuestion,
+	}
 }
 
 // FindReplace finds and replaces text in a wiki page
@@ -202,26 +209,7 @@ func applyFindReplaceToLine(line string, lineNum int, op findReplaceOp, replacem
 		return out
 	}
 
-	var newLine string
-	var replaceCount int
-	if op.all {
-		newLine = op.re.ReplaceAllString(line, op.replace)
-		if newLine != line {
-			replaceCount = len(matches)
-		}
-	} else {
-		replaced := false
-		newLine = op.re.ReplaceAllStringFunc(line, func(match string) string {
-			if !replaced {
-				replaced = true
-				return op.replace
-			}
-			return match
-		})
-		if replaced {
-			replaceCount = 1
-		}
-	}
+	newLine, replaceCount := op.rewriteLine(line, len(matches))
 	if newLine == line {
 		return out
 	}
@@ -234,6 +222,32 @@ func applyFindReplaceToLine(line string, lineNum int, op findReplaceOp, replacem
 		Context: extractContext(line, matches[0][0], matches[0][1], 40),
 	}
 	return out
+}
+
+// rewriteLine performs the replacement on a line and reports how many
+// occurrences were replaced. In all-mode every match is replaced; otherwise
+// only the first match is.
+func (op findReplaceOp) rewriteLine(line string, matchCount int) (newLine string, replaceCount int) {
+	if op.all {
+		newLine = op.re.ReplaceAllString(line, op.replace)
+		if newLine != line {
+			replaceCount = matchCount
+		}
+		return newLine, replaceCount
+	}
+
+	replaced := false
+	newLine = op.re.ReplaceAllStringFunc(line, func(match string) string {
+		if !replaced {
+			replaced = true
+			return op.replace
+		}
+		return match
+	})
+	if replaced {
+		replaceCount = 1
+	}
+	return newLine, replaceCount
 }
 
 // applyFindReplaceToContent runs the line-by-line replacement on the page content.
@@ -252,19 +266,27 @@ func applyFindReplaceToContent(content string, op findReplaceOp) (newContent str
 	return strings.Join(newLines, "\n"), changes, matchCount, replaceCount
 }
 
+// findReplaceSaveInput bundles everything saveFindReplaceEdit needs to write a
+// find/replace edit back to the wiki.
+type findReplaceSaveInput struct {
+	page       PageContent
+	newContent string
+	args       FindReplaceArgs
+}
+
 // saveFindReplaceEdit writes the rewritten content back to the wiki and records
 // the resulting revision metadata on the result.
-func (c *Client) saveFindReplaceEdit(ctx context.Context, page PageContent, newContent string, args FindReplaceArgs, result *FindReplaceResult) error {
-	summary := args.Summary
+func (c *Client) saveFindReplaceEdit(ctx context.Context, in findReplaceSaveInput, result *FindReplaceResult) error {
+	summary := in.args.Summary
 	if summary == "" {
-		summary = fmt.Sprintf("Replaced '%s' with '%s'", truncateString(args.Find, 30), truncateString(args.Replace, 30))
+		summary = fmt.Sprintf("Replaced '%s' with '%s'", truncateString(in.args.Find, 30), truncateString(in.args.Replace, 30))
 	}
-	oldRevision := page.Revision
+	oldRevision := in.page.Revision
 	editResult, err := c.EditPage(ctx, EditPageArgs{
-		Title:   page.Title,
-		Content: newContent,
+		Title:   in.page.Title,
+		Content: in.newContent,
 		Summary: summary,
-		Minor:   args.Minor,
+		Minor:   in.args.Minor,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to save changes: %w", err)
@@ -272,7 +294,7 @@ func (c *Client) saveFindReplaceEdit(ctx context.Context, page PageContent, newC
 	result.Success = editResult.Success
 	result.RevisionID = editResult.RevisionID
 	result.Message = fmt.Sprintf("Replaced %d occurrence(s)", result.ReplaceCount)
-	result.Revision, result.Undo = c.buildEditRevisionInfo(page.Title, oldRevision, editResult.RevisionID)
+	result.Revision, result.Undo = c.buildEditRevisionInfo(in.page.Title, oldRevision, editResult.RevisionID)
 	return nil
 }
 
@@ -314,7 +336,7 @@ func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindRep
 		return result, nil
 	}
 
-	if err := c.saveFindReplaceEdit(ctx, page, newContent, args, &result); err != nil {
+	if err := c.saveFindReplaceEdit(ctx, findReplaceSaveInput{page: page, newContent: newContent, args: args}, &result); err != nil {
 		return FindReplaceResult{}, err
 	}
 	return result, nil
@@ -436,23 +458,30 @@ func (c *Client) BulkReplace(ctx context.Context, args BulkReplaceArgs) (BulkRep
 		Preview: args.Preview,
 		Results: make([]PageReplaceResult, 0, len(pagesToProcess)),
 	}
-
 	for _, pageTitle := range pagesToProcess {
-		pageResult := c.processBulkReplacePage(ctx, pageTitle, args, summary)
-		if pageResult.Error == "" && pageResult.ReplaceCount > 0 {
-			result.PagesModified++
-			result.TotalChanges += pageResult.ReplaceCount
-		}
-		result.Results = append(result.Results, pageResult)
+		result.add(c.processBulkReplacePage(ctx, pageTitle, args, summary))
 	}
 
 	result.PagesProcessed = len(result.Results)
-	if args.Preview {
-		result.Message = fmt.Sprintf("Preview: %d pages would be modified with %d total changes", result.PagesModified, result.TotalChanges)
-	} else {
-		result.Message = fmt.Sprintf("Modified %d pages with %d total changes", result.PagesModified, result.TotalChanges)
-	}
+	result.Message = bulkReplaceMessage(args.Preview, result.PagesModified, result.TotalChanges)
 	return result, nil
+}
+
+// add records one page result, updating modified/total counters.
+func (r *BulkReplaceResult) add(pageResult PageReplaceResult) {
+	if pageResult.Error == "" && pageResult.ReplaceCount > 0 {
+		r.PagesModified++
+		r.TotalChanges += pageResult.ReplaceCount
+	}
+	r.Results = append(r.Results, pageResult)
+}
+
+// bulkReplaceMessage renders the preview/applied summary line.
+func bulkReplaceMessage(preview bool, pagesModified, totalChanges int) string {
+	if preview {
+		return fmt.Sprintf("Preview: %d pages would be modified with %d total changes", pagesModified, totalChanges)
+	}
+	return fmt.Sprintf("Modified %d pages with %d total changes", pagesModified, totalChanges)
 }
 
 // truncateString truncates a string for display
