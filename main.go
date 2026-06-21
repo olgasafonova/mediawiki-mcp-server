@@ -320,7 +320,18 @@ Read operations work without authentication.`,
 	// Choose transport based on flags
 	if *httpAddr != "" {
 		// HTTP transport mode (for ChatGPT, n8n, and remote clients)
-		runHTTPServer(server, logger, *httpAddr, authToken, *allowedOrigins, *rateLimit, *trustedProxies, config.BaseURL, client, serverCard)
+		runHTTPServer(httpServerConfig{
+			Server:         server,
+			Logger:         logger,
+			Addr:           *httpAddr,
+			AuthToken:      authToken,
+			Origins:        *allowedOrigins,
+			RateLimit:      *rateLimit,
+			TrustedProxies: *trustedProxies,
+			WikiURL:        config.BaseURL,
+			Client:         client,
+			Card:           serverCard,
+		})
 	} else {
 		// stdio transport mode (default, for Claude Desktop, Cursor, etc.)
 		logger.Info("Starting MediaWiki MCP Server (stdio mode)",

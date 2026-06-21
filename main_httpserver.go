@@ -23,70 +23,117 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// httpServerConfig groups the configuration needed to run the HTTP transport.
+// Grouping these into one struct keeps runHTTPServer's signature small.
+type httpServerConfig struct {
+	Server         *mcp.Server
+	Logger         *slog.Logger
+	Addr           string
+	AuthToken      string
+	Origins        string
+	RateLimit      int
+	TrustedProxies string
+	WikiURL        string
+	Client         *wiki.Client
+	Card           *servercard.ServerCard
+}
+
+// splitCSV parses a comma-separated value into a trimmed, non-empty list.
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 // runHTTPServer starts the MCP server with HTTP transport and graceful shutdown
-func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, origins string, rateLimit int, trustedProxies, wikiURL string, client *wiki.Client, card *servercard.ServerCard) {
-	// Parse allowed origins
-	var allowedOriginsList []string
-	if origins != "" {
-		for _, o := range strings.Split(origins, ",") {
-			o = strings.TrimSpace(o)
-			if o != "" {
-				allowedOriginsList = append(allowedOriginsList, o)
-			}
-		}
+func runHTTPServer(cfg httpServerConfig) {
+	allowedOriginsList := splitCSV(cfg.Origins)
+
+	securedHandler := newSecuredMCPHandler(cfg, allowedOriginsList)
+	mux := buildHTTPMux(cfg, securedHandler)
+	httpServer := &http.Server{
+		Addr:         cfg.Addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
-	// Parse trusted proxies
-	var trustedProxiesList []string
-	if trustedProxies != "" {
-		for _, p := range strings.Split(trustedProxies, ",") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				trustedProxiesList = append(trustedProxiesList, p)
-			}
-		}
-	}
+	logStartup(cfg, allowedOriginsList)
+	warmCacheAsync(cfg.Client, cfg.Logger)
+	logSecurityWarnings(cfg.Logger, cfg.AuthToken, cfg.Addr)
 
-	// Create the Streamable HTTP handler
+	serveUntilSignal(httpServer, cfg.Logger)
+	shutdownServer(httpServer, securedHandler, cfg.Client, cfg.Logger)
+}
+
+// newSecuredMCPHandler builds the Streamable HTTP MCP handler wrapped in the
+// security middleware.
+func newSecuredMCPHandler(cfg httpServerConfig, allowedOrigins []string) *SecurityMiddleware {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		return server
+		return cfg.Server
 	}, nil)
 
-	// Wrap with security middleware
 	securityConfig := SecurityConfig{
-		BearerToken:    authToken,
-		AllowedOrigins: allowedOriginsList,
-		RateLimit:      rateLimit,
-		TrustedProxies: trustedProxiesList,
+		BearerToken:    cfg.AuthToken,
+		AllowedOrigins: allowedOrigins,
+		RateLimit:      cfg.RateLimit,
+		TrustedProxies: splitCSV(cfg.TrustedProxies),
 	}
-	securedHandler := NewSecurityMiddleware(mcpHandler, logger, securityConfig)
+	return NewSecurityMiddleware(mcpHandler, cfg.Logger, securityConfig)
+}
 
-	// Create mux for routing health checks separately from MCP
+// buildHTTPMux wires the health, readiness, metrics, server-card, tools, status,
+// and MCP routes onto a fresh mux.
+func buildHTTPMux(cfg httpServerConfig, securedHandler http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Health endpoint (no auth required - for load balancers and monitoring)
-	// This is a simple liveness check that doesn't verify wiki connectivity
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady(cfg.WikiURL, cfg.Client))
+	mux.Handle("/metrics", promhttp.Handler())
+
+	cfg.Card.Remotes = []servercard.Remote{{
+		Type:                      "streamable-http",
+		URL:                       "/",
+		SupportedProtocolVersions: []string{"2025-06-18"},
+	}}
+	mux.Handle(servercard.WellKnownPath, servercard.Handler(cfg.Card))
+
+	mux.HandleFunc("/tools", handleTools(cfg.Logger))
+	mux.HandleFunc("/status", handleStatus(cfg.Client, cfg.Logger))
+	mux.Handle("/", securedHandler)
+	return mux
+}
+
+// handleHealth is a simple liveness check that does not verify wiki connectivity
+// (no auth required - for load balancers and monitoring).
+func handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"status":"healthy","server":"%s","version":"%s"}`, ServerName, ServerVersion)
+}
+
+// handleReady returns a readiness handler that verifies actual wiki
+// connectivity with a short timeout.
+func handleReady(wikiURL string, client *wiki.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, `{"status":"healthy","server":"%s","version":"%s"}`, ServerName, ServerVersion)
-	})
 
-	// Readiness endpoint - verifies actual wiki connectivity
-	// Use short timeout to avoid blocking health checks
-	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-
-		// Check if wiki URL is configured
 		if wikiURL == "" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = fmt.Fprintf(w, `{"status":"not_ready","error":"wiki_url_not_configured"}`)
 			return
 		}
 
-		// Check actual wiki connectivity with timeout
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
@@ -101,25 +148,16 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintf(w, `{"status":"ready","wiki_url":"%s","site_name":"%s","generator":"%s","authenticated":%t,"response_time_ms":%d}`, // #nosec G705 -- health endpoint returns server config, not user input
 			health.WikiURL, health.SiteName, health.Generator, health.Authenticated, health.ResponseTime.Milliseconds())
-	})
+	}
+}
 
-	// Prometheus metrics endpoint (no auth required - for monitoring systems)
-	mux.Handle("/metrics", promhttp.Handler())
-
-	// SEP-2127 Server Card endpoint (no auth required - for pre-connect discovery)
-	card.Remotes = []servercard.Remote{{
-		Type:                      "streamable-http",
-		URL:                       "/",
-		SupportedProtocolVersions: []string{"2025-06-18"},
-	}}
-	mux.Handle(servercard.WellKnownPath, servercard.Handler(card))
-
-	// Tools discovery endpoint (no auth required - for tool introspection)
-	mux.HandleFunc("/tools", func(w http.ResponseWriter, r *http.Request) {
+// handleTools returns a handler that lists available tools grouped by category
+// (no auth required - for tool introspection).
+func handleTools(logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "public, max-age=3600") // Cache for 1 hour
 
-		// Group tools by category
 		toolsByCategory := make(map[string][]map[string]interface{})
 		for _, tool := range tools.AllTools {
 			toolInfo := map[string]interface{}{
@@ -139,14 +177,16 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 			"tool_count": len(tools.AllTools),
 			"categories": toolsByCategory,
 		}
-
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			logger.Error("Failed to encode tools response", "error", err)
 		}
-	})
+	}
+}
 
-	// Circuit breaker status endpoint (no auth - for monitoring)
-	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+// handleStatus returns a handler exposing circuit-breaker and dedup status
+// (no auth - for monitoring).
+func handleStatus(client *wiki.Client, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 
@@ -165,36 +205,28 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 				"inflight_requests": dedupStats,
 			},
 		}
-
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			logger.Error("Failed to encode status response", "error", err)
 		}
-	})
-
-	// All other routes go through secured MCP handler
-	mux.Handle("/", securedHandler)
-
-	// Create HTTP server with timeouts
-	httpServer := &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
 	}
+}
 
-	// Log startup info
-	logger.Info("Starting MediaWiki MCP Server (HTTP mode)",
+// logStartup emits the server startup info line.
+func logStartup(cfg httpServerConfig, allowedOrigins []string) {
+	cfg.Logger.Info("Starting MediaWiki MCP Server (HTTP mode)",
 		"name", ServerName,
 		"version", ServerVersion,
-		"address", addr,
-		"wiki_url", wikiURL,
-		"auth_enabled", authToken != "",
-		"rate_limit", rateLimit,
-		"allowed_origins", allowedOriginsList,
+		"address", cfg.Addr,
+		"wiki_url", cfg.WikiURL,
+		"auth_enabled", cfg.AuthToken != "",
+		"rate_limit", cfg.RateLimit,
+		"allowed_origins", allowedOrigins,
 	)
+}
 
-	// Warm cache in background (don't block startup)
+// warmCacheAsync warms the client cache in the background without blocking
+// startup.
+func warmCacheAsync(client *wiki.Client, logger *slog.Logger) {
 	go func() {
 		warmCtx, warmCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer warmCancel()
@@ -204,20 +236,24 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 			logger.Info("Cache warming completed")
 		}
 	}()
+}
 
-	// Security warnings
+// logSecurityWarnings warns about insecure configurations at startup.
+func logSecurityWarnings(logger *slog.Logger, authToken, addr string) {
 	if authToken == "" {
 		logger.Warn("HTTP server running WITHOUT authentication. Set -token flag or MCP_AUTH_TOKEN env var for production use.")
 	}
 	if !strings.HasPrefix(addr, "127.0.0.1") && !strings.HasPrefix(addr, "localhost") {
 		logger.Warn("Server binding to external interface. Ensure you're behind HTTPS proxy in production.")
 	}
+}
 
-	// Set up signal handling for graceful shutdown
+// serveUntilSignal starts the HTTP server and blocks until a shutdown signal or
+// a fatal server error arrives.
+func serveUntilSignal(httpServer *http.Server, logger *slog.Logger) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start server in a goroutine
 	serverErrors := make(chan error, 1)
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -226,28 +262,27 @@ func runHTTPServer(server *mcp.Server, logger *slog.Logger, addr, authToken, ori
 		close(serverErrors)
 	}()
 
-	// Wait for shutdown signal or server error
 	select {
 	case err := <-serverErrors:
 		log.Fatalf("HTTP server error: %v", err)
 	case sig := <-sigChan:
 		logger.Info("Shutdown signal received", "signal", sig.String())
 	}
+}
 
-	// Graceful shutdown with timeout
+// shutdownServer performs the graceful shutdown sequence and resource cleanup.
+func shutdownServer(httpServer *http.Server, securedHandler *SecurityMiddleware, client *wiki.Client, logger *slog.Logger) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	logger.Info("Initiating graceful shutdown...")
 
-	// Stop accepting new connections and wait for existing requests
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown error", "error", err)
 	} else {
 		logger.Info("HTTP server stopped gracefully")
 	}
 
-	// Clean up resources
 	if securedHandler.rateLimiter != nil {
 		securedHandler.rateLimiter.Close()
 		logger.Info("Rate limiter stopped")
@@ -344,33 +379,53 @@ func registerResources(server *mcp.Server, client *wiki.Client, logger *slog.Log
 		Name:        "Wiki Page",
 		Description: "Access MediaWiki page content directly. Use URL-encoded page titles (e.g., 'Main_Page' or 'Category%3AHelp').",
 		MIMEType:    "text/plain",
-	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("Panic recovered in resource handler",
-					"panic", r,
-					"stack", string(debug.Stack()))
-			}
-		}()
+	}, makePageResourceHandler(client, logger))
 
-		// Extract page title from URI
-		// URI format: wiki://page/{title}
+	// Resource template for wiki categories
+	// URI format: wiki://category/{name}
+	server.AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "wiki://category/{name}",
+		Name:        "Wiki Category",
+		Description: "List pages in a MediaWiki category. Use URL-encoded category names without 'Category:' prefix.",
+		MIMEType:    "application/json",
+	}, makeCategoryResourceHandler(client, logger))
+}
+
+// recoverResourceHandler logs a recovered panic from a resource handler.
+func recoverResourceHandler(logger *slog.Logger, context string) {
+	if r := recover(); r != nil {
+		logger.Error("Panic recovered in "+context,
+			"panic", r,
+			"stack", string(debug.Stack()))
+	}
+}
+
+// decodeResourceTitle validates the URI prefix and returns the decoded segment.
+func decodeResourceTitle(uri, prefix, label string) (string, error) {
+	if !strings.HasPrefix(uri, prefix) {
+		return "", mcp.ResourceNotFoundError(uri)
+	}
+	decoded, err := url.PathUnescape(strings.TrimPrefix(uri, prefix))
+	if err != nil {
+		return "", fmt.Errorf("invalid %s encoding: %w", label, err)
+	}
+	if decoded == "" {
+		return "", fmt.Errorf("%s cannot be empty", label)
+	}
+	return decoded, nil
+}
+
+// makePageResourceHandler returns the wiki://page/{title} resource handler.
+func makePageResourceHandler(client *wiki.Client, logger *slog.Logger) func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		defer recoverResourceHandler(logger, "resource handler")
+
 		uri := req.Params.URI
-		if !strings.HasPrefix(uri, "wiki://page/") {
-			return nil, mcp.ResourceNotFoundError(uri)
-		}
-
-		encodedTitle := strings.TrimPrefix(uri, "wiki://page/")
-		title, err := url.PathUnescape(encodedTitle)
+		title, err := decodeResourceTitle(uri, "wiki://page/", "page title")
 		if err != nil {
-			return nil, fmt.Errorf("invalid page title encoding: %w", err)
+			return nil, err
 		}
 
-		if title == "" {
-			return nil, fmt.Errorf("page title cannot be empty")
-		}
-
-		// Fetch page content (wikitext format for better context)
 		result, err := client.GetPage(ctx, wiki.GetPageArgs{
 			Title:  title,
 			Format: "wikitext",
@@ -397,37 +452,18 @@ func registerResources(server *mcp.Server, client *wiki.Client, logger *slog.Log
 				Text:     result.Content,
 			}},
 		}, nil
-	})
+	}
+}
 
-	// Resource template for wiki categories
-	// URI format: wiki://category/{name}
-	server.AddResourceTemplate(&mcp.ResourceTemplate{
-		URITemplate: "wiki://category/{name}",
-		Name:        "Wiki Category",
-		Description: "List pages in a MediaWiki category. Use URL-encoded category names without 'Category:' prefix.",
-		MIMEType:    "application/json",
-	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("Panic recovered in category resource handler",
-					"panic", r,
-					"stack", string(debug.Stack()))
-			}
-		}()
+// makeCategoryResourceHandler returns the wiki://category/{name} resource handler.
+func makeCategoryResourceHandler(client *wiki.Client, logger *slog.Logger) func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		defer recoverResourceHandler(logger, "category resource handler")
 
 		uri := req.Params.URI
-		if !strings.HasPrefix(uri, "wiki://category/") {
-			return nil, mcp.ResourceNotFoundError(uri)
-		}
-
-		encodedName := strings.TrimPrefix(uri, "wiki://category/")
-		name, err := url.PathUnescape(encodedName)
+		name, err := decodeResourceTitle(uri, "wiki://category/", "category name")
 		if err != nil {
-			return nil, fmt.Errorf("invalid category name encoding: %w", err)
-		}
-
-		if name == "" {
-			return nil, fmt.Errorf("category name cannot be empty")
+			return nil, err
 		}
 
 		result, err := client.GetCategoryMembers(ctx, wiki.CategoryMembersArgs{
@@ -467,5 +503,5 @@ func registerResources(server *mcp.Server, client *wiki.Client, logger *slog.Log
 				Text:     content.String(),
 			}},
 		}, nil
-	})
+	}
 }
