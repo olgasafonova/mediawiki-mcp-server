@@ -193,51 +193,63 @@ func findCommonTerms(termsA, termsB []string, limit int) []string {
 
 // extractContextsForTerm extracts lines containing the search term
 func extractContextsForTerm(content, term string, maxContexts int) []string {
-	lines := strings.Split(content, "\n")
 	termLower := strings.ToLower(term)
 	contexts := make([]string, 0)
 
-	for _, line := range lines {
-		if strings.Contains(strings.ToLower(line), termLower) {
-			// Clean up the line
-			cleaned := strings.TrimSpace(line)
-			if cleaned != "" && len(cleaned) > 10 {
-				// Truncate long lines
-				if len(cleaned) > 200 {
-					cleaned = cleaned[:200] + "..."
-				}
-				contexts = append(contexts, cleaned)
-				if maxContexts > 0 && len(contexts) >= maxContexts {
-					break
-				}
-			}
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.Contains(strings.ToLower(line), termLower) {
+			continue
+		}
+		cleaned, ok := cleanContextLine(line)
+		if !ok {
+			continue
+		}
+		contexts = append(contexts, cleaned)
+		if maxContexts > 0 && len(contexts) >= maxContexts {
+			break
 		}
 	}
 
 	return contexts
 }
 
-// extractTopTerms gets the most frequent significant terms
-func extractTopTerms(content string, limit int) []string {
-	// Remove wiki markup
-	plainText := removeWikiMarkup(content)
-	plainText = strings.ToLower(plainText)
+// cleanContextLine trims a context line and truncates it to 200 chars. ok is
+// false for blank or too-short (<= 10 chars) lines, which are skipped.
+func cleanContextLine(line string) (string, bool) {
+	cleaned := strings.TrimSpace(line)
+	if cleaned == "" || len(cleaned) <= 10 {
+		return "", false
+	}
+	if len(cleaned) > 200 {
+		cleaned = cleaned[:200] + "..."
+	}
+	return cleaned, true
+}
 
-	// Tokenize
-	words := strings.FieldsFunc(plainText, func(r rune) bool {
+// isSignificantTerm reports whether a token should count toward term
+// frequency: at least 3 chars, not a stopword, and not purely numeric.
+func isSignificantTerm(word string) bool {
+	return len(word) >= 3 && !stopwords[word] && !isNumeric(word)
+}
+
+// tokenizePlainText lowercases content, strips wiki markup, and splits into
+// word/digit tokens.
+func tokenizePlainText(content string) []string {
+	plainText := strings.ToLower(removeWikiMarkup(content))
+	return strings.FieldsFunc(plainText, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
+}
 
-	// Count frequencies
+// extractTopTerms gets the most frequent significant terms
+func extractTopTerms(content string, limit int) []string {
 	freq := make(map[string]int)
-	for _, word := range words {
-		if len(word) < 3 || stopwords[word] || isNumeric(word) {
-			continue
+	for _, word := range tokenizePlainText(content) {
+		if isSignificantTerm(word) {
+			freq[word]++
 		}
-		freq[word]++
 	}
 
-	// Sort by frequency
 	type termFreq struct {
 		term  string
 		count int
@@ -250,7 +262,6 @@ func extractTopTerms(content string, limit int) []string {
 		return ranked[i].count > ranked[j].count
 	})
 
-	// Take top N
 	result := make([]string, 0, limit)
 	for i := 0; i < len(ranked) && i < limit; i++ {
 		result = append(result, ranked[i].term)
@@ -287,23 +298,26 @@ type ExtractedValue struct {
 // extractValues finds typed values in content using patterns
 func extractValues(content string) []ExtractedValue {
 	values := make([]ExtractedValue, 0)
+	for _, line := range strings.Split(content, "\n") {
+		values = append(values, extractValuesFromLine(line)...)
+	}
+	return values
+}
 
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		for _, vp := range valuePatterns {
-			matches := vp.Pattern.FindAllStringSubmatch(line, -1)
-			for _, match := range matches {
-				if len(match) >= 2 {
-					fullMatch := match[0]
-					values = append(values, ExtractedValue{
-						Type:    vp.Name,
-						Value:   fullMatch,
-						Context: strings.TrimSpace(line),
-					})
-				}
+// extractValuesFromLine applies every value pattern to one line.
+func extractValuesFromLine(line string) []ExtractedValue {
+	var values []ExtractedValue
+	trimmed := strings.TrimSpace(line)
+	for _, vp := range valuePatterns {
+		for _, match := range vp.Pattern.FindAllStringSubmatch(line, -1) {
+			if len(match) >= 2 {
+				values = append(values, ExtractedValue{
+					Type:    vp.Name,
+					Value:   match[0],
+					Context: trimmed,
+				})
 			}
 		}
 	}
-
 	return values
 }

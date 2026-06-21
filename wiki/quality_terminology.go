@@ -37,27 +37,37 @@ func (c *Client) CheckTerminology(ctx context.Context, args CheckTerminologyArgs
 		Pages:        make([]PageTerminologyResult, 0, len(pagesToCheck)),
 	}
 
-	// Determine if code blocks should be excluded (default: true)
-	excludeCode := true
-	if args.ExcludeCodeBlocks != nil {
-		excludeCode = *args.ExcludeCodeBlocks
+	excludeCode := excludeCodeBlocks(args.ExcludeCodeBlocks)
+	if err := c.checkPagesTerminology(ctx, pagesToCheck, glossary, excludeCode, &result); err != nil {
+		return result, err
 	}
 
-	// Check each page
-	for _, pageTitle := range pagesToCheck {
-		// Check for context cancellation
+	result.PagesChecked = len(result.Pages)
+	return result, nil
+}
+
+// excludeCodeBlocks resolves the exclude-code-blocks flag, defaulting to true.
+func excludeCodeBlocks(flag *bool) bool {
+	if flag != nil {
+		return *flag
+	}
+	return true
+}
+
+// checkPagesTerminology checks each page against the glossary, accumulating
+// results. It aborts early on context cancellation.
+func (c *Client) checkPagesTerminology(ctx context.Context, pages []string, glossary []GlossaryTerm, excludeCode bool, result *CheckTerminologyResult) error {
+	for _, pageTitle := range pages {
 		select {
 		case <-ctx.Done():
-			return result, ctx.Err()
+			return ctx.Err()
 		default:
 		}
 		pageResult := c.checkPageTerminology(ctx, pageTitle, glossary, excludeCode)
 		result.Pages = append(result.Pages, pageResult)
 		result.IssuesFound += pageResult.IssueCount
 	}
-
-	result.PagesChecked = len(result.Pages)
-	return result, nil
+	return nil
 }
 
 // loadGlossary parses a wiki table to extract glossary terms
@@ -103,14 +113,22 @@ func parseWikiTableGlossary(content string) []GlossaryTerm {
 		if len(table) < 2 {
 			continue
 		}
-		for _, row := range strings.Split(table[1], "|-") {
-			row = strings.TrimSpace(row)
-			if row == "" || strings.HasPrefix(row, "!") {
-				continue
-			}
-			if term, ok := glossaryTermFromCells(parseTableRow(row)); ok {
-				terms = append(terms, term)
-			}
+		terms = append(terms, parseGlossaryTableRows(table[1])...)
+	}
+	return terms
+}
+
+// parseGlossaryTableRows parses the rows of a single glossary table body into
+// glossary terms.
+func parseGlossaryTableRows(tableBody string) []GlossaryTerm {
+	var terms []GlossaryTerm
+	for _, row := range strings.Split(tableBody, "|-") {
+		row = strings.TrimSpace(row)
+		if row == "" || strings.HasPrefix(row, "!") {
+			continue
+		}
+		if term, ok := glossaryTermFromCells(parseTableRow(row)); ok {
+			terms = append(terms, term)
 		}
 	}
 	return terms
@@ -119,27 +137,25 @@ func parseWikiTableGlossary(content string) []GlossaryTerm {
 // parseTableRow extracts cells from a wiki table row
 func parseTableRow(row string) []string {
 	var cells []string
-	lines := strings.Split(row, "\n")
-
-	for _, line := range lines {
+	for _, line := range strings.Split(row, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "!") {
 			continue
 		}
+		cells = append(cells, parseRowLineCells(line)...)
+	}
+	return cells
+}
 
-		// Remove leading | if present
-		line = strings.TrimPrefix(line, "|")
-
-		// Split by || for multiple cells on one line
-		parts := strings.Split(line, "||")
-		for _, part := range parts {
-			cell := strings.TrimSpace(part)
-			if cell != "" {
-				cells = append(cells, cell)
-			}
+// parseRowLineCells splits one table-row line into trimmed, non-empty cells.
+func parseRowLineCells(line string) []string {
+	var cells []string
+	// Remove leading | if present, then split by || for multiple cells.
+	for _, part := range strings.Split(strings.TrimPrefix(line, "|"), "||") {
+		if cell := strings.TrimSpace(part); cell != "" {
+			cells = append(cells, cell)
 		}
 	}
-
 	return cells
 }
 

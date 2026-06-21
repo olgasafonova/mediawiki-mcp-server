@@ -89,79 +89,85 @@ func (c *Client) getPageWikitext(ctx context.Context, title string) (PageContent
 		if !ok {
 			continue
 		}
-
-		// Check if page exists
-		if _, missing := page["missing"]; missing {
-			// Try to suggest similar pages
-			return PageContent{}, fmt.Errorf("page '%s' does not exist. Try using mediawiki_resolve_title to find the correct page name", title)
-		}
-
-		revisions, ok := page["revisions"].([]interface{})
-		if !ok || len(revisions) == 0 {
-			return PageContent{}, fmt.Errorf("no revisions found for page '%s'. The page may be empty or protected", title)
-		}
-
-		rev, ok := revisions[0].(map[string]interface{})
-		if !ok {
-			return PageContent{}, fmt.Errorf("invalid revision data for page '%s'", title)
-		}
-
-		slots, ok := rev["slots"].(map[string]interface{})
-		if !ok {
-			return PageContent{}, fmt.Errorf("invalid slots data for page '%s'. This may be a MediaWiki version compatibility issue", title)
-		}
-
-		main, ok := slots["main"].(map[string]interface{})
-		if !ok {
-			return PageContent{}, fmt.Errorf("invalid main slot data for page '%s'", title)
-		}
-
-		// MediaWiki API returns content under "*" key, not "content"
-		content, ok := main["*"].(string)
-		if !ok {
-			// Some versions might use "content" instead
-			content, ok = main["content"].(string)
-			if !ok {
-				return PageContent{}, fmt.Errorf("page '%s' has no content or content is not text", title)
-			}
-		}
-
-		truncated := false
-		if len(content) > CharacterLimit {
-			content, truncated = truncateContent(content, CharacterLimit)
-		}
-
-		id, _ := strconv.Atoi(pageID)
-		pageTitle, _ := page["title"].(string)
-		if pageTitle == "" {
-			pageTitle = title
-		}
-
-		revID := 0
-		if rid, ok := rev["revid"].(float64); ok {
-			revID = int(rid)
-		}
-
-		timestamp, _ := rev["timestamp"].(string)
-
-		result := PageContent{
-			Title:     pageTitle,
-			PageID:    id,
-			Content:   content,
-			Format:    "wikitext",
-			Revision:  revID,
-			Timestamp: timestamp,
-			Truncated: truncated,
-		}
-
-		if truncated {
-			result.Message = "Content was truncated due to size limits. Consider fetching specific sections."
-		}
-
-		return result, nil
+		return buildWikitextPageContent(page, pageID, title)
 	}
 
 	return PageContent{}, fmt.Errorf("page '%s' not found in API response", title)
+}
+
+// buildWikitextPageContent converts a single wikitext page object into a
+// PageContent, returning descriptive errors for each response-shape failure.
+func buildWikitextPageContent(page map[string]interface{}, pageID, title string) (PageContent, error) {
+	if _, missing := page["missing"]; missing {
+		return PageContent{}, fmt.Errorf("page '%s' does not exist. Try using mediawiki_resolve_title to find the correct page name", title)
+	}
+
+	content, rev, err := extractWikitextRevision(page, title)
+	if err != nil {
+		return PageContent{}, err
+	}
+
+	truncated := false
+	if len(content) > CharacterLimit {
+		content, truncated = truncateContent(content, CharacterLimit)
+	}
+
+	id, _ := strconv.Atoi(pageID)
+	pageTitle, _ := page["title"].(string)
+	if pageTitle == "" {
+		pageTitle = title
+	}
+	revID := 0
+	if rid, ok := rev["revid"].(float64); ok {
+		revID = int(rid)
+	}
+	timestamp, _ := rev["timestamp"].(string)
+
+	result := PageContent{
+		Title:     pageTitle,
+		PageID:    id,
+		Content:   content,
+		Format:    "wikitext",
+		Revision:  revID,
+		Timestamp: timestamp,
+		Truncated: truncated,
+	}
+	if truncated {
+		result.Message = "Content was truncated due to size limits. Consider fetching specific sections."
+	}
+	return result, nil
+}
+
+// extractWikitextRevision walks revisions[0].slots.main and returns the content
+// string and the revision map, with descriptive errors for each shape failure.
+func extractWikitextRevision(page map[string]interface{}, title string) (content string, rev map[string]interface{}, err error) {
+	revisions, ok := page["revisions"].([]interface{})
+	if !ok || len(revisions) == 0 {
+		return "", nil, fmt.Errorf("no revisions found for page '%s'. The page may be empty or protected", title)
+	}
+	rev, ok = revisions[0].(map[string]interface{})
+	if !ok {
+		return "", nil, fmt.Errorf("invalid revision data for page '%s'", title)
+	}
+	slots, ok := rev["slots"].(map[string]interface{})
+	if !ok {
+		return "", nil, fmt.Errorf("invalid slots data for page '%s'. This may be a MediaWiki version compatibility issue", title)
+	}
+	main, ok := slots["main"].(map[string]interface{})
+	if !ok {
+		return "", nil, fmt.Errorf("invalid main slot data for page '%s'", title)
+	}
+
+	// MediaWiki API returns content under "*" key, not "content"; some versions
+	// use "content" instead.
+	content, ok = main["*"].(string)
+	if !ok {
+		content, ok = main["content"].(string)
+		if !ok {
+			return "", nil, fmt.Errorf("page '%s' has no content or content is not text", title)
+		}
+	}
+	return content, rev, nil
 }
 
 func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, error) {
@@ -203,35 +209,35 @@ func (c *Client) getPageHTML(ctx context.Context, title string) (PageContent, er
 		content, truncated = truncateContent(content, CharacterLimit)
 	}
 
-	pageTitle, _ := parse["title"].(string)
-	if pageTitle == "" {
-		pageTitle = title
-	}
-
-	pageID := 0
-	if pid, ok := parse["pageid"].(float64); ok {
-		pageID = int(pid)
-	}
-
-	revID := 0
-	if rid, ok := parse["revid"].(float64); ok {
-		revID = int(rid)
-	}
-
 	result := PageContent{
-		Title:     pageTitle,
-		PageID:    pageID,
+		Title:     htmlPageTitle(parse, title),
+		PageID:    intField(parse, "pageid"),
 		Content:   content,
 		Format:    "html",
-		Revision:  revID,
+		Revision:  intField(parse, "revid"),
 		Truncated: truncated,
 	}
-
 	if truncated {
 		result.Message = "Content was truncated due to size limits."
 	}
-
 	return result, nil
+}
+
+// htmlPageTitle returns the parse response's title, falling back to the
+// requested title.
+func htmlPageTitle(parse map[string]interface{}, fallback string) string {
+	if t, _ := parse["title"].(string); t != "" {
+		return t
+	}
+	return fallback
+}
+
+// intField reads a float64-encoded JSON number field as an int (0 if absent).
+func intField(m map[string]interface{}, key string) int {
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
 }
 
 // Parse parses wikitext and returns HTML
@@ -279,37 +285,31 @@ func (c *Client) Parse(ctx context.Context, args ParseArgs) (ParseResult, error)
 	}
 
 	result := ParseResult{
-		HTML:      htmlContent,
-		Truncated: truncated,
+		HTML:       htmlContent,
+		Truncated:  truncated,
+		Categories: extractStarValues(parse["categories"]),
+		Links:      extractStarValues(parse["links"]),
 	}
-
-	// Categories
-	if cats, ok := parse["categories"].([]interface{}); ok {
-		for _, cat := range cats {
-			c, ok := cat.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			result.Categories = append(result.Categories, getString(c["*"]))
-		}
-	}
-
-	// Links
-	if links, ok := parse["links"].([]interface{}); ok {
-		for _, link := range links {
-			l, ok := link.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			result.Links = append(result.Links, getString(l["*"]))
-		}
-	}
-
 	if truncated {
 		result.Message = "Content was truncated due to size limits."
 	}
-
 	return result, nil
+}
+
+// extractStarValues pulls the "*" string field from each map entry in a
+// MediaWiki list (used for categories and links in parse responses).
+func extractStarValues(raw interface{}) []string {
+	entries, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	var values []string
+	for _, e := range entries {
+		if m, ok := e.(map[string]interface{}); ok {
+			values = append(values, getString(m["*"]))
+		}
+	}
+	return values
 }
 
 // GetPageSummary returns the lead section and key metadata for a page.
