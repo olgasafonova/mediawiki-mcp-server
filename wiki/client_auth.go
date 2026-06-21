@@ -85,85 +85,58 @@ func (c *Client) login(ctx context.Context) error {
 	// likely timed out." from the wiki.
 	c.resetCookies()
 
-	// Get login token
-	params := url.Values{}
-	params.Set("action", "query")
-	params.Set("meta", "tokens")
-	params.Set("type", "login")
-
-	resp, err := c.apiRequest(ctx, params)
+	loginToken, err := c.fetchLoginToken(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get login token: %w", err)
+		return err
 	}
 
-	query, ok := resp["query"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("unexpected response format")
-	}
-
-	tokens, ok := query["tokens"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("no tokens in response")
-	}
-
-	loginToken, ok := tokens["logintoken"].(string)
-	if !ok {
-		return fmt.Errorf("no login token in response")
-	}
-
-	// Perform login
-	params = url.Values{}
-	params.Set("action", "login")
-	params.Set("lgname", c.config.Username)
-	params.Set("lgpassword", c.config.Password)
-	params.Set("lgtoken", loginToken)
-
-	resp, err = c.apiRequest(ctx, params)
+	login, err := c.performLoginRequest(ctx, loginToken)
 	if err != nil {
-		// Check for BotPasswordSessionProvider error and retry with fresh cookies
+		// A BotPasswordSessionProvider conflict on the request itself: retry once
+		// with fresh cookies.
 		if strings.Contains(err.Error(), "BotPasswordSessionProvider") {
 			c.logger.Warn("BotPasswordSessionProvider conflict detected, resetting cookies")
 			c.resetCookies()
-			// Retry login once with fresh cookies
 			return c.loginFresh(ctx)
 		}
 		return fmt.Errorf("login failed: %w", err)
 	}
 
-	login, ok := resp["login"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("unexpected login response")
-	}
-
-	result, ok := login["result"].(string)
-	if !ok {
-		return fmt.Errorf("login result not a string")
-	}
-	if result != "Success" {
-		reason := login["reason"]
-		// Check for BotPasswordSessionProvider in the reason
-		if reason != nil {
-			reasonStr := fmt.Sprintf("%v", reason)
-			if strings.Contains(reasonStr, "BotPasswordSessionProvider") {
-				c.logger.Warn("BotPasswordSessionProvider conflict in login result, resetting cookies")
-				c.resetCookies()
-				return c.loginFresh(ctx)
-			}
-			return fmt.Errorf("login failed: %s - %v", result, reason)
+	if err := c.checkLoginResult(login); err != nil {
+		// A BotPasswordSessionProvider conflict reported in the result: retry once.
+		if isBotPasswordSessionConflict(login) {
+			c.logger.Warn("BotPasswordSessionProvider conflict in login result, resetting cookies")
+			c.resetCookies()
+			return c.loginFresh(ctx)
 		}
-		return fmt.Errorf("login failed: %s", result)
+		return err
 	}
 
-	c.loggedIn = true
-	c.tokenExpiry = time.Now().Add(60 * time.Minute) // Extended from 20 to 60 minutes
-
-	c.logger.Info("Successfully logged in", "username", c.config.Username)
-
+	c.markLoggedIn("Successfully logged in")
 	return nil
 }
 
 func (c *Client) loginFresh(ctx context.Context) error {
-	// Get login token
+	loginToken, err := c.fetchLoginToken(ctx)
+	if err != nil {
+		return err
+	}
+
+	login, err := c.performLoginRequest(ctx, loginToken)
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err := c.checkLoginResult(login); err != nil {
+		return err
+	}
+
+	c.markLoggedIn("Successfully logged in with fresh session")
+	return nil
+}
+
+// fetchLoginToken requests a fresh login token from the wiki.
+func (c *Client) fetchLoginToken(ctx context.Context) (string, error) {
 	params := url.Values{}
 	params.Set("action", "query")
 	params.Set("meta", "tokens")
@@ -171,59 +144,73 @@ func (c *Client) loginFresh(ctx context.Context) error {
 
 	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
-		return fmt.Errorf("failed to get login token: %w", err)
+		return "", fmt.Errorf("failed to get login token: %w", err)
 	}
-
 	query, ok := resp["query"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("unexpected response format")
+		return "", fmt.Errorf("unexpected response format")
 	}
-
 	tokens, ok := query["tokens"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("no tokens in response")
+		return "", fmt.Errorf("no tokens in response")
 	}
-
 	loginToken, ok := tokens["logintoken"].(string)
 	if !ok {
-		return fmt.Errorf("no login token in response")
+		return "", fmt.Errorf("no login token in response")
 	}
+	return loginToken, nil
+}
 
-	// Perform login
-	params = url.Values{}
+// performLoginRequest sends the login action and returns the login response map.
+func (c *Client) performLoginRequest(ctx context.Context, loginToken string) (map[string]interface{}, error) {
+	params := url.Values{}
 	params.Set("action", "login")
 	params.Set("lgname", c.config.Username)
 	params.Set("lgpassword", c.config.Password)
 	params.Set("lgtoken", loginToken)
 
-	resp, err = c.apiRequest(ctx, params)
+	resp, err := c.apiRequest(ctx, params)
 	if err != nil {
-		return fmt.Errorf("login failed: %w", err)
+		return nil, err
 	}
-
 	login, ok := resp["login"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("unexpected login response")
+		return nil, fmt.Errorf("unexpected login response")
 	}
+	return login, nil
+}
 
+// checkLoginResult returns nil when the login result is "Success", otherwise a
+// descriptive error including the wiki's reason if present.
+func (c *Client) checkLoginResult(login map[string]interface{}) error {
 	result, ok := login["result"].(string)
 	if !ok {
 		return fmt.Errorf("login result not a string")
 	}
-	if result != "Success" {
-		reason := login["reason"]
-		if reason != nil {
-			return fmt.Errorf("login failed: %s - %v", result, reason)
-		}
-		return fmt.Errorf("login failed: %s", result)
+	if result == "Success" {
+		return nil
 	}
+	if reason := login["reason"]; reason != nil {
+		return fmt.Errorf("login failed: %s - %v", result, reason)
+	}
+	return fmt.Errorf("login failed: %s", result)
+}
 
+// isBotPasswordSessionConflict reports whether the login result's reason names a
+// BotPasswordSessionProvider conflict (retryable with fresh cookies).
+func isBotPasswordSessionConflict(login map[string]interface{}) bool {
+	reason := login["reason"]
+	if reason == nil {
+		return false
+	}
+	return strings.Contains(fmt.Sprintf("%v", reason), "BotPasswordSessionProvider")
+}
+
+// markLoggedIn records a successful login and refreshes the token expiry.
+func (c *Client) markLoggedIn(logMsg string) {
 	c.loggedIn = true
 	c.tokenExpiry = time.Now().Add(60 * time.Minute)
-
-	c.logger.Info("Successfully logged in with fresh session", "username", c.config.Username)
-
-	return nil
+	c.logger.Info(logMsg, "username", c.config.Username)
 }
 
 func (c *Client) getCSRFToken(ctx context.Context) (string, error) {
