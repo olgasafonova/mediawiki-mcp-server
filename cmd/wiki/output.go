@@ -28,6 +28,14 @@ func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
+	if maxLen <= 3 {
+		// Not enough room for an ellipsis; hard-cut, guarding against a
+		// negative slice bound when maxLen < 3.
+		if maxLen < 0 {
+			return ""
+		}
+		return s[:maxLen]
+	}
 	return s[:maxLen-3] + "..."
 }
 

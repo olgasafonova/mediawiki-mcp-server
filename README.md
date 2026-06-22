@@ -21,7 +21,7 @@ Connect your AI assistant to any MediaWiki wiki, or script it directly from the 
 | [QUICKSTART.md](QUICKSTART.md) | Get running in 2 minutes |
 | [SETUP.md](SETUP.md) | Per-tool configuration (Claude Desktop, Cursor, ChatGPT, n8n, VS Code, Google ADK) |
 | [CLI.md](CLI.md) | `wiki` command-line reference |
-| [TOOLS.md](TOOLS.md) | Full tool reference (40+ tools by category) |
+| [TOOLS.md](TOOLS.md) | Full tool reference (43 tools by category) |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | HTTP transport, security, endpoints, env vars |
 | [TIETO_SETUP.md](TIETO_SETUP.md) | Connect to Tieto's Public 360° Wiki (beginner-friendly) |
 | [WIKI_USE_CASES.md](WIKI_USE_CASES.md) | Detailed workflows by persona |

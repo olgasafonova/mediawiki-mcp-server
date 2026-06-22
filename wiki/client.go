@@ -295,6 +295,26 @@ func (c *Client) handleNonOKResponse(ctx context.Context, resp *http.Response, b
 	return true, apiErr
 }
 
+// maxResponseBytes bounds a single API response read. It sits well above
+// CharacterLimit (250 KB) to leave headroom for HTML output; a misbehaving or
+// hostile wiki streaming more than this is rejected rather than OOMing us.
+const maxResponseBytes = 16 << 20 // 16 MiB
+
+// readBoundedBody reads the response body under a hard size cap, closing the
+// body and reporting an error when the cap is exceeded (read limit+1 detects
+// overflow).
+func readBoundedBody(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	_ = resp.Body.Close() // Error ignored intentionally; body already read
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("response exceeds maximum size of %d bytes", maxResponseBytes)
+	}
+	return body, nil
+}
+
 func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]interface{}, error) {
 	if !c.config.IsConfigured() {
 		return nil, fmt.Errorf("MEDIAWIKI_URL is not configured. Set the MEDIAWIKI_URL environment variable to your wiki's API endpoint (e.g. https://wiki.example.com/api.php)")
@@ -365,11 +385,9 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close() // Error ignored intentionally; body already read
-
+		body, err := readBoundedBody(resp)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to read response: %w", err)
+			lastErr = err
 			continue
 		}
 
