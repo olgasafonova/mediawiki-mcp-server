@@ -1,6 +1,6 @@
 # Tool Reference
 
-The MCP server registers 40+ tools across nine categories. When running in HTTP mode, `curl http://localhost:8080/tools` returns the same list as a JSON tree.
+The MCP server registers 43 tools across nine categories. When running in HTTP mode, `curl http://localhost:8080/tools` returns the same list as a JSON tree.
 
 ## Read Operations
 

@@ -31,12 +31,18 @@ func newLinksCmd() *cobra.Command {
 
 func newLinksExternalCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "external <title>",
-		Short: "Show external links on a page",
-		Long:  "List all external URLs referenced on a wiki page.",
-		Args:  cobra.MinimumNArgs(1),
-		RunE:  runLinksExternal,
+		Use:   "external <title> | --batch <title1> <title2> ...",
+		Short: "Show external links on a page (or several with --batch)",
+		Long: `List all external URLs referenced on a wiki page.
+
+By default the arguments are joined into a single page title. With --batch each
+argument is treated as a separate page title (max 10) and links are returned
+per page in one call.`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: runLinksExternal,
 	}
+
+	cmd.Flags().Bool("batch", false, "Treat each argument as a separate page title (max 10)")
 
 	return cmd
 }
@@ -49,9 +55,12 @@ func runLinksExternal(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	ctx := context.Background()
-	title := strings.Join(args, " ")
 
-	// Use batch if multiple titles are passed (pipe-separated? no — just join as title)
+	if batch, _ := cmd.Flags().GetBool("batch"); batch {
+		return runLinksExternalBatch(ctx, cmd, client, args)
+	}
+
+	title := strings.Join(args, " ")
 	result, err := client.GetExternalLinks(ctx, wiki.GetExternalLinksArgs{
 		Title: title,
 	})
@@ -77,6 +86,32 @@ func runLinksExternal(cmd *cobra.Command, args []string) error {
 	}
 	_ = tw.Flush()
 
+	return nil
+}
+
+func runLinksExternalBatch(ctx context.Context, cmd *cobra.Command, client *wiki.Client, titles []string) error {
+	result, err := client.GetExternalLinksBatch(ctx, wiki.GetExternalLinksBatchArgs{
+		Titles: titles,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get external links: %w", err)
+	}
+
+	if isJSON(cmd) {
+		return printJSON(result)
+	}
+
+	for _, page := range result.Pages {
+		if page.Error != "" {
+			fmt.Printf("%s: error: %s\n", page.Title, page.Error)
+			continue
+		}
+		fmt.Printf("External links on %q (%d):\n", page.Title, page.Count)
+		for _, link := range page.Links {
+			fmt.Printf("  %s\n", link.URL)
+		}
+	}
+	fmt.Printf("\nTotal: %d link(s) across %d page(s)\n", result.TotalLinks, len(result.Pages))
 	return nil
 }
 

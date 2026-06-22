@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
@@ -183,7 +182,10 @@ func runLint(cmd *cobra.Command, args []string) error {
 	termIssues, brokenLinks := printLintSummary(results)
 
 	if termIssues > 0 || brokenLinks > 0 {
-		os.Exit(4)
+		// Flow the lint-findings exit code through main()'s ExitCode()
+		// resolution like every other command, so the deferred
+		// client.Close() above still runs.
+		return &cliError{code: exitLintFindings, err: fmt.Errorf("lint found %d terminology issue(s) and %d broken link(s)", termIssues, brokenLinks)}
 	}
 	return nil
 }

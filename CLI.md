@@ -47,9 +47,12 @@ Set `WIKI_NO_SESSION_CACHE=1` to disable disk caching (CI, ephemeral containers,
 | `wiki recent` | Recent changes |
 | `wiki history <page>` | Revision history |
 | `wiki diff <page>` | Compare revisions |
-| `wiki links [external\|backlinks\|broken\|check\|orphaned]` | Link analysis |
+| `wiki links [external\|backlinks\|broken\|check\|orphaned]` | Link analysis (`links external --batch <t1> <t2>` for multiple pages at once) |
 | `wiki list [pages\|categories\|members\|users]` | Listing queries |
 | `wiki publish <file.md> <page-title>` | Convert Markdown to wikitext and publish (add `--preview` to skip publish) |
+| `wiki parse [wikitext]` | Render wikitext to HTML (from arg, `--file`, or stdin; `--title` for context) |
+| `wiki format <title> <text> <format>` | Apply inline formatting (strikethrough/bold/italic/underline/code/nowiki; `--all`, `--preview`) |
+| `wiki search-read <query>` | Search and read the top results in one call (`--read-count`, `--format`) |
 | `wiki similar <page>` | Find pages with similar content |
 | `wiki stale-pages` | Find pages not edited in N days |
 | `wiki resolve <title>` | Resolve inexact title (add `--fuzzy` for suggestions; exit `3` on no match) |
@@ -90,8 +93,11 @@ Note: code `4` is reserved for `wiki lint` findings (existing public API), so au
 # Pipe lint results into CI
 wiki lint "Release Notes" --json > lint.json
 
-# Find broken external links as structured data
-wiki links broken --json | jq '.[] | select(.status >= 400)'
+# Find pages with broken internal links as structured data
+wiki links broken --json | jq '.pages[] | select(.broken_count > 0)'
+
+# Check external URLs and filter to the broken ones (with status codes)
+wiki links check https://example.com https://example.org --json | jq '.results[] | select(.broken)'
 
 # Publish a Markdown file (page title is the second positional arg)
 wiki publish docs/onboarding.md "Onboarding"
