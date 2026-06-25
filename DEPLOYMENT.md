@@ -137,6 +137,8 @@ curl http://localhost:8080/status
 | `MEDIAWIKI_USERNAME` | No | Bot username (`User@BotName`) |
 | `MEDIAWIKI_PASSWORD` | No | Bot password |
 | `MEDIAWIKI_TIMEOUT` | No | Request timeout (default: `30s`) |
+| `MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS` | No | Comma-separated host allowlist for `mediawiki_upload_file`'s `file_url` path (supports `*.` subdomain wildcards). Fail-closed: unset = no URL uploads allowed. Does not affect base64 `file_data` uploads. |
+| `MEDIAWIKI_MAX_UPLOAD_DATA_BYTES` | No | Max decoded size of a base64 `file_data` upload, in bytes (default: `104857600`, i.e. 100 MiB, matching MediaWiki's default `$wgMaxUploadSize`). |
 | `MCP_AUTH_TOKEN` | No | Bearer token for HTTP authentication |
 | `WIKI_NO_SESSION_CACHE` | No | Set to any non-empty value to disable the `wiki` CLI session cache |
 | `XDG_CONFIG_HOME` | No | Overrides session cache location (default: `~/.config/wiki/sessions.json`) |

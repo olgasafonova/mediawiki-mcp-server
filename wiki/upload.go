@@ -2,18 +2,35 @@ package wiki
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
+// MaxUploadDataBytesEnv names the env var that overrides the default cap on the
+// decoded size of a base64 file_data upload. Value is a positive byte count.
+const MaxUploadDataBytesEnv = "MEDIAWIKI_MAX_UPLOAD_DATA_BYTES"
+
+// defaultMaxUploadDataBytes caps the decoded size of an MCP file_data upload.
+// It matches MediaWiki's own default $wgMaxUploadSize (100 MiB), so the gate
+// doesn't reject what the wiki itself would accept. Base64 in an MCP request
+// is held in the model's context at full token cost, so callers who want a
+// tighter bound (or whose wiki raised $wgMaxUploadSize) can adjust it via
+// MaxUploadDataBytesEnv.
+const defaultMaxUploadDataBytes = 100 << 20 // 100 MiB
+
 // UploadFile uploads a file to the wiki
 func (c *Client) UploadFile(ctx context.Context, args UploadFileArgs) (UploadFileResult, error) {
+	if err := resolveFileData(&args); err != nil {
+		return UploadFileResult{}, err
+	}
 	if err := validateUploadArgs(args); err != nil {
 		return UploadFileResult{}, err
 	}
@@ -37,10 +54,63 @@ func validateUploadArgs(args UploadFileArgs) error {
 	if args.Filename == "" {
 		return fmt.Errorf("filename is required")
 	}
-	if args.FilePath == "" && args.FileURL == "" && len(args.FileData) == 0 {
+	if !hasUploadSource(args) {
 		return fmt.Errorf("either file_path, file_url, or file_data is required")
 	}
+	if hasConflictingSources(args) {
+		return fmt.Errorf("file_url and file_data are mutually exclusive; supply only one source")
+	}
 	return nil
+}
+
+// hasUploadSource reports whether at least one content source was supplied.
+func hasUploadSource(args UploadFileArgs) bool {
+	return args.FilePath != "" || args.FileURL != "" || len(args.FileData) > 0
+}
+
+// hasConflictingSources reports whether the caller supplied both a URL and
+// inline bytes, which is ambiguous (we will not guess which one to use).
+func hasConflictingSources(args UploadFileArgs) bool {
+	return args.FileURL != "" && len(args.FileData) > 0
+}
+
+// resolveFileData decodes the base64 file_data field that MCP callers supply
+// into the FileData byte slice that performUpload consumes. The `wiki` CLI sets
+// FileData directly and leaves FileDataB64 empty, so this is a no-op for that
+// path. Returns actionable errors for malformed or oversized input.
+func resolveFileData(args *UploadFileArgs) error {
+	if args.FileDataB64 == "" {
+		return nil
+	}
+	if len(args.FileData) > 0 {
+		return fmt.Errorf("file_data supplied both as raw bytes and base64; provide only one")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(args.FileDataB64))
+	if err != nil {
+		return fmt.Errorf("file_data is not valid base64 (%w); encode the raw file bytes with standard base64, RFC 4648", err)
+	}
+	if len(decoded) == 0 {
+		return fmt.Errorf("file_data decoded to zero bytes; supply non-empty base64 content")
+	}
+	if limit := maxUploadDataBytes(); len(decoded) > limit {
+		return fmt.Errorf("file_data is %d bytes after decoding, over the %d-byte limit; upload a smaller file or raise %s", len(decoded), limit, MaxUploadDataBytesEnv)
+	}
+
+	args.FileData = decoded
+	args.FileDataB64 = "" // release the base64 copy now that bytes are resolved
+	return nil
+}
+
+// maxUploadDataBytes returns the decoded-size cap for base64 uploads, honoring
+// a positive integer override in MaxUploadDataBytesEnv.
+func maxUploadDataBytes() int {
+	if raw := strings.TrimSpace(os.Getenv(MaxUploadDataBytesEnv)); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultMaxUploadDataBytes
 }
 
 // logUploadOutcome records an audit entry for an upload attempt, whether it
@@ -76,8 +146,10 @@ func (c *Client) logUploadOutcome(args UploadFileArgs, result UploadFileResult, 
 // Branch order matters:
 //  1. FileURL → wiki fetches the URL itself (subject to host allowlist + SSRF
 //     guards in uploadFromURL).
-//  2. FileData → caller supplied bytes directly (CLI path). Uploaded via
-//     multipart POST without touching the local filesystem.
+//  2. FileData → caller supplied bytes directly: the `wiki` CLI sets them, or
+//     an MCP caller passes base64 via file_data (decoded into FileData by
+//     resolveFileData). Uploaded via multipart POST without touching the local
+//     filesystem.
 //  3. FilePath → falls through to uploadFromFile, where readLocalFile rejects
 //     the request. Preserves the "MCP server doesn't read arbitrary local
 //     files" stance.

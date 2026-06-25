@@ -301,23 +301,23 @@ RETURNS: Stale pages sorted by last edit (oldest first), with days since edit an
 		Method:   "UploadFile",
 		Title:    "Upload File",
 		Category: "write",
-		Description: `Upload a file to the wiki from a URL or local path.
+		Description: `Upload a file to the wiki from base64 bytes or a URL.
 
 USE WHEN: User says "upload this image", "add file to wiki", "import document".
 
 PARAMETERS:
 - filename: Target filename on wiki (required)
-- file_url: Source URL to fetch file from (one of file_url or file_path required)
-- file_path: Local file path (alternative to file_url)
+- file_data: Base64-encoded file contents (one of file_data or file_url required). Use this when you already have the bytes; it skips the URL-fetch path. Mutually exclusive with file_url.
+- file_url: Source URL for the wiki to fetch (alternative to file_data). Mutually exclusive with file_data.
 - text: File description page content (optional)
 - comment: Upload comment (optional)
 - ignore_warnings: Overwrite existing file (default false)
 
 RETURNS: Upload status and file page URL. Includes revision ID, diff URL, and undo instructions.
 
-NOTE: Requires authentication. URL must be publicly accessible.
+NOTE: Requires authentication. For file_url, the URL must be publicly accessible.
 
-SECURITY: Source URL must be on the MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS env-var allowlist (fail-closed when unset). Private/internal IPs are blocked unconditionally. ignore_warnings=true overwrites existing files; the destructive-hint annotation is set so hosts that gate destructive operations will prompt before this runs.`,
+SECURITY: file_data uploads bytes directly and never triggers a server-side fetch, so the allowlist/SSRF gates do not apply to that path. For file_url, the source host must be on the MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS env-var allowlist (fail-closed when unset), and private/internal IPs are blocked unconditionally. Decoded file_data is capped at 100 MiB by default — matching MediaWiki's default max upload size — and is adjustable via MEDIAWIKI_MAX_UPLOAD_DATA_BYTES. ignore_warnings=true overwrites existing files; the destructive-hint annotation is set so hosts that gate destructive operations will prompt before this runs.`,
 		ReadOnly:    false,
 		Destructive: true, // HG-3: writes attacker-controllable bytes to the wiki and (with ignore_warnings) overwrites existing files
 		Idempotent:  false,

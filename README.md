@@ -88,6 +88,7 @@ Reading public wikis works without login. Private/corporate wikis and editing re
 
 **File uploads and search** (requires auth):
 - *"Upload this image from URL to the wiki"*
+- *"Upload this local file to the wiki"* (the agent base64-encodes the bytes; no public URL needed)
 - *"Search for 'budget' in File:Annual-Report.pdf"*
 
 **Convert Markdown:**
