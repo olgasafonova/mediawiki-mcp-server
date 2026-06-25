@@ -4,6 +4,8 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.32.0] - 2026-06-25
+
 ### Added
 - **`mediawiki_upload_file` now accepts base64 `file_data` over MCP.** Agents that already hold a file's bytes can base64-encode them and pass `file_data` directly, instead of standing up a local HTTP server for the `file_url` path (which the SSRF guard correctly blocks for private/internal addresses). The byte-upload path already existed internally for the `wiki` CLI; this exposes it on the MCP tool surface. `file_data` uploads bytes directly and never triggers a server-side fetch, so the allowlist/SSRF gates do not apply to that path. `file_data` and `file_url` are mutually exclusive. Decoded size is capped at 100 MiB by default (matching MediaWiki's default `$wgMaxUploadSize`), adjustable via the new `MEDIAWIKI_MAX_UPLOAD_DATA_BYTES` env var. Resolves #84 (thanks to @vansanper for the report).
 - **`wiki` CLI `--verbose` / `-v` flag.** Lowers the logger level from `Warn` to `Debug`, making existing debug/info log lines visible. Also adds new `Debug` log lines showing the API action, URL, and attempt count before each request, plus response status and redacted body preview (token fields like `logintoken`/`csrftoken` are replaced with `[REDACTED]`). Thanks to @strk for the feature.
