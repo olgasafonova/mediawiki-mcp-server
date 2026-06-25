@@ -138,9 +138,21 @@ Edit response info: all edit operations return revision tracking and undo instru
 | Tool | Description |
 |------|-------------|
 | `mediawiki_edit_page` | Create or edit pages |
-| `mediawiki_upload_file` | Upload files from URL |
+| `mediawiki_upload_file` | Upload files from base64 bytes or a URL |
 | `mediawiki_move_page` | Move (rename) pages with redirect |
 | `mediawiki_manage_categories` | Add/remove categories without full edit |
+
+**upload_file** takes one of two mutually-exclusive sources:
+
+- `file_data` — base64-encoded file contents. Use this when the agent already has the bytes; it uploads them directly and never triggers a server-side fetch, so the allowlist/SSRF gates don't apply. Decoded size is capped at 100 MiB by default (matching MediaWiki's default max upload size; `MEDIAWIKI_MAX_UPLOAD_DATA_BYTES` to adjust).
+- `file_url` — a public URL the wiki fetches. The source host must be on the `MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS` allowlist (fail-closed when unset); private/internal IPs are always blocked.
+
+```
+"Upload this PNG to the wiki as Logo.png"
+→ agent base64-encodes the file and calls upload_file with file_data
+```
+
+For multiple files, call the tool once per file — each upload reports its own status, so one bad file doesn't fail the rest.
 
 **move_page** renames pages properly (don't delete and recreate):
 
