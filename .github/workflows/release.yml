@@ -46,7 +46,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -ldflags="-s -w" -o mediawiki-mcp-server-${{ matrix.suffix }}${{ matrix.ext }} .
+          go build -ldflags="-s -w -X main.ServerVersion=${GITHUB_REF_NAME#v}" -o mediawiki-mcp-server-${{ matrix.suffix }}${{ matrix.ext }} .
 
       - name: Build wiki CLI
         env:

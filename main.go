@@ -30,10 +30,14 @@ func recoverPanic(logger *slog.Logger, operation string) {
 	}
 }
 
-const (
-	ServerName    = "mediawiki-mcp-server"
-	ServerVersion = "1.28.1"
-)
+const ServerName = "mediawiki-mcp-server"
+
+// ServerVersion is injected at build time via
+// -ldflags "-X main.ServerVersion=<version>" (see .github/workflows/release.yml
+// and the Makefile). It defaults to "dev" for a plain `go build`, so the value
+// can never silently drift from the git tag the way the old hand-maintained
+// constant did (it was stuck at 1.28.1 through the 1.29–1.31 releases).
+var ServerVersion = "dev"
 
 // serverInstructions is the tool-selection guide handed to MCP clients on
 // connect. Kept as a top-level constant so main() stays small.

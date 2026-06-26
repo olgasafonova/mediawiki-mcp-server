@@ -4,6 +4,9 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Reported server version no longer drifts from the release tag.** `ServerVersion` was a hand-maintained constant stuck at `1.28.1` through the 1.29–1.32 releases, so the value surfaced in MCP server registration, the `/health` and `/status` endpoints, and startup logs was wrong. It is now a build-time variable injected from the git tag via `-ldflags "-X main.ServerVersion=<version>"` (release workflow and Makefile), defaulting to `dev` for plain `go build`.
+
 ## [1.32.0] - 2026-06-25
 
 ### Added

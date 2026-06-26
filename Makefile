@@ -5,7 +5,7 @@ BINARY_NAME=mediawiki-mcp-server
 BINARY_NAME_WIKI=wiki-cli
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS=-ldflags "-w -s -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+LDFLAGS=-ldflags "-w -s -X main.Version=$(VERSION) -X main.ServerVersion=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # Go parameters
 GOCMD=go
