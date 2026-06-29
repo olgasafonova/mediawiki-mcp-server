@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-05T20:38:30+02:00",
+  "generated_at": "2026-06-29T09:12:39Z",
   "deslop_version": "2.1.0",
   "scores": {
     "file_health": 100.0,
@@ -16,13 +16,19 @@
       "detector": "file_health",
       "severity": "critical",
       "key": "wiki/write_test.go",
-      "summary": "wiki/write_test.go (1,804 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
+      "summary": "wiki/write_test.go (1,855 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
     },
     {
       "detector": "file_health",
       "severity": "critical",
       "key": "wiki/client_test.go",
-      "summary": "wiki/client_test.go (1,507 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
+      "summary": "wiki/client_test.go (1,592 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "wiki/api_test.go",
+      "summary": "wiki/api_test.go (1,062 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
     },
     {
       "detector": "file_health",
@@ -38,27 +44,9 @@
     },
     {
       "detector": "file_health",
-      "severity": "high",
-      "key": "wiki/api_test.go",
-      "summary": "wiki/api_test.go (957 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
-    },
-    {
-      "detector": "file_health",
       "severity": "warning",
-      "key": "wiki/security_test.go",
-      "summary": "wiki/security_test.go (800 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
-    },
-    {
-      "detector": "file_health",
-      "severity": "warning",
-      "key": "wiki/links_test.go",
-      "summary": "wiki/links_test.go (794 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
-    },
-    {
-      "detector": "file_health",
-      "severity": "warning",
-      "key": "wiki/similarity_test.go",
-      "summary": "wiki/similarity_test.go (738 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
+      "key": "wiki/audit_test.go",
+      "summary": "wiki/audit_test.go (542 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
     },
     {
       "detector": "file_health",
@@ -69,8 +57,8 @@
     {
       "detector": "file_health",
       "severity": "warning",
-      "key": "wiki/audit_test.go",
-      "summary": "wiki/audit_test.go (542 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
+      "key": "wiki/links_test.go",
+      "summary": "wiki/links_test.go (794 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
     },
     {
       "detector": "file_health",
@@ -79,16 +67,28 @@
       "summary": "wiki/pageinfo_test.go (521 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
     },
     {
-      "detector": "structural_quality",
+      "detector": "file_health",
       "severity": "warning",
-      "key": "god_package:wiki",
-      "summary": "wiki/ has 44 source files (>20) \u2014 ACCEPTED: flat structure is idiomatic for a wiki-API client package; subpackaging would add import-cycle risk without improving design"
+      "key": "wiki/security_test.go",
+      "summary": "wiki/security_test.go (800 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "wiki/similarity_test.go",
+      "summary": "wiki/similarity_test.go (738 LOC) \u2014 large test file (accepted; idiomatic table-driven tests)"
     },
     {
       "detector": "structural_quality",
       "severity": "warning",
       "key": "god_package:cmd/wiki",
-      "summary": "cmd/wiki/ has 28 source files (>20) \u2014 ACCEPTED: flat structure is idiomatic for a CLI command set; subpackaging would add import-cycle risk without improving design"
+      "summary": "cmd/wiki/ has 31 source files (>20) \u2014 ACCEPTED: flat structure is idiomatic for a CLI command set; subpackaging would add import-cycle risk without improving design"
+    },
+    {
+      "detector": "structural_quality",
+      "severity": "warning",
+      "key": "god_package:wiki",
+      "summary": "wiki/ has 45 source files (>20) \u2014 ACCEPTED: flat structure is idiomatic for a wiki-API client package; subpackaging would add import-cycle risk without improving design"
     }
   ]
 }
