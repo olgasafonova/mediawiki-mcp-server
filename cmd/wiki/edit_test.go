@@ -13,6 +13,7 @@ func TestNewEditCmd(t *testing.T) {
 	cwFlagDefaultString(t, cmd, "minor", "false")
 	cwFlagDefaultString(t, cmd, "bot", "false")
 	cwFlagDefaultString(t, cmd, "section", "")
+	cwFlagDefaultString(t, cmd, "dry-run", "false")
 	// short -f alias for --file
 	if f := cmd.Flags().ShorthandLookup("f"); f == nil || f.Name != "file" {
 		t.Error("expected -f shorthand for --file")

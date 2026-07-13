@@ -53,7 +53,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -ldflags="-s -w" -o wiki-${{ matrix.suffix }}${{ matrix.ext }} ./cmd/wiki
+          go build -ldflags="-s -w -X main.Version=${GITHUB_REF_NAME#v}" -o wiki-${{ matrix.suffix }}${{ matrix.ext }} ./cmd/wiki
 
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@v7

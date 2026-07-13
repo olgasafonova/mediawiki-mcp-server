@@ -21,7 +21,12 @@ func newEditCmd() *cobra.Command {
 
   wiki edit "Page Title" --content "= Hello ="
   wiki edit "Page Title" --file page.wiki --summary "Update from file"
-  cat page.wiki | wiki edit "Page Title" --summary "Update from file"`,
+  cat page.wiki | wiki edit "Page Title" --summary "Update from file"
+
+Preview a change without writing it (and without needing credentials):
+
+  wiki edit "Page Title" --file page.wiki --dry-run
+  wiki edit "Page Title" --file page.wiki --dry-run --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: runEdit,
 	}
@@ -32,23 +37,19 @@ func newEditCmd() *cobra.Command {
 	cmd.Flags().Bool("minor", false, "Mark as minor edit")
 	cmd.Flags().Bool("bot", false, "Mark as bot edit (requires bot flag)")
 	cmd.Flags().String("section", "", "Section to edit ('new' for new section, number for existing)")
+	cmd.Flags().Bool("dry-run", false, "Resolve the content and print what would be written, then exit without editing")
 
 	return cmd
 }
 
 func runEdit(cmd *cobra.Command, args []string) error {
-	client, err := newWikiClient(cmd)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
 	title := args[0]
 	content, _ := cmd.Flags().GetString("content")
 	summary, _ := cmd.Flags().GetString("summary")
 	minor, _ := cmd.Flags().GetBool("minor")
 	bot, _ := cmd.Flags().GetBool("bot")
 	section, _ := cmd.Flags().GetString("section")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	// If --content is empty, try --file
 	if content == "" {
@@ -64,6 +65,7 @@ func runEdit(cmd *cobra.Command, args []string) error {
 
 	// If still empty, try reading from stdin
 	if content == "" {
+		var err error
 		content, err = readStdin()
 		if err != nil {
 			return fmt.Errorf("failed to read stdin: %w", err)
@@ -71,8 +73,22 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	if content == "" {
-		return fmt.Errorf("content is required (use --content or pipe from stdin)")
+		return usageErr(fmt.Errorf("content is required (use --content, --file, or pipe from stdin)"))
 	}
+
+	// --dry-run resolves the content and reports what would be written
+	// without contacting the wiki. It deliberately skips client creation so
+	// an agent can preview a change without valid credentials — this is the
+	// safeguard the primary write previously lacked.
+	if dryRun {
+		return emitEditDryRun(cmd, title, summary, section, content, minor, bot)
+	}
+
+	client, err := newWikiClient(cmd)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
 	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
 		Title:   title,
@@ -110,6 +126,34 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("URL: %s\n", result.PageURL)
 	}
 
+	return nil
+}
+
+// emitEditDryRun reports what `wiki edit` would write, without performing
+// the edit. JSON under --json, otherwise a short human-readable block. The
+// content itself is summarized by byte count rather than echoed, so a large
+// page doesn't flood the output.
+func emitEditDryRun(cmd *cobra.Command, title, summary, section, content string, minor, bot bool) error {
+	if isJSON(cmd) {
+		return printJSON(map[string]any{
+			"dry_run":       true,
+			"action":        "edit",
+			"title":         title,
+			"summary":       summary,
+			"section":       section,
+			"minor":         minor,
+			"bot":           bot,
+			"content_bytes": len(content),
+		})
+	}
+	fmt.Printf("DRY RUN — no change made.\n")
+	fmt.Printf("  would edit: %s\n", title)
+	fmt.Printf("  summary:    %s\n", summary)
+	if section != "" {
+		fmt.Printf("  section:    %s\n", section)
+	}
+	fmt.Printf("  content:    %d bytes\n", len(content))
+	fmt.Printf("  minor=%t bot=%t\n", minor, bot)
 	return nil
 }
 

@@ -40,7 +40,7 @@ Set `WIKI_NO_SESSION_CACHE=1` to disable disk caching (CI, ephemeral containers,
 |---------|--------------|
 | `wiki search <query>` | Full-text search |
 | `wiki page <title>` | Read a page |
-| `wiki edit <title>` | Create or edit a page |
+| `wiki edit <title>` | Create or edit a page (add `--dry-run` to preview the write without editing or needing credentials) |
 | `wiki replace <title> --find X --replace Y` | Find and replace in a page (add `--bulk --pages` or `--bulk --category` for multi-page) |
 | `wiki lint <page>` | Check terminology and links (exit code 4 on findings) |
 | `wiki audit` | Wiki-wide health check |
@@ -65,9 +65,11 @@ Set `WIKI_NO_SESSION_CACHE=1` to disable disk caching (CI, ephemeral containers,
 | `wiki compare-topic <topic>` | Compare how a topic is described across pages and surface inconsistencies |
 | `wiki translations --base ... --languages ...` | Find missing language translations for a set of base pages |
 | `wiki config` | Show or verify configuration |
-| `wiki version` | Print CLI version |
+| `wiki version` | Print CLI version (or `wiki --version`; add `--json` for `{"installed_version": ...}`) |
 
 Every command supports `--json` (machine-readable output) and `--quiet` (errors only).
+Under `--json`, failures are also emitted as JSON on stderr —
+`{"error": "...", "exit_code": N}` — so agents can parse them structurally.
 
 ## Exit codes
 
@@ -81,9 +83,9 @@ The CLI uses typed exit codes so shell scripts can branch on the failure categor
 | 3 | Not found (HTTP 404 from wiki API) |
 | 4 | `wiki lint` found terminology issues or broken links |
 | 5 | Wiki API error (other 4xx/5xx) |
-| 6 | Auth error (HTTP 401 / 403) |
+| 6 | Auth error (HTTP 401 / 403, or bot-password login failure) |
 | 7 | Rate limit (HTTP 429) |
-| 10 | Config error |
+| 10 | Config error (e.g. missing `MEDIAWIKI_URL`) |
 
 Note: code `4` is reserved for `wiki lint` findings (existing public API), so auth errors use `6`.
 
