@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -79,9 +80,26 @@ func main() {
 		if ExitCode(err) == exitDefault && strings.HasPrefix(err.Error(), "unknown command") {
 			err = usageErr(err)
 		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		emitError(root, err)
 		os.Exit(ExitCode(err))
 	}
+}
+
+// emitError writes a failure to stderr. Under the global --json flag it
+// emits a machine-readable {"error", "exit_code"} object so agents can parse
+// failures structurally; otherwise it prints the familiar "Error: ..." line.
+// stdout is left untouched so it stays reserved for command data.
+func emitError(root *cobra.Command, err error) {
+	if jsonOut, _ := root.PersistentFlags().GetBool("json"); jsonOut {
+		enc := json.NewEncoder(os.Stderr)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(map[string]any{ //nolint:errcheck // best-effort diagnostic write
+			"error":     err.Error(),
+			"exit_code": ExitCode(err),
+		})
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 }
 
 // wrapArgsAsUsage recursively replaces each command's Args validator with
