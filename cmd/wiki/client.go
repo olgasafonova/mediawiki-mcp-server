@@ -25,7 +25,10 @@ func newWikiClient(cmd *cobra.Command) (*wiki.Client, error) {
 
 	cfg, err := wiki.LoadConfig()
 	if err != nil {
-		return nil, fmt.Errorf("configuration error: %w", err)
+		// Wrap as a config error so the exit code is 10 (config), not the
+		// generic 1 — this is the "missing MEDIAWIKI_URL" path an agent
+		// most often hits, and the documented contract promises 10 here.
+		return nil, configErr(fmt.Errorf("configuration error: %w", err))
 	}
 
 	// CLI logger level
@@ -51,7 +54,10 @@ func newWikiClient(cmd *cobra.Command) (*wiki.Client, error) {
 			_ = client.RestoreSession(cached) //nolint:errcheck // cache miss is non-fatal
 		}
 		if err := client.EnsureLoggedIn(context.Background()); err != nil {
-			return nil, fmt.Errorf("authentication failed: %w", err)
+			// Wrap as an auth error so a login failure resolves to exit 6
+			// even when EnsureLoggedIn returns a non-APIError (e.g. a
+			// transport failure during the bot-password handshake).
+			return nil, authErr(fmt.Errorf("authentication failed: %w", err))
 		}
 		if snapshot, err := client.SessionSnapshot(); err == nil {
 			_ = saveCachedSession(cfg.BaseURL, snapshot) //nolint:errcheck // cache write failure is non-fatal
