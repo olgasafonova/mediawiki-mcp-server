@@ -2,7 +2,7 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
-## [Unreleased]
+## [1.34.0] - 2026-07-22
 
 ### Added
 - **Edit conflict detection via `base_timestamp`.** `EditPageArgs` gains a `base_timestamp` field, sent to MediaWiki as `basetimestamp`: when set, an edit is rejected with `editconflict` if the page changed since that revision, instead of silently overwriting the other author's edit. `wiki edit -i` now sets it automatically from the fetched revision — an interactive session lasts minutes, so this is where concurrent overwrites actually bite. On conflict the CLI keeps the buffer and prints recovery steps. The MCP `mediawiki_edit_page` tool exposes the field as an optional parameter.
@@ -10,6 +10,17 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ### Changed
 - **`wiki page` header is now suppressed when stdout is not a terminal.** `wiki page $P > tmp` previously emitted a `# Title [rev:N timestamp]` header that ended up re-injected into the page on the next `wiki edit $P < tmp`. Now the header is human-only: same `os.ModeCharDevice` idiom the CLI already uses for stdin in `readStdin`. `--quiet` and `--json` keep their existing contracts; interactive reads keep the header. Companion fix to #75.
+
+## [1.33.0] - 2026-07-13
+
+*Stamped retroactively: this release shipped without a CHANGELOG entry.*
+
+### Added
+- **`wiki --version` flag** and agent-friendly CLI hardening: typed exit codes fixed, `wiki edit` guarded (#91).
+
+### Changed
+- Dependency bumps: anthropic-sdk-go and the go-dependencies group (#88, #89).
+- file_health regression fix + refreshed deslop baseline (#87).
 
 ## [1.32.1] - 2026-06-26
 
