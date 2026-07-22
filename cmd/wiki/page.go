@@ -116,7 +116,10 @@ func runPageSingle(cmd *cobra.Command, client *wiki.Client, ctx context.Context,
 		return printJSON(result)
 	}
 
-	if !isQuiet(cmd) {
+	// Header is a human convenience for interactive reading: skip it when
+	// stdout is redirected so `wiki page $P > tmp` captures pure wikitext.
+	// `--quiet` keeps its existing "no header, no banner" contract on top.
+	if !isQuiet(cmd) && isStdoutTerminal() {
 		printPageHeader(result)
 	}
 	fmt.Println(result.Content)

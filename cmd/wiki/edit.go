@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
@@ -23,6 +26,16 @@ func newEditCmd() *cobra.Command {
   wiki edit "Page Title" --file page.wiki --summary "Update from file"
   cat page.wiki | wiki edit "Page Title" --summary "Update from file"
 
+Interactive mode opens the current page content in $VISUAL (or $EDITOR) and
+submits the saved buffer as the new content:
+
+  wiki edit "Page Title" --interactive
+  wiki edit "Page Title" -i --summary "Cleanup section headings"
+
+In interactive mode the edit is skipped if the buffer is empty or unchanged.
+If submission fails, the buffer is preserved at its temp-file path so nothing
+is lost.
+
 Preview a change without writing it (and without needing credentials):
 
   wiki edit "Page Title" --file page.wiki --dry-run
@@ -37,6 +50,7 @@ Preview a change without writing it (and without needing credentials):
 	cmd.Flags().Bool("minor", false, "Mark as minor edit")
 	cmd.Flags().Bool("bot", false, "Mark as bot edit (requires bot flag)")
 	cmd.Flags().String("section", "", "Section to edit ('new' for new section, number for existing)")
+	cmd.Flags().BoolP("interactive", "i", false, "Open the current page in $VISUAL/$EDITOR and submit the saved buffer")
 	cmd.Flags().Bool("dry-run", false, "Resolve the content and print what would be written, then exit without editing")
 
 	return cmd
@@ -50,6 +64,41 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	bot, _ := cmd.Flags().GetBool("bot")
 	section, _ := cmd.Flags().GetString("section")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	interactive, _ := cmd.Flags().GetBool("interactive")
+
+	// Interactive mode takes precedence over every other content source: it
+	// fetches the current page content, opens an editor, and submits whatever
+	// the user saves. Conflicts with --content/--file/stdin are caught here
+	// rather than inside the helper so the user gets one error covering all
+	// input-source problems. --json is incompatible because the editor is an
+	// inherently human-driven flow; advertising "ignored" behavior would
+	// silently change the contract under --json.
+	if interactive {
+		if isJSON(cmd) {
+			return usageErr(fmt.Errorf("--interactive cannot be combined with --json (the editor is interactive by definition)"))
+		}
+		if content != "" {
+			return usageErr(fmt.Errorf("--interactive cannot be combined with --content"))
+		}
+		if filePath, _ := cmd.Flags().GetString("file"); filePath != "" {
+			return usageErr(fmt.Errorf("--interactive cannot be combined with --file"))
+		}
+		// readStdin reports "no piped data" as empty+nil rather than an error,
+		// so a stdin leak from a parent shell would silently win over -i.
+		// Refuse explicitly: if stdin has data, the user almost certainly
+		// meant to pipe it.
+		stdinContent, err := readStdin()
+		if err != nil {
+			return fmt.Errorf("failed to read stdin: %w", err)
+		}
+		if stdinContent != "" {
+			return usageErr(fmt.Errorf("--interactive cannot be combined with piped stdin"))
+		}
+		if section != "" {
+			return usageErr(fmt.Errorf("--interactive cannot be combined with --section (interactive mode edits the full page)"))
+		}
+		return runInteractiveEdit(cmd, title, summary, minor, bot, section, dryRun)
+	}
 
 	// If --content is empty, try --file
 	if content == "" {
@@ -218,6 +267,318 @@ func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, conte
 	}
 
 	return result
+}
+
+// runInteractiveEdit fetches the current page content, opens it in
+// $VISUAL/$EDITOR for editing, and submits the saved buffer as the new
+// content. The flow mirrors the shell idiom
+// `wiki page $P > tmp && $EDITOR tmp && wiki edit $P < tmp`, but without
+// leaving temp files lying around or silently re-injecting the `wiki page`
+// header into the saved content.
+//
+// Behavior:
+//   - resolves $VISUAL, then $EDITOR; errors out if neither is set
+//   - fetches current page content; empty buffer for new pages
+//   - writes content to a 0600 temp file with a wikitext-friendly suffix
+//   - opens the editor with /dev/tty attached when available, otherwise
+//     fails with a clear "no interactive terminal" message
+//   - shows a unified diff of the changes before submitting
+//   - skips the edit if the saved buffer is empty or byte-identical to the
+//     original content
+//   - prompts for confirmation before submitting; declines keep the buffer
+//   - with --dry-run, shows the diff and skips submission
+//   - on submit failure, keeps the temp file and prints its path so the
+//     user can recover the buffer
+func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bool, section string, dryRun bool) error {
+	editor, err := resolveEditor()
+	if err != nil {
+		return usageErr(err)
+	}
+
+	client, err := newWikiClient(cmd)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	original, err := fetchInteractivePage(cmd.Context(), client, title)
+	if err != nil {
+		return fmt.Errorf("failed to fetch page: %w", err)
+	}
+
+	tmpFile, originalBytes, err := writeInteractiveBuffer(title, original)
+	if err != nil {
+		return fmt.Errorf("failed to prepare edit buffer: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Editing %q in %s (buffer: %s)\n", title, editor, tmpFile)
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "Dry run: save and quit to preview changes. Empty the buffer or leave it unchanged to cancel.\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "Save and quit to submit. Empty the buffer or leave it unchanged to cancel.\n")
+	}
+
+	if err := runEditor(editor, tmpFile); err != nil {
+		// Editor failure is not an edit failure: keep the buffer so the
+		// user can retry manually.
+		return fmt.Errorf("editor exited with error: %w (buffer kept at %s)", err, tmpFile)
+	}
+
+	newContent, err := os.ReadFile(tmpFile) // #nosec G304 -- tmpFile is our own path created minutes ago in this process
+	if err != nil {
+		return fmt.Errorf("failed to read edited buffer: %w (buffer kept at %s)", err, tmpFile)
+	}
+
+	if bytes.Equal(newContent, originalBytes) {
+		_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
+		fmt.Fprintln(os.Stderr, "Buffer unchanged — edit skipped.")
+		return nil
+	}
+	if strings.TrimSpace(string(newContent)) == "" {
+		_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
+		fmt.Fprintln(os.Stderr, "Buffer is empty — edit skipped.")
+		return nil
+	}
+
+	// Always show the diff so the user can review what will change.
+	showInteractiveDiff(title, originalBytes, newContent, tmpFile)
+
+	// Prompt for confirmation. In dry-run mode the prompt says so, making
+	// it clear that confirming still won't submit.
+	prompt := "Submit this edit?"
+	if dryRun {
+		prompt = "Submit this edit (dry run)?"
+	}
+	if !promptConfirm(prompt) {
+		fmt.Fprintln(os.Stderr, "Edit canceled — buffer kept.")
+		return nil
+	}
+
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "\nDRY RUN — no change made. Buffer kept at: %s\n", tmpFile)
+		fmt.Fprintf(os.Stderr, "To submit: wiki edit %q --file %s\n", title, tmpFile)
+		return nil
+	}
+
+	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
+		Title:   title,
+		Content: string(newContent),
+		Summary: summary,
+		Minor:   minor,
+		Bot:     bot,
+		Section: section,
+	})
+	if err != nil {
+		return fmt.Errorf("edit failed: %w (buffer kept at %s)", err, tmpFile)
+	}
+
+	// CAPTCHA retry loop mirrors the non-interactive flow so an interactive
+	// edit doesn't lose the saved buffer if the wiki requires CAPTCHA.
+	// An empty answer or repeated wrong answers break the loop — Ctrl-C
+	// is the other exit.
+	const maxCAPTCHARetries = 3
+	for attempt := 0; !result.Success && result.CaptchaType != "" && attempt < maxCAPTCHARetries; attempt++ {
+		fmt.Fprintf(os.Stderr, "CAPTCHA required: %s\n", result.CaptchaQuestion)
+		answer, ok := promptInteractiveAnswer()
+		if !ok || answer == "" {
+			break
+		}
+		result = retryEditWithCaptcha(cmd.Context(), client, title, string(newContent), summary, minor, bot, section, result, answer)
+	}
+
+	if isJSON(cmd) {
+		// Defensive: runEdit refuses --json + --interactive, but keep the
+		// guard so the helper is safe in isolation.
+		return printJSON(result)
+	}
+
+	if !result.Success {
+		// Don't delete the buffer on failure — the user may want to retry
+		// manually or attach it to a bug report.
+		fmt.Fprintf(os.Stderr, "Failed to edit %s: %s\n", result.Title, result.Message)
+		fmt.Fprintf(os.Stderr, "Buffer kept at %s\n", tmpFile)
+		return fmt.Errorf("edit failed: %s", result.Message)
+	}
+
+	// Edit succeeded — buffer can be cleaned up safely.
+	_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup after successful edit
+
+	if result.NewPage {
+		fmt.Printf("Created %s (rev: %d)\n", result.Title, result.RevisionID)
+	} else {
+		fmt.Printf("Edited %s (rev: %d)\n", result.Title, result.RevisionID)
+	}
+	if result.PageURL != "" {
+		fmt.Printf("URL: %s\n", result.PageURL)
+	}
+	return nil
+}
+
+// resolveEditor returns the editor command to invoke for interactive edits.
+// $VISUAL wins over $EDITOR per the long-standing Unix convention; both must
+// resolve to an executable in $PATH.
+func resolveEditor() (string, error) {
+	for _, env := range []string{"VISUAL", "EDITOR"} {
+		if candidate := strings.TrimSpace(os.Getenv(env)); candidate != "" {
+			if _, lookErr := exec.LookPath(candidate); lookErr == nil {
+				return candidate, nil
+			}
+		}
+	}
+	return "", errors.New("no editor configured: set $VISUAL or $EDITOR to an executable in $PATH")
+}
+
+// showInteractiveDiff displays a unified diff between the original and new
+// content for interactive edits. It writes the original to a temp file,
+// runs diff, and cleans up.
+func showInteractiveDiff(title string, original []byte, newContent []byte, tmpFile string) {
+	origFile := tmpFile + ".orig"
+	if err := os.WriteFile(origFile, original, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot create temp file for diff: %v\n", err)
+		fmt.Fprintf(os.Stderr, "New content is at: %s\n", tmpFile)
+		return
+	}
+	defer os.Remove(origFile) //nolint:errcheck // best-effort cleanup
+
+	// #nosec G204 -- both paths are self-created temp files, not user input
+	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile) //nolint:gosec // G204: self-created temp files
+
+	diffCmd.Stdout = os.Stdout
+	diffCmd.Stderr = os.Stderr
+	if err := diffCmd.Run(); err != nil {
+		// diff exits with status 1 when files differ — that's not an error here
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() > 1 {
+			fmt.Fprintf(os.Stderr, "Diff failed: %v\n", err)
+		}
+	}
+}
+
+// fetchInteractivePage retrieves the current content of title. A "page does
+// not exist" response is treated as success with empty content so the user
+// can author a new page from scratch.
+func fetchInteractivePage(ctx context.Context, client *wiki.Client, title string) (string, error) {
+	page, err := client.GetPage(ctx, wiki.GetPageArgs{Title: title, Format: "wikitext"})
+	if err == nil {
+		return page.Content, nil
+	}
+	if strings.Contains(err.Error(), "does not exist") {
+		return "", nil
+	}
+	return "", err
+}
+
+// writeInteractiveBuffer stages the page content in a temp file and returns
+// the path along with the exact bytes we wrote, so runInteractiveEdit can
+// later compare against the saved buffer to detect "no-op" edits. The file
+// is 0600 because it may briefly contain unreviewed content from the wiki.
+func writeInteractiveBuffer(title, content string) (path string, original []byte, err error) {
+	// Slug the title for the temp file name. We deliberately keep this
+	// permissive — the path is only used as a hint to the editor and is
+	// created in os.TempDir(), not anywhere user-visible.
+	slug := slugifyForTmpFile(title)
+	if slug == "" {
+		slug = "untitled"
+	}
+	f, err := os.CreateTemp("", "wiki-edit-"+slug+"-*.wiki")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temp file: %w", err)
+	}
+	// Tight permissions: the file contains page content that may be
+	// sensitive on private wikis.
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name()) //nolint:errcheck // best-effort cleanup of failed-to-secure buffer
+		return "", nil, fmt.Errorf("chmod temp file: %w", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name()) //nolint:errcheck // best-effort cleanup of failed-to-write buffer
+		return "", nil, fmt.Errorf("write temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name()) //nolint:errcheck // best-effort cleanup of failed-to-close buffer
+		return "", nil, fmt.Errorf("close temp file: %w", err)
+	}
+	return f.Name(), []byte(content), nil
+}
+
+// slugifyForTmpFile produces a filename-safe approximation of a wiki page
+// title. We do not try to round-trip the title — only to give the user
+// something recognizable in their `ls /tmp` output.
+func slugifyForTmpFile(title string) string {
+	var b strings.Builder
+	for _, r := range title {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if len(out) > 64 {
+		out = out[:64]
+	}
+	return out
+}
+
+// runEditor launches editor with tmpFile as its argument. The child inherits
+// /dev/tty when available so it can read user input even if the CLI was
+// invoked with stdin/stdout piped. If /dev/tty cannot be opened we fail
+// rather than fall back silently, because the editor would otherwise hang
+// waiting on the parent's stdio.
+func runEditor(editor, tmpFile string) error {
+	tty := openTTYForChild()
+	if tty == nil {
+		return fmt.Errorf("no interactive terminal available; run from a real terminal to use --interactive")
+	}
+	defer tty.Close() //nolint:errcheck // tty close on exit, error non-actionable
+
+	cmd := exec.Command(editor, tmpFile) // #nosec G204 -- editor is user-configured via $VISUAL/$EDITOR; this is the canonical "launch the user's editor" use of exec.Command
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	return cmd.Run()
+}
+
+// promptInteractiveAnswer reads one line of user input for CAPTCHA prompts
+// during an interactive edit, preferring /dev/tty so piped stdin doesn't
+// capture the answer.
+func promptInteractiveAnswer() (string, bool) {
+	tty := openTTYForChild()
+	if tty == nil {
+		return "", false
+	}
+	defer tty.Close() //nolint:errcheck // tty close on exit, error non-actionable
+
+	reader := bufio.NewReader(tty)
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		return "", false
+	}
+	return strings.TrimSpace(line), true
+}
+
+// promptConfirm displays a yes/no question on /dev/tty and returns true if
+// the user answers with y or Y. Any other answer (including EOF or error)
+// is treated as "no".
+func promptConfirm(question string) bool {
+	tty := openTTYForChild()
+	if tty == nil {
+		return false
+	}
+	defer tty.Close() //nolint:errcheck // tty close on exit, error non-actionable
+
+	fmt.Fprintf(tty, "%s [y/N] ", question)
+	reader := bufio.NewReader(tty)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	answer := strings.TrimSpace(strings.ToLower(line))
+	return answer == "y" || answer == "yes"
 }
 
 // readStdin reads all available data from stdin if it's not a terminal.

@@ -78,3 +78,26 @@ func isQuiet(cmd *cobra.Command) bool {
 	v, _ := cmd.Flags().GetBool("quiet")
 	return v
 }
+
+// isStdoutTerminal reports whether os.Stdout is attached to a character
+// device (a terminal) rather than a pipe or file. Used to decide whether
+// human-friendly output (headers, banners) is worth printing.
+func isStdoutTerminal() bool {
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// openTTYForChild returns a *os.File handle to /dev/tty for use as the
+// controlling terminal of a child process (editor, captcha prompt). Returns
+// nil if /dev/tty cannot be opened — callers fall back to the parent's
+// stdio or fail with a clear "no interactive terminal" message.
+func openTTYForChild() *os.File {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil
+	}
+	return tty
+}
