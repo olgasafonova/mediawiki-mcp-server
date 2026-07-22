@@ -24,6 +24,7 @@ PARAMETERS:
 - summary: Edit summary (required for good practice)
 - minor: Mark as minor edit (default false)
 - bot: Mark as bot edit (default false)
+- base_timestamp: Revision timestamp from mediawiki_get_page (optional, recommended). When set, the edit fails with 'editconflict' if someone else changed the page since that revision, instead of silently overwriting their edit. On conflict: re-read with mediawiki_get_page and reapply.
 
 RETURNS: Includes revision ID, diff URL, and undo instructions.
 

@@ -237,7 +237,9 @@ func promptAndRetryCaptcha(cmd *cobra.Command, client *wiki.Client, title, conte
 				break
 			}
 			if answer != "" {
-				return retryEditWithCaptcha(cmd.Context(), client, title, content, summary, minor, bot, section, original, answer)
+				// Non-interactive edits don't fetch the page first, so there
+				// is no base timestamp to assert against.
+				return retryEditWithCaptcha(cmd.Context(), client, title, content, summary, minor, bot, section, "", original, answer)
 			}
 		}
 	}
@@ -247,16 +249,17 @@ func promptAndRetryCaptcha(cmd *cobra.Command, client *wiki.Client, title, conte
 	return original
 }
 
-func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, content, summary string, minor, bot bool, section string, original wiki.EditResult, answer string) wiki.EditResult {
+func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, content, summary string, minor, bot bool, section, baseTimestamp string, original wiki.EditResult, answer string) wiki.EditResult {
 	result, err := client.EditPage(ctx, wiki.EditPageArgs{
-		Title:       title,
-		Content:     content,
-		Summary:     summary,
-		Minor:       minor,
-		Bot:         bot,
-		Section:     section,
-		CaptchaID:   original.CaptchaID,
-		CaptchaWord: answer,
+		Title:         title,
+		Content:       content,
+		Summary:       summary,
+		Minor:         minor,
+		Bot:           bot,
+		Section:       section,
+		CaptchaID:     original.CaptchaID,
+		CaptchaWord:   answer,
+		BaseTimestamp: baseTimestamp,
 	})
 	if err != nil {
 		return wiki.EditResult{
@@ -301,7 +304,7 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 	}
 	defer client.Close()
 
-	original, err := fetchInteractivePage(cmd.Context(), client, title)
+	original, baseTimestamp, err := fetchInteractivePage(cmd.Context(), client, title)
 	if err != nil {
 		return fmt.Errorf("failed to fetch page: %w", err)
 	}
@@ -360,15 +363,26 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 		return nil
 	}
 
+	// BaseTimestamp makes the wiki reject the submit with 'editconflict'
+	// if someone else edited the page while the editor was open, instead
+	// of silently overwriting their change. Interactive sessions last
+	// minutes, not milliseconds, so this window is real.
 	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
-		Title:   title,
-		Content: string(newContent),
-		Summary: summary,
-		Minor:   minor,
-		Bot:     bot,
-		Section: section,
+		Title:         title,
+		Content:       string(newContent),
+		Summary:       summary,
+		Minor:         minor,
+		Bot:           bot,
+		Section:       section,
+		BaseTimestamp: baseTimestamp,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "editconflict") {
+			fmt.Fprintf(os.Stderr, "Edit conflict: %q was edited by someone else while your editor was open.\n", title)
+			fmt.Fprintf(os.Stderr, "Your changes are kept at: %s\n", tmpFile)
+			fmt.Fprintf(os.Stderr, "Re-run 'wiki edit %q -i' to fetch the latest version and reapply them.\n", title)
+			return fmt.Errorf("edit conflict on %q (buffer kept at %s)", title, tmpFile)
+		}
 		return fmt.Errorf("edit failed: %w (buffer kept at %s)", err, tmpFile)
 	}
 
@@ -383,7 +397,7 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 		if !ok || answer == "" {
 			break
 		}
-		result = retryEditWithCaptcha(cmd.Context(), client, title, string(newContent), summary, minor, bot, section, result, answer)
+		result = retryEditWithCaptcha(cmd.Context(), client, title, string(newContent), summary, minor, bot, section, baseTimestamp, result, answer)
 	}
 
 	if isJSON(cmd) {
@@ -456,15 +470,15 @@ func showInteractiveDiff(title string, original []byte, newContent []byte, tmpFi
 // fetchInteractivePage retrieves the current content of title. A "page does
 // not exist" response is treated as success with empty content so the user
 // can author a new page from scratch.
-func fetchInteractivePage(ctx context.Context, client *wiki.Client, title string) (string, error) {
+func fetchInteractivePage(ctx context.Context, client *wiki.Client, title string) (content, timestamp string, err error) {
 	page, err := client.GetPage(ctx, wiki.GetPageArgs{Title: title, Format: "wikitext"})
 	if err == nil {
-		return page.Content, nil
+		return page.Content, page.Timestamp, nil
 	}
 	if strings.Contains(err.Error(), "does not exist") {
-		return "", nil
+		return "", "", nil
 	}
-	return "", err
+	return "", "", err
 }
 
 // writeInteractiveBuffer stages the page content in a temp file and returns

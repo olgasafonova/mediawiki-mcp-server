@@ -13,6 +13,12 @@ type EditPageArgs struct {
 	Section     string `json:"section,omitempty" jsonschema:"Section to edit ('new' for new section, number for existing)"`
 	CaptchaID   string `json:"captcha_id,omitempty" jsonschema:"CAPTCHA ID from a previous failed attempt, required when answering a CAPTCHA"`
 	CaptchaWord string `json:"captcha_word,omitempty" jsonschema:"User-provided answer to the CAPTCHA challenge"`
+
+	// BaseTimestamp is the timestamp of the revision the edit is based on
+	// (PageContent.Timestamp from a prior GetPage). When set, MediaWiki
+	// rejects the edit with an 'editconflict' error if the page changed
+	// after that revision, instead of silently overwriting the newer edit.
+	BaseTimestamp string `json:"base_timestamp,omitempty" jsonschema:"Timestamp of the revision this edit is based on (from get_page). When set, the wiki rejects the edit with an editconflict error if someone else edited the page in the meantime, instead of silently overwriting their change"`
 }
 
 // EditResult contains the result of a page edit operation.
