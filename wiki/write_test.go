@@ -987,6 +987,28 @@ func TestBulkReplace_NoPagesOrCategory(t *testing.T) {
 	}
 }
 
+func TestBuildEditAPIParamsBaseTimestamp(t *testing.T) {
+	args := EditPageArgs{
+		Title:         "Test Page",
+		Content:       "content",
+		BaseTimestamp: "2026-07-22T10:00:00Z",
+	}
+	params := buildEditAPIParams(args, "token123")
+
+	if got := params.Get("basetimestamp"); got != "2026-07-22T10:00:00Z" {
+		t.Errorf("basetimestamp = %q, want %q", got, "2026-07-22T10:00:00Z")
+	}
+
+	// Unset BaseTimestamp must not send the parameter at all — an empty
+	// basetimestamp would disable MediaWiki's conflict detection while
+	// looking like it's enabled.
+	args.BaseTimestamp = ""
+	params = buildEditAPIParams(args, "token123")
+	if _, present := params["basetimestamp"]; present {
+		t.Error("basetimestamp should be omitted when BaseTimestamp is empty")
+	}
+}
+
 func TestBuildEditRevisionInfo(t *testing.T) {
 	client := createTestClient(t)
 	defer client.Close()

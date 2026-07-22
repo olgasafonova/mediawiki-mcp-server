@@ -82,6 +82,9 @@ func buildEditAPIParams(args EditPageArgs, token string) url.Values {
 	if args.CaptchaWord != "" {
 		params.Set("captchaword", args.CaptchaWord)
 	}
+	if args.BaseTimestamp != "" {
+		params.Set("basetimestamp", args.BaseTimestamp)
+	}
 	return params
 }
 
