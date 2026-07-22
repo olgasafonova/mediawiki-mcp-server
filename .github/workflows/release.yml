@@ -10,8 +10,25 @@ permissions:
   actions: write
 
 jobs:
+  changelog:
+    name: CHANGELOG stamped
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Require a CHANGELOG section for this tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "## [${VERSION}]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::No '## [${VERSION}]' section found. Stamp the CHANGELOG before tagging (v1.33.0 shipped unstamped; this gate prevents a repeat)."
+            exit 1
+          fi
+          echo "Found CHANGELOG section for ${VERSION}."
+
   build:
     name: Build binaries
+    needs: changelog
     runs-on: ubuntu-latest
 
     strategy:
