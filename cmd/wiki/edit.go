@@ -341,7 +341,7 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 	}
 
 	// Always show the diff so the user can review what will change.
-	showInteractiveDiff(title, original, newContent, tmpFile)
+	showInteractiveDiff(title, originalBytes, newContent, tmpFile)
 
 	// Prompt for confirmation. In dry-run mode the prompt says so, making
 	// it clear that confirming still won't submit.
@@ -350,7 +350,7 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 		prompt = "Submit this edit (dry run)?"
 	}
 	if !promptConfirm(prompt) {
-		fmt.Fprintln(os.Stderr, "Edit cancelled — buffer kept.")
+		fmt.Fprintln(os.Stderr, "Edit canceled — buffer kept.")
 		return nil
 	}
 
@@ -440,7 +440,7 @@ func showInteractiveDiff(title string, original []byte, newContent []byte, tmpFi
 	}
 	defer os.Remove(origFile) //nolint:errcheck // best-effort cleanup
 
-	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile)
+	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile) //nolint:gosec // G204: both paths are self-created temp files, not user input
 	diffCmd.Stdout = os.Stdout
 	diffCmd.Stderr = os.Stderr
 	if err := diffCmd.Run(); err != nil {
