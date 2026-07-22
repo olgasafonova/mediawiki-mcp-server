@@ -57,7 +57,7 @@ func runCategories(cmd *cobra.Command, args []string) error {
 		Add:     add,
 		Remove:  remove,
 		Summary: summary,
-		Preview: preview,
+		Preview: &preview,
 	})
 	if err != nil {
 		return fmt.Errorf("categories failed: %w", err)

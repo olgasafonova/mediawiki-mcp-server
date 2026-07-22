@@ -84,7 +84,7 @@ func runSingleReplace(cmd *cobra.Command, title string) error {
 		Replace:  replace,
 		UseRegex: useRegex,
 		All:      all,
-		Preview:  preview,
+		Preview:  &preview,
 		Summary:  summary,
 		Minor:    minor,
 	})
@@ -156,7 +156,7 @@ func runBulkReplace(cmd *cobra.Command) error {
 		Find:     find,
 		Replace:  replace,
 		UseRegex: useRegex,
-		Preview:  preview,
+		Preview:  &preview,
 		Summary:  summary,
 		Limit:    limit,
 	})

@@ -58,10 +58,15 @@ type FindReplaceArgs struct {
 	Replace  string `json:"replace" jsonschema:"Replacement text"`
 	UseRegex bool   `json:"use_regex,omitempty" jsonschema:"Treat 'find' as a Go RE2 regex. Characters like . [ ] * + ? ( ) have special meaning; escape with backslash for literal match. Max 500 chars."`
 	All      bool   `json:"all,omitempty" jsonschema:"Replace all occurrences (default: first only)"`
-	Preview  bool   `json:"preview,omitempty" jsonschema:"Preview changes without saving"`
+	Preview  *bool  `json:"preview,omitempty" jsonschema:"Preview changes without applying them. Omitted means preview (the safe default): the edit is not saved and the diff is returned. Set false to apply the change."`
 	Summary  string `json:"summary,omitempty" jsonschema:"Edit summary"`
 	Minor    bool   `json:"minor,omitempty" jsonschema:"Mark as minor edit"`
 }
+
+// PreviewEnabled resolves the tri-state preview flag for FindReplace. An omitted
+// flag (nil) means preview: write tools default to a dry run so an unset flag
+// never silently applies an edit.
+func (a FindReplaceArgs) PreviewEnabled() bool { return previewDefaultTrue(a.Preview) }
 
 // FindReplaceResult contains the result of a find/replace operation.
 type FindReplaceResult struct {
@@ -94,9 +99,14 @@ type ApplyFormattingArgs struct {
 	Text    string `json:"text" jsonschema:"Text to find and format"`
 	Format  string `json:"format" jsonschema:"Format to apply: 'strikethrough', 'bold', 'italic', 'underline', 'code', 'nowiki'"`
 	All     bool   `json:"all,omitempty" jsonschema:"Apply to all occurrences (default: first only)"`
-	Preview bool   `json:"preview,omitempty" jsonschema:"Preview changes without saving"`
+	Preview *bool  `json:"preview,omitempty" jsonschema:"Preview changes without applying them. Omitted means preview (the safe default): the edit is not saved and the diff is returned. Set false to apply the change."`
 	Summary string `json:"summary,omitempty" jsonschema:"Edit summary (auto-generated if empty)"`
 }
+
+// PreviewEnabled resolves the tri-state preview flag for ApplyFormatting. An
+// omitted flag (nil) means preview: write tools default to a dry run so an unset
+// flag never silently applies an edit.
+func (a ApplyFormattingArgs) PreviewEnabled() bool { return previewDefaultTrue(a.Preview) }
 
 // ApplyFormattingResult contains the result of a formatting operation.
 type ApplyFormattingResult struct {
@@ -123,10 +133,15 @@ type BulkReplaceArgs struct {
 	Find     string   `json:"find" jsonschema:"Text to find"`
 	Replace  string   `json:"replace" jsonschema:"Replacement text"`
 	UseRegex bool     `json:"use_regex,omitempty" jsonschema:"Treat 'find' as a Go RE2 regex. Characters like . [ ] * + ? ( ) have special meaning; escape with backslash for literal match. Max 500 chars."`
-	Preview  bool     `json:"preview,omitempty" jsonschema:"Preview changes without saving"`
+	Preview  *bool    `json:"preview,omitempty" jsonschema:"Preview changes without applying them. Omitted means preview (the safe default): no page is saved and the per-page diff is returned. Set false to apply the changes across all matched pages."`
 	Summary  string   `json:"summary,omitempty" jsonschema:"Edit summary"`
 	Limit    int      `json:"limit,omitempty" jsonschema:"Max pages to process (default 10, max 50)"`
 }
+
+// PreviewEnabled resolves the tri-state preview flag for BulkReplace. An omitted
+// flag (nil) means preview: write tools default to a dry run so an unset flag
+// never silently applies edits across multiple pages.
+func (a BulkReplaceArgs) PreviewEnabled() bool { return previewDefaultTrue(a.Preview) }
 
 // BulkReplaceResult summarizes find/replace results across multiple pages.
 type BulkReplaceResult struct {
@@ -183,7 +198,22 @@ type ManageCategoriesArgs struct {
 	Add     []string `json:"add,omitempty" jsonschema:"Category names to add (without 'Category:' prefix)"`
 	Remove  []string `json:"remove,omitempty" jsonschema:"Category names to remove (without 'Category:' prefix)"`
 	Summary string   `json:"summary,omitempty" jsonschema:"Edit summary"`
-	Preview bool     `json:"preview,omitempty" jsonschema:"Preview changes without saving"`
+	Preview *bool    `json:"preview,omitempty" jsonschema:"Preview changes without applying them. Omitted means preview (the safe default): the category edit is not saved and the planned add/remove set is returned. Set false to apply the change."`
+}
+
+// PreviewEnabled resolves the tri-state preview flag for ManageCategories. An
+// omitted flag (nil) means preview: write tools default to a dry run so an unset
+// flag never silently applies a category edit.
+func (a ManageCategoriesArgs) PreviewEnabled() bool { return previewDefaultTrue(a.Preview) }
+
+// previewDefaultTrue resolves a tri-state preview flag, defaulting to true (a
+// dry run) when the caller omits it. This mirrors excludeCodeBlocks in
+// quality_terminology.go: an omitted safety flag resolves to the safe value.
+func previewDefaultTrue(flag *bool) bool {
+	if flag != nil {
+		return *flag
+	}
+	return true
 }
 
 // ManageCategoriesResult contains the result of category management.

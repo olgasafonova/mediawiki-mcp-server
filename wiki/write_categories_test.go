@@ -169,9 +169,10 @@ func TestManageCategories_AddAndRemove(t *testing.T) {
 	defer client.Close()
 
 	result, err := client.ManageCategories(context.Background(), ManageCategoriesArgs{
-		Title:  "Test Page",
-		Add:    []string{"New"},
-		Remove: []string{"Old"},
+		Title:   "Test Page",
+		Add:     []string{"New"},
+		Remove:  []string{"Old"},
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("ManageCategories failed: %v", err)
@@ -224,7 +225,7 @@ func TestManageCategories_Preview(t *testing.T) {
 	result, err := client.ManageCategories(context.Background(), ManageCategoriesArgs{
 		Title:   "Test Page",
 		Add:     []string{"New"},
-		Preview: true,
+		Preview: boolPtr(true),
 	})
 	if err != nil {
 		t.Fatalf("ManageCategories failed: %v", err)

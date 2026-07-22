@@ -357,9 +357,9 @@ func appendArgAttrs(attrs []any, args any) []any {
 	case wiki.EditPageArgs:
 		return append(attrs, "title", a.Title, "content_len", len(a.Content))
 	case wiki.FindReplaceArgs:
-		return append(attrs, "title", a.Title, "preview", a.Preview)
+		return append(attrs, "title", a.Title, "preview", a.PreviewEnabled())
 	case wiki.BulkReplaceArgs:
-		return append(attrs, "pages_count", len(a.Pages), "preview", a.Preview)
+		return append(attrs, "pages_count", len(a.Pages), "preview", a.PreviewEnabled())
 	case wiki.GetPagesBatchArgs:
 		return append(attrs, "titles_count", len(a.Titles))
 	case wiki.SearchAndReadArgs:

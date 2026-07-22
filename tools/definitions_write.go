@@ -53,7 +53,7 @@ PARAMETERS:
 - replace: Replacement text (required)
 - all: Replace all occurrences (default false = first only)
 - use_regex: Treat find as regex (default false)
-- preview: Preview changes without saving (default true for safety)
+- preview: Preview changes without saving. Omit to preview (default true, for safety); set preview=false to apply.
 - summary: Edit summary
 
 RETURNS: Match count and preview of changes. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.
@@ -85,7 +85,7 @@ PARAMETERS:
   - "underline": <u>text</u>
   - "code": <code>text</code>
 - all: Format all occurrences (default false)
-- preview: Preview changes (default true)
+- preview: Preview changes without saving. Omit to preview (default true); set preview=false to apply.
 - summary: Edit summary
 
 RETURNS: Preview of formatting applied. Set preview=false to apply. Includes revision ID, diff URL, and undo instructions.
@@ -113,7 +113,7 @@ PARAMETERS:
 - pages: Array of specific pages (optional)
 - category: Update all pages in category (optional)
 - use_regex: Treat find as regex (default false)
-- preview: Preview changes (ALWAYS use true first!)
+- preview: Preview changes without saving. Omit to preview (default true) — ALWAYS preview a multi-page run first; set preview=false only once the diff looks right.
 - limit: Max pages to update (default 50)
 - summary: Edit summary
 
@@ -259,7 +259,7 @@ PARAMETERS:
 - title: Page name (required)
 - add: Array of category names to add (without "Category:" prefix)
 - remove: Array of category names to remove (without "Category:" prefix)
-- preview: Preview changes without saving (default false)
+- preview: Preview changes without saving. Omit to preview (default true, for safety); set preview=false to apply.
 - summary: Edit summary
 
 RETURNS: Which categories were added, removed, already present, or not found. Includes revision ID, diff URL, and undo instructions.

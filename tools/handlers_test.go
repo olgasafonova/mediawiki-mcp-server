@@ -190,10 +190,10 @@ func TestLogExecution(t *testing.T) {
 	registry.logExecution(spec, wiki.EditPageArgs{Title: "Test", Content: "content"}, wiki.EditResult{Success: true})
 
 	// Test with FindReplaceArgs
-	registry.logExecution(spec, wiki.FindReplaceArgs{Title: "Test", Preview: true}, wiki.FindReplaceResult{MatchCount: 3})
+	registry.logExecution(spec, wiki.FindReplaceArgs{Title: "Test", Preview: ptr(true)}, wiki.FindReplaceResult{MatchCount: 3})
 
 	// Test with BulkReplaceArgs
-	registry.logExecution(spec, wiki.BulkReplaceArgs{Pages: []string{"A", "B"}, Preview: true}, wiki.BulkReplaceResult{PagesModified: 2})
+	registry.logExecution(spec, wiki.BulkReplaceArgs{Pages: []string{"A", "B"}, Preview: ptr(true)}, wiki.BulkReplaceResult{PagesModified: 2})
 
 	// Test with SearchInPageArgs
 	registry.logExecution(spec, wiki.SearchInPageArgs{Title: "Test", Query: "search"}, wiki.SearchInPageResult{})
