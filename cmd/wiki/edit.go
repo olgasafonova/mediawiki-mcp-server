@@ -440,7 +440,9 @@ func showInteractiveDiff(title string, original []byte, newContent []byte, tmpFi
 	}
 	defer os.Remove(origFile) //nolint:errcheck // best-effort cleanup
 
-	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile) //nolint:gosec // G204: both paths are self-created temp files, not user input
+	// #nosec G204 -- both paths are self-created temp files, not user input
+	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile) //nolint:gosec // G204: self-created temp files
+
 	diffCmd.Stdout = os.Stdout
 	diffCmd.Stderr = os.Stderr
 	if err := diffCmd.Run(); err != nil {
