@@ -165,6 +165,7 @@ func TestEditInteractiveConflicts(t *testing.T) {
 		{"with --content", []string{"Page", "-i", "--content", "= X ="}},
 		{"with --file", []string{"Page", "-i", "--file", "/tmp/x"}},
 		{"with --json", []string{"Page", "-i", "--json"}},
+		{"with --section", []string{"Page", "-i", "--section", "2"}},
 	}
 
 	for _, tc := range cases {

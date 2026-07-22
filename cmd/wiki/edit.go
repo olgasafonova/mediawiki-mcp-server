@@ -94,7 +94,10 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		if stdinContent != "" {
 			return usageErr(fmt.Errorf("--interactive cannot be combined with piped stdin"))
 		}
-		return runInteractiveEdit(cmd, title, summary, minor, bot, section)
+		if section != "" {
+			return usageErr(fmt.Errorf("--interactive cannot be combined with --section (interactive mode edits the full page)"))
+		}
+		return runInteractiveEdit(cmd, title, summary, minor, bot, section, dryRun)
 	}
 
 	// If --content is empty, try --file
@@ -279,11 +282,14 @@ func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, conte
 //   - writes content to a 0600 temp file with a wikitext-friendly suffix
 //   - opens the editor with /dev/tty attached when available, otherwise
 //     fails with a clear "no interactive terminal" message
+//   - shows a unified diff of the changes before submitting
 //   - skips the edit if the saved buffer is empty or byte-identical to the
 //     original content
+//   - prompts for confirmation before submitting; declines keep the buffer
+//   - with --dry-run, shows the diff and skips submission
 //   - on submit failure, keeps the temp file and prints its path so the
 //     user can recover the buffer
-func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bool, section string) error {
+func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bool, section string, dryRun bool) error {
 	editor, err := resolveEditor()
 	if err != nil {
 		return usageErr(err)
@@ -306,7 +312,11 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 	}
 
 	fmt.Fprintf(os.Stderr, "Editing %q — %s %s\n", title, tmpFile, editor)
-	fmt.Fprintf(os.Stderr, "Save and quit to submit. Empty the buffer or leave it unchanged to cancel.\n")
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "Dry run: save and quit to preview changes. Empty the buffer or leave it unchanged to cancel.\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "Save and quit to submit. Empty the buffer or leave it unchanged to cancel.\n")
+	}
 
 	if err := runEditor(editor, tmpFile); err != nil {
 		// Editor failure is not an edit failure: keep the buffer so the
@@ -327,6 +337,26 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 	if strings.TrimSpace(string(newContent)) == "" {
 		_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
 		fmt.Fprintln(os.Stderr, "Buffer is empty — edit skipped.")
+		return nil
+	}
+
+	// Always show the diff so the user can review what will change.
+	showInteractiveDiff(title, original, newContent, tmpFile)
+
+	// Prompt for confirmation. In dry-run mode the prompt says so, making
+	// it clear that confirming still won't submit.
+	prompt := "Submit this edit?"
+	if dryRun {
+		prompt = "Submit this edit (dry run)?"
+	}
+	if !promptConfirm(prompt) {
+		fmt.Fprintln(os.Stderr, "Edit cancelled — buffer kept.")
+		return nil
+	}
+
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "\nDRY RUN — no change made. Buffer kept at: %s\n", tmpFile)
+		fmt.Fprintf(os.Stderr, "To submit: wiki edit %q --file %s\n", title, tmpFile)
 		return nil
 	}
 
@@ -393,6 +423,29 @@ func resolveEditor() (string, error) {
 		}
 	}
 	return "", errors.New("no editor configured: set $VISUAL or $EDITOR to an executable in $PATH")
+}
+
+// showInteractiveDiff displays a unified diff between the original and new
+// content for interactive edits. It writes the original to a temp file,
+// runs diff, and cleans up.
+func showInteractiveDiff(title string, original []byte, newContent []byte, tmpFile string) {
+	origFile := tmpFile + ".orig"
+	if err := os.WriteFile(origFile, original, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot create temp file for diff: %v\n", err)
+		fmt.Fprintf(os.Stderr, "New content is at: %s\n", tmpFile)
+		return
+	}
+	defer os.Remove(origFile) //nolint:errcheck // best-effort cleanup
+
+	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile)
+	diffCmd.Stdout = os.Stdout
+	diffCmd.Stderr = os.Stderr
+	if err := diffCmd.Run(); err != nil {
+		// diff exits with status 1 when files differ — that's not an error here
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() > 1 {
+			fmt.Fprintf(os.Stderr, "Diff failed: %v\n", err)
+		}
+	}
 }
 
 // fetchInteractivePage retrieves the current content of title. A "page does
@@ -501,6 +554,26 @@ func promptInteractiveAnswer() (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(line), true
+}
+
+// promptConfirm displays a yes/no question on /dev/tty and returns true if
+// the user answers with y or Y. Any other answer (including EOF or error)
+// is treated as "no".
+func promptConfirm(question string) bool {
+	tty := openTTYForChild()
+	if tty == nil {
+		return false
+	}
+	defer tty.Close() //nolint:errcheck // tty close on exit, error non-actionable
+
+	fmt.Fprintf(tty, "%s [y/N] ", question)
+	reader := bufio.NewReader(tty)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	answer := strings.TrimSpace(strings.ToLower(line))
+	return answer == "y" || answer == "yes"
 }
 
 // readStdin reads all available data from stdin if it's not a terminal.
