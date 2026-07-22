@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// boolPtr returns a pointer to b, for setting tri-state args like Preview.
+func boolPtr(b bool) *bool { return &b }
+
 // createMockClient creates a client that talks to a mock server
 func createMockClient(t *testing.T, server *httptest.Server) *Client {
 	t.Helper()

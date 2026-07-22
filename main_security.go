@@ -36,6 +36,46 @@ const (
 	MaxAllowedBodySize = 10 * 1024 * 1024 // 10MB - absolute maximum
 )
 
+// isLoopbackBind reports whether addr binds only to the loopback interface.
+// A bare ":8080" or "0.0.0.0:8080" binds every interface and is NOT loopback.
+// A hostname that isn't "localhost" and doesn't parse as an IP is treated as
+// non-loopback (the safe default).
+func isLoopbackBind(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// No port present; treat the whole value as the host.
+		host = addr
+	}
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// enforceBindSecurity fails closed at startup. A server bound to a non-loopback
+// interface without an auth token would expose both the MCP surface and the
+// internal aux endpoints to unauthenticated callers, so that combination is
+// refused. Loopback binds keep the prior warn-only behavior for local dev.
+func enforceBindSecurity(logger *slog.Logger, authToken, addr string) error {
+	loopback := isLoopbackBind(addr)
+	if authToken == "" {
+		if !loopback {
+			return fmt.Errorf("refusing to start: HTTP server bound to non-loopback address %q without an auth token; set -token or MCP_AUTH_TOKEN, or bind to 127.0.0.1 for local use", addr)
+		}
+		logger.Warn("HTTP server running WITHOUT authentication on a loopback bind. Set -token flag or MCP_AUTH_TOKEN env var for production use.")
+	}
+	if !loopback {
+		logger.Warn("Server binding to external interface. Ensure you're behind an HTTPS proxy in production.")
+	}
+	return nil
+}
+
 // NewSecurityMiddleware creates a new security middleware
 func NewSecurityMiddleware(handler http.Handler, logger *slog.Logger, config SecurityConfig) *SecurityMiddleware {
 	origins := make(map[string]bool)

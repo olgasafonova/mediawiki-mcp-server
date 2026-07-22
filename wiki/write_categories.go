@@ -80,10 +80,11 @@ func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs
 		return ManageCategoriesResult{}, fmt.Errorf("failed to get page: %w", err)
 	}
 
+	preview := args.PreviewEnabled()
 	existing := parseExistingCategories(page.Content)
 	result := ManageCategoriesResult{
 		Title:             page.Title,
-		Preview:           args.Preview,
+		Preview:           preview,
 		CurrentCategories: keysOf(existing),
 	}
 
@@ -101,7 +102,7 @@ func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs
 		result.Message = "No changes needed"
 		return result, nil
 	}
-	if args.Preview {
+	if preview {
 		result.Success = true
 		result.Message = fmt.Sprintf("Preview: would add %d and remove %d categories", len(result.Added), len(result.Removed))
 		return result, nil

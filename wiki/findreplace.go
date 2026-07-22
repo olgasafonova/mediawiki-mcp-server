@@ -158,11 +158,12 @@ func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindRep
 		return FindReplaceResult{}, fmt.Errorf("failed to get page: %w", err)
 	}
 
+	preview := args.PreviewEnabled()
 	op := findReplaceOp{re: re, replace: args.Replace, all: args.All}
 	newContent, changes, matchCount, replaceCount := applyFindReplaceToContent(page.Content, op)
 	result := FindReplaceResult{
 		Title:        page.Title,
-		Preview:      args.Preview,
+		Preview:      preview,
 		MatchCount:   matchCount,
 		ReplaceCount: replaceCount,
 		Changes:      changes,
@@ -172,7 +173,7 @@ func (c *Client) FindReplace(ctx context.Context, args FindReplaceArgs) (FindRep
 		result.Message = fmt.Sprintf("No matches found for '%s'", args.Find)
 		return result, nil
 	}
-	if args.Preview {
+	if preview {
 		result.Success = true
 		result.Message = fmt.Sprintf("Preview: %d matches found, %d would be replaced", matchCount, replaceCount)
 		return result, nil
@@ -215,12 +216,13 @@ func (c *Client) ApplyFormatting(ctx context.Context, args ApplyFormattingArgs) 
 	// Use FindReplace to apply formatting
 	replacement := markup[0] + args.Text + markup[1]
 
+	preview := args.PreviewEnabled()
 	findArgs := FindReplaceArgs{
 		Title:   args.Title,
 		Find:    args.Text,
 		Replace: replacement,
 		All:     args.All,
-		Preview: args.Preview,
+		Preview: &preview,
 		Minor:   true,
 	}
 
@@ -241,7 +243,7 @@ func (c *Client) ApplyFormatting(ctx context.Context, args ApplyFormattingArgs) 
 		Format:      args.Format,
 		MatchCount:  frResult.MatchCount,
 		FormatCount: frResult.ReplaceCount,
-		Preview:     args.Preview,
+		Preview:     preview,
 		Changes:     frResult.Changes,
 		RevisionID:  frResult.RevisionID,
 		Revision:    frResult.Revision,
@@ -256,13 +258,14 @@ func (c *Client) ApplyFormatting(ctx context.Context, args ApplyFormattingArgs) 
 // page doesn't sink the whole bulk operation.
 func (c *Client) processBulkReplacePage(ctx context.Context, title string, args BulkReplaceArgs, summary string) PageReplaceResult {
 	pageResult := PageReplaceResult{Title: title}
+	preview := args.PreviewEnabled()
 	frResult, err := c.FindReplace(ctx, FindReplaceArgs{
 		Title:    title,
 		Find:     args.Find,
 		Replace:  args.Replace,
 		UseRegex: args.UseRegex,
 		All:      true,
-		Preview:  args.Preview,
+		Preview:  &preview,
 		Summary:  summary,
 	})
 	if err != nil {
@@ -274,7 +277,7 @@ func (c *Client) processBulkReplacePage(ctx context.Context, title string, args 
 	pageResult.RevisionID = frResult.RevisionID
 	pageResult.Revision = frResult.Revision
 	pageResult.Undo = frResult.Undo
-	if args.Preview {
+	if preview {
 		pageResult.Changes = frResult.Changes
 	}
 	return pageResult
@@ -296,8 +299,9 @@ func (c *Client) BulkReplace(ctx context.Context, args BulkReplaceArgs) (BulkRep
 		summary = fmt.Sprintf("Bulk replace: '%s' → '%s'", truncateString(args.Find, 20), truncateString(args.Replace, 20))
 	}
 
+	preview := args.PreviewEnabled()
 	result := BulkReplaceResult{
-		Preview: args.Preview,
+		Preview: preview,
 		Results: make([]PageReplaceResult, 0, len(pagesToProcess)),
 	}
 	for _, pageTitle := range pagesToProcess {
@@ -305,7 +309,7 @@ func (c *Client) BulkReplace(ctx context.Context, args BulkReplaceArgs) (BulkRep
 	}
 
 	result.PagesProcessed = len(result.Results)
-	result.Message = bulkReplaceMessage(args.Preview, result.PagesModified, result.TotalChanges)
+	result.Message = bulkReplaceMessage(preview, result.PagesModified, result.TotalChanges)
 	return result, nil
 }
 

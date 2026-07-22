@@ -195,12 +195,12 @@ func TestExtractArgsSummary(t *testing.T) {
 		},
 		{
 			name: "FindReplaceArgs",
-			args: wiki.FindReplaceArgs{Title: "Release Notes", Preview: true},
+			args: wiki.FindReplaceArgs{Title: "Release Notes", Preview: ptr(true)},
 			want: "title=Release Notes, preview=true",
 		},
 		{
 			name: "BulkReplaceArgs",
-			args: wiki.BulkReplaceArgs{Pages: []string{"A", "B", "C"}, Preview: false},
+			args: wiki.BulkReplaceArgs{Pages: []string{"A", "B", "C"}, Preview: ptr(false)},
 			want: "pages=3, preview=false",
 		},
 		{

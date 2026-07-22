@@ -54,7 +54,13 @@ func splitCSV(s string) []string {
 func runHTTPServer(cfg httpServerConfig) {
 	allowedOriginsList := splitCSV(cfg.Origins)
 
-	securedHandler := newSecuredMCPHandler(cfg, allowedOriginsList)
+	// Fail closed before binding: a non-loopback address without an auth token
+	// would expose the MCP surface and the internal aux endpoints unauthenticated.
+	if err := enforceBindSecurity(cfg.Logger, cfg.AuthToken, cfg.Addr); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	securedHandler := newSecuredHandler(cfg, allowedOriginsList)
 	mux := buildHTTPMux(cfg, securedHandler)
 	httpServer := &http.Server{
 		Addr:         cfg.Addr,
@@ -66,18 +72,29 @@ func runHTTPServer(cfg httpServerConfig) {
 
 	logStartup(cfg, allowedOriginsList)
 	warmCacheAsync(cfg.Client, cfg.Logger)
-	logSecurityWarnings(cfg.Logger, cfg.AuthToken, cfg.Addr)
 
 	serveUntilSignal(httpServer, cfg.Logger)
 	shutdownServer(httpServer, securedHandler, cfg.Client, cfg.Logger)
 }
 
-// newSecuredMCPHandler builds the Streamable HTTP MCP handler wrapped in the
-// security middleware.
-func newSecuredMCPHandler(cfg httpServerConfig, allowedOrigins []string) *SecurityMiddleware {
+// newSecuredHandler builds the security middleware wrapping an inner mux that
+// holds the Streamable HTTP MCP handler AND the aux endpoints that expose
+// internal state (metrics, readiness, circuit-breaker status, tool inventory).
+// Routing these through the same middleware means bearer auth, origin checks,
+// and rate limiting apply to them exactly as they do to the MCP surface. The
+// only intentionally-public routes (/health liveness, server-card discovery)
+// are wired separately on the outer mux in buildHTTPMux.
+func newSecuredHandler(cfg httpServerConfig, allowedOrigins []string) *SecurityMiddleware {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return cfg.Server
 	}, nil)
+
+	inner := http.NewServeMux()
+	inner.Handle("/metrics", promhttp.Handler())
+	inner.HandleFunc("/ready", handleReady(cfg.WikiURL, cfg.Client))
+	inner.HandleFunc("/tools", handleTools(cfg.Logger))
+	inner.HandleFunc("/status", handleStatus(cfg.Client, cfg.Logger))
+	inner.Handle("/", mcpHandler)
 
 	securityConfig := SecurityConfig{
 		BearerToken:    cfg.AuthToken,
@@ -85,17 +102,18 @@ func newSecuredMCPHandler(cfg httpServerConfig, allowedOrigins []string) *Securi
 		RateLimit:      cfg.RateLimit,
 		TrustedProxies: splitCSV(cfg.TrustedProxies),
 	}
-	return NewSecurityMiddleware(mcpHandler, cfg.Logger, securityConfig)
+	return NewSecurityMiddleware(inner, cfg.Logger, securityConfig)
 }
 
-// buildHTTPMux wires the health, readiness, metrics, server-card, tools, status,
-// and MCP routes onto a fresh mux.
+// buildHTTPMux wires the intentionally-public routes (health liveness and the
+// server-card discovery document) onto a fresh mux, then routes everything else
+// through securedHandler. The aux endpoints (/metrics, /ready, /status, /tools)
+// live inside securedHandler's inner mux, so they are reachable only through the
+// auth middleware.
 func buildHTTPMux(cfg httpServerConfig, securedHandler http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/ready", handleReady(cfg.WikiURL, cfg.Client))
-	mux.Handle("/metrics", promhttp.Handler())
 
 	cfg.Card.Remotes = []servercard.Remote{{
 		Type:                      "streamable-http",
@@ -104,8 +122,6 @@ func buildHTTPMux(cfg httpServerConfig, securedHandler http.Handler) *http.Serve
 	}}
 	mux.Handle(servercard.WellKnownPath, servercard.Handler(cfg.Card))
 
-	mux.HandleFunc("/tools", handleTools(cfg.Logger))
-	mux.HandleFunc("/status", handleStatus(cfg.Client, cfg.Logger))
 	mux.Handle("/", securedHandler)
 	return mux
 }
@@ -120,7 +136,8 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleReady returns a readiness handler that verifies actual wiki
-// connectivity with a short timeout.
+// connectivity with a short timeout. Served behind the auth middleware because
+// its response discloses wiki URL, site name, generator, and auth status.
 func handleReady(wikiURL string, client *wiki.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -149,8 +166,9 @@ func handleReady(wikiURL string, client *wiki.Client) http.HandlerFunc {
 	}
 }
 
-// handleTools returns a handler that lists available tools grouped by category
-// (no auth required - for tool introspection).
+// handleTools returns a handler that lists available tools grouped by category.
+// Served behind the auth middleware to avoid disclosing the tool inventory to
+// unauthenticated callers.
 func handleTools(logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -181,8 +199,9 @@ func handleTools(logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
-// handleStatus returns a handler exposing circuit-breaker and dedup status
-// (no auth - for monitoring).
+// handleStatus returns a handler exposing circuit-breaker and dedup status.
+// Served behind the auth middleware because it discloses internal resilience
+// state.
 func handleStatus(client *wiki.Client, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -234,16 +253,6 @@ func warmCacheAsync(client *wiki.Client, logger *slog.Logger) {
 			logger.Info("Cache warming completed")
 		}
 	}()
-}
-
-// logSecurityWarnings warns about insecure configurations at startup.
-func logSecurityWarnings(logger *slog.Logger, authToken, addr string) {
-	if authToken == "" {
-		logger.Warn("HTTP server running WITHOUT authentication. Set -token flag or MCP_AUTH_TOKEN env var for production use.")
-	}
-	if !strings.HasPrefix(addr, "127.0.0.1") && !strings.HasPrefix(addr, "localhost") {
-		logger.Warn("Server binding to external interface. Ensure you're behind HTTPS proxy in production.")
-	}
 }
 
 // serveUntilSignal starts the HTTP server and blocks until a shutdown signal or

@@ -478,6 +478,7 @@ func TestFindReplace_Success(t *testing.T) {
 		Find:    "hello",
 		Replace: "goodbye",
 		All:     true,
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("FindReplace failed: %v", err)
@@ -536,7 +537,7 @@ func TestFindReplace_Preview(t *testing.T) {
 		Title:   "Test Page",
 		Find:    "this",
 		Replace: "that",
-		Preview: true,
+		Preview: boolPtr(true),
 	})
 	if err != nil {
 		t.Fatalf("FindReplace failed: %v", err)
@@ -547,6 +548,144 @@ func TestFindReplace_Preview(t *testing.T) {
 	}
 	if result.MatchCount != 1 {
 		t.Errorf("MatchCount = %d, want 1", result.MatchCount)
+	}
+}
+
+// TestFindReplace_OmittedPreviewIsDryRun locks in the safety default: when the
+// caller omits preview (nil pointer), the tool previews rather than writing.
+// The mock fails the test if an edit is attempted.
+func TestFindReplace_OmittedPreviewIsDryRun(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		action := r.FormValue("action")
+
+		if action == "query" {
+			response := map[string]interface{}{
+				"query": map[string]interface{}{
+					"pages": map[string]interface{}{
+						"123": map[string]interface{}{
+							"pageid": float64(123),
+							"title":  "Test Page",
+							"revisions": []interface{}{
+								map[string]interface{}{
+									"slots": map[string]interface{}{
+										"main": map[string]interface{}{
+											"content": "Replace this text",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		t.Error("Edit must not be called when preview is omitted (default is a dry run)")
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	// Preview is intentionally left unset: the omitted flag must resolve to a preview.
+	result, err := client.FindReplace(context.Background(), FindReplaceArgs{
+		Title:   "Test Page",
+		Find:    "this",
+		Replace: "that",
+	})
+	if err != nil {
+		t.Fatalf("FindReplace failed: %v", err)
+	}
+	if !result.Preview {
+		t.Error("omitted preview must resolve to a dry run (result.Preview = true)")
+	}
+	if result.MatchCount != 1 {
+		t.Errorf("MatchCount = %d, want 1", result.MatchCount)
+	}
+	if result.RevisionID != 0 {
+		t.Errorf("RevisionID = %d, want 0 (no write should have happened)", result.RevisionID)
+	}
+}
+
+// TestFindReplace_ExplicitFalseApplies verifies the escape hatch: an explicit
+// preview=false applies the edit and returns a revision.
+func TestFindReplace_ExplicitFalseApplies(t *testing.T) {
+	editCalled := false
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		action := r.FormValue("action")
+
+		if action == "query" {
+			response := map[string]interface{}{
+				"query": map[string]interface{}{
+					"pages": map[string]interface{}{
+						"123": map[string]interface{}{
+							"pageid":    float64(123),
+							"title":     "Test Page",
+							"lastrevid": float64(100),
+							"revisions": []interface{}{
+								map[string]interface{}{
+									"slots": map[string]interface{}{
+										"main": map[string]interface{}{
+											"content": "Replace this text",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		if action == "edit" {
+			editCalled = true
+			response := map[string]interface{}{
+				"edit": map[string]interface{}{
+					"result":   "Success",
+					"pageid":   float64(123),
+					"title":    "Test Page",
+					"newrevid": float64(101),
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.FindReplace(context.Background(), FindReplaceArgs{
+		Title:   "Test Page",
+		Find:    "this",
+		Replace: "that",
+		Preview: boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("FindReplace failed: %v", err)
+	}
+	if !editCalled {
+		t.Error("explicit preview=false must apply the edit (edit action expected)")
+	}
+	if result.Preview {
+		t.Error("result.Preview = true, want false for an applied edit")
+	}
+	if !result.Success {
+		t.Error("expected success on applied edit")
+	}
+	if result.RevisionID != 101 {
+		t.Errorf("RevisionID = %d, want 101", result.RevisionID)
 	}
 }
 
@@ -740,9 +879,10 @@ func TestApplyFormatting_Success(t *testing.T) {
 	defer client.Close()
 
 	result, err := client.ApplyFormatting(context.Background(), ApplyFormattingArgs{
-		Title:  "Test Page",
-		Text:   "John Smith",
-		Format: "strikethrough",
+		Title:   "Test Page",
+		Text:    "John Smith",
+		Format:  "strikethrough",
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("ApplyFormatting failed: %v", err)
@@ -823,9 +963,10 @@ func TestApplyFormatting_AllFormats(t *testing.T) {
 			defer client.Close()
 
 			result, err := client.ApplyFormatting(context.Background(), ApplyFormattingArgs{
-				Title:  "Test Page",
-				Text:   "test",
-				Format: f.format,
+				Title:   "Test Page",
+				Text:    "test",
+				Format:  f.format,
+				Preview: boolPtr(false),
 			})
 			if err != nil {
 				t.Fatalf("ApplyFormatting failed for %s: %v", f.format, err)
@@ -947,6 +1088,7 @@ func TestBulkReplace_WithPages(t *testing.T) {
 		Pages:   []string{"Page One", "Page Two"},
 		Find:    "oldtext",
 		Replace: "newtext",
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("BulkReplace failed: %v", err)
@@ -1870,7 +2012,7 @@ func TestBulkReplace_WithPreview(t *testing.T) {
 		Find:    "old",
 		Replace: "new",
 		Pages:   []string{"Page1"},
-		Preview: true,
+		Preview: boolPtr(true),
 	})
 	// Expected to fail due to no credentials
 	_ = err

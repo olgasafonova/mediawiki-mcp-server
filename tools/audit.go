@@ -179,11 +179,11 @@ func extractArgsSummary(args any) string {
 	case wiki.EditPageArgs:
 		return fmt.Sprintf("title=%s", a.Title)
 	case wiki.FindReplaceArgs:
-		return fmt.Sprintf("title=%s, preview=%t", a.Title, a.Preview)
+		return fmt.Sprintf("title=%s, preview=%t", a.Title, a.PreviewEnabled())
 	case wiki.ApplyFormattingArgs:
 		return fmt.Sprintf("title=%s, format=%s", a.Title, a.Format)
 	case wiki.BulkReplaceArgs:
-		return fmt.Sprintf("pages=%d, preview=%t", len(a.Pages), a.Preview)
+		return fmt.Sprintf("pages=%d, preview=%t", len(a.Pages), a.PreviewEnabled())
 	case wiki.FindSimilarPagesArgs:
 		return fmt.Sprintf("page=%s", a.Page)
 	case wiki.CompareTopicArgs:

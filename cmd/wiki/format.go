@@ -47,7 +47,7 @@ func runFormat(cmd *cobra.Command, args []string) error {
 		Text:    args[1],
 		Format:  args[2],
 		All:     all,
-		Preview: preview,
+		Preview: &preview,
 		Summary: summary,
 	})
 	if err != nil {
