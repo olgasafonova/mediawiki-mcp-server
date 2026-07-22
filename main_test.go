@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/olgasafonova/mcp-servercard-go/servercard"
 )
 
 func TestNewRateLimiter(t *testing.T) {
@@ -182,5 +184,115 @@ func TestSecurityMiddlewareWithRateLimit(t *testing.T) {
 
 	if w.Code != http.StatusTooManyRequests {
 		t.Errorf("Expected status 429, got %d", w.Code)
+	}
+}
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+func TestIsLoopbackBind(t *testing.T) {
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{"127.0.0.1:8080", true},
+		{"localhost:8080", true},
+		{"[::1]:8080", true},
+		{":8080", false},
+		{"0.0.0.0:8080", false},
+		{"192.168.1.10:8080", false},
+		{"example.com:8080", false},
+	}
+	for _, c := range cases {
+		if got := isLoopbackBind(c.addr); got != c.want {
+			t.Errorf("isLoopbackBind(%q) = %v, want %v", c.addr, got, c.want)
+		}
+	}
+}
+
+// TestEnforceBindSecurity locks in the fail-closed rule: a non-loopback bind
+// without a token is refused; every other combination is allowed to start.
+func TestEnforceBindSecurity(t *testing.T) {
+	logger := testLogger()
+	cases := []struct {
+		name      string
+		token     string
+		addr      string
+		wantError bool
+	}{
+		{"non-loopback without token refused", "", "0.0.0.0:8080", true},
+		{"bare port without token refused", "", ":8080", true},
+		{"external ip without token refused", "", "192.168.1.10:8080", true},
+		{"non-loopback with token allowed", "secret", "0.0.0.0:8080", false},
+		{"loopback without token allowed", "", "127.0.0.1:8080", false},
+		{"loopback with token allowed", "secret", "127.0.0.1:8080", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := enforceBindSecurity(logger, c.token, c.addr)
+			if c.wantError && err == nil {
+				t.Error("expected refusal error, got nil")
+			}
+			if !c.wantError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestAuxEndpointsRequireAuth proves the aux endpoints now sit behind the bearer
+// auth middleware: /tools is rejected without a token and served with one.
+func TestAuxEndpointsRequireAuth(t *testing.T) {
+	cfg := httpServerConfig{
+		Logger:    testLogger(),
+		AuthToken: "secret",
+	}
+	secured := newSecuredHandler(cfg, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/tools", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	w := httptest.NewRecorder()
+	secured.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("/tools without token = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/tools", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	req.Header.Set("Authorization", "Bearer secret")
+	w = httptest.NewRecorder()
+	secured.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("/tools with token = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// TestHealthOpenAuxSecuredViaMux checks the outer routing: /health stays open
+// even when a token is configured, while /tools routes through the auth
+// middleware and is rejected without a token.
+func TestHealthOpenAuxSecuredViaMux(t *testing.T) {
+	cfg := httpServerConfig{
+		Logger:    testLogger(),
+		AuthToken: "secret",
+		Card:      &servercard.ServerCard{},
+	}
+	secured := newSecuredHandler(cfg, nil)
+	mux := buildHTTPMux(cfg, secured)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("/health without token = %d, want %d (must stay open)", w.Code, http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/tools", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("/tools via mux without token = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
 }
