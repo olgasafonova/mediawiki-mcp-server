@@ -6,6 +6,8 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ### Added
 - **`wiki edit -i` / `--interactive` flag.** Opens the current page content in `$VISUAL` (or `$EDITOR` if `$VISUAL` is unset) and submits the saved buffer as the new content. Replaces the shell idiom `wiki page $P > tmp && vi tmp && wiki edit $P < tmp` (the one @strk reported doing "way too often" in #75). Behavior: empty buffer or unchanged buffer skips the edit; submission failure preserves the temp file and prints its path; CAPTCHA retry mirrors the non-interactive flow. `-i` is mutually exclusive with `--content`, `--file`, piped stdin, and `--json`. Attaches `/dev/tty` to the child editor so the flow works even when the CLI's own stdin/stdout are piped.
+
+### Changed
 - **`wiki page` header is now suppressed when stdout is not a terminal.** `wiki page $P > tmp` previously emitted a `# Title [rev:N timestamp]` header that ended up re-injected into the page on the next `wiki edit $P < tmp`. Now the header is human-only: same `os.ModeCharDevice` idiom the CLI already uses for stdin in `readStdin`. `--quiet` and `--json` keep their existing contracts; interactive reads keep the header. Companion fix to #75.
 
 ## [1.32.1] - 2026-06-26

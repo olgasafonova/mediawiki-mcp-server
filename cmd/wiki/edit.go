@@ -311,7 +311,7 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 		return fmt.Errorf("failed to prepare edit buffer: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Editing %q — %s %s\n", title, tmpFile, editor)
+	fmt.Fprintf(os.Stderr, "Editing %q in %s (buffer: %s)\n", title, editor, tmpFile)
 	if dryRun {
 		fmt.Fprintf(os.Stderr, "Dry run: save and quit to preview changes. Empty the buffer or leave it unchanged to cancel.\n")
 	} else {
@@ -374,11 +374,14 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 
 	// CAPTCHA retry loop mirrors the non-interactive flow so an interactive
 	// edit doesn't lose the saved buffer if the wiki requires CAPTCHA.
-	for !result.Success && result.CaptchaType != "" {
+	// An empty answer or repeated wrong answers break the loop — Ctrl-C
+	// is the other exit.
+	const maxCAPTCHARetries = 3
+	for attempt := 0; !result.Success && result.CaptchaType != "" && attempt < maxCAPTCHARetries; attempt++ {
 		fmt.Fprintf(os.Stderr, "CAPTCHA required: %s\n", result.CaptchaQuestion)
 		answer, ok := promptInteractiveAnswer()
-		if !ok {
-			return fmt.Errorf("CAPTCHA required but no interactive input available (buffer kept at %s)", tmpFile)
+		if !ok || answer == "" {
+			break
 		}
 		result = retryEditWithCaptcha(cmd.Context(), client, title, string(newContent), summary, minor, bot, section, result, answer)
 	}
@@ -527,7 +530,7 @@ func slugifyForTmpFile(title string) string {
 func runEditor(editor, tmpFile string) error {
 	tty := openTTYForChild()
 	if tty == nil {
-		return fmt.Errorf("no interactive terminal available (cannot open /dev/tty); run from a real terminal to use --interactive")
+		return fmt.Errorf("no interactive terminal available; run from a real terminal to use --interactive")
 	}
 	defer tty.Close() //nolint:errcheck // tty close on exit, error non-actionable
 
