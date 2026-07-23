@@ -72,9 +72,11 @@ func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, err
 		if item == nil {
 			continue
 		}
+		title := getString(item["title"])
 		hit := SearchHit{
 			PageID:  getInt(item["pageid"]),
-			Title:   getString(item["title"]),
+			Title:   title,
+			URL:     c.pageURL(ctx, title),
 			Snippet: stripHTMLTags(getString(item["snippet"])),
 			Size:    getInt(item["size"]),
 		}
