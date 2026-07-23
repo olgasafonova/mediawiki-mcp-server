@@ -66,6 +66,7 @@ type SearchResult struct {
 type SearchHit struct {
 	PageID  int    `json:"page_id"`
 	Title   string `json:"title"`
+	URL     string `json:"url,omitempty"`
 	Snippet string `json:"snippet"`
 	Size    int    `json:"size"`
 }
