@@ -102,13 +102,22 @@ func runDiffLastTwo(cmd *cobra.Command, client *wiki.Client, ctx context.Context
 	return printDiffResult(cmd, result)
 }
 
-func printDiffHeader(label, title string, revID int, user, ts string) {
-	fmt.Printf("%s %s (rev %d)", label, title, revID)
-	if user != "" {
-		fmt.Printf(" by %s", user)
+// diffSide describes one side of a revision comparison for header printing.
+type diffSide struct {
+	label     string
+	title     string
+	revID     int
+	user      string
+	timestamp string
+}
+
+func printDiffHeader(side diffSide) {
+	fmt.Printf("%s %s (rev %d)", side.label, side.title, side.revID)
+	if side.user != "" {
+		fmt.Printf(" by %s", side.user)
 	}
-	if ts != "" {
-		fmt.Printf(" at %s", ts)
+	if side.timestamp != "" {
+		fmt.Printf(" at %s", side.timestamp)
 	}
 	fmt.Println()
 }
@@ -118,8 +127,8 @@ func printDiffResult(cmd *cobra.Command, result wiki.CompareRevisionsResult) err
 		return printJSON(result)
 	}
 
-	printDiffHeader("From:", result.FromTitle, result.FromRevID, result.FromUser, result.FromTimestamp)
-	printDiffHeader("To:  ", result.ToTitle, result.ToRevID, result.ToUser, result.ToTimestamp)
+	printDiffHeader(diffSide{label: "From:", title: result.FromTitle, revID: result.FromRevID, user: result.FromUser, timestamp: result.FromTimestamp})
+	printDiffHeader(diffSide{label: "To:  ", title: result.ToTitle, revID: result.ToRevID, user: result.ToUser, timestamp: result.ToTimestamp})
 	fmt.Println()
 
 	if result.Diff == "" {

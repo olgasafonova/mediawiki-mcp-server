@@ -67,6 +67,13 @@ func runCategories(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printCategoriesResult(result, preview)
+	return nil
+}
+
+// printCategoriesResult renders the category changes grouped by outcome,
+// skipping empty groups.
+func printCategoriesResult(result wiki.ManageCategoriesResult, preview bool) {
 	if preview {
 		fmt.Printf("Preview for %s\n", result.Title)
 	} else {
@@ -85,7 +92,6 @@ func runCategories(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  not present:     %s\n", strings.Join(result.NotFound, ", "))
 	}
 	fmt.Printf("  current:         %s\n", strings.Join(result.CurrentCategories, ", "))
-	return nil
 }
 
 // splitCSV splits a comma-separated string and trims whitespace from each item,

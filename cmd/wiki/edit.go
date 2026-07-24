@@ -56,176 +56,258 @@ Preview a change without writing it (and without needing credentials):
 	return cmd
 }
 
-func runEdit(cmd *cobra.Command, args []string) error {
-	title := args[0]
+// editRequest bundles the parameters shared by the edit submission, dry-run,
+// and CAPTCHA-retry helpers, so they don't have to thread every field
+// through long argument lists.
+type editRequest struct {
+	title         string
+	content       string
+	summary       string
+	section       string
+	minor         bool
+	bot           bool
+	baseTimestamp string
+}
+
+func (r editRequest) toArgs() wiki.EditPageArgs {
+	return wiki.EditPageArgs{
+		Title:         r.title,
+		Content:       r.content,
+		Summary:       r.summary,
+		Minor:         r.minor,
+		Bot:           r.bot,
+		Section:       r.section,
+		BaseTimestamp: r.baseTimestamp,
+	}
+}
+
+func editRequestFromFlags(cmd *cobra.Command, title string) editRequest {
 	content, _ := cmd.Flags().GetString("content")
 	summary, _ := cmd.Flags().GetString("summary")
 	minor, _ := cmd.Flags().GetBool("minor")
 	bot, _ := cmd.Flags().GetBool("bot")
 	section, _ := cmd.Flags().GetString("section")
+	return editRequest{
+		title:   title,
+		content: content,
+		summary: summary,
+		section: section,
+		minor:   minor,
+		bot:     bot,
+	}
+}
+
+func runEdit(cmd *cobra.Command, args []string) error {
+	req := editRequestFromFlags(cmd, args[0])
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	interactive, _ := cmd.Flags().GetBool("interactive")
 
 	// Interactive mode takes precedence over every other content source: it
 	// fetches the current page content, opens an editor, and submits whatever
-	// the user saves. Conflicts with --content/--file/stdin are caught here
-	// rather than inside the helper so the user gets one error covering all
-	// input-source problems. --json is incompatible because the editor is an
-	// inherently human-driven flow; advertising "ignored" behavior would
-	// silently change the contract under --json.
+	// the user saves.
 	if interactive {
-		if isJSON(cmd) {
-			return usageErr(fmt.Errorf("--interactive cannot be combined with --json (the editor is interactive by definition)"))
+		if err := checkInteractiveConflicts(cmd, req); err != nil {
+			return err
 		}
-		if content != "" {
-			return usageErr(fmt.Errorf("--interactive cannot be combined with --content"))
-		}
-		if filePath, _ := cmd.Flags().GetString("file"); filePath != "" {
-			return usageErr(fmt.Errorf("--interactive cannot be combined with --file"))
-		}
-		// readStdin reports "no piped data" as empty+nil rather than an error,
-		// so a stdin leak from a parent shell would silently win over -i.
-		// Refuse explicitly: if stdin has data, the user almost certainly
-		// meant to pipe it.
-		stdinContent, err := readStdin()
-		if err != nil {
-			return fmt.Errorf("failed to read stdin: %w", err)
-		}
-		if stdinContent != "" {
-			return usageErr(fmt.Errorf("--interactive cannot be combined with piped stdin"))
-		}
-		if section != "" {
-			return usageErr(fmt.Errorf("--interactive cannot be combined with --section (interactive mode edits the full page)"))
-		}
-		return runInteractiveEdit(cmd, title, summary, minor, bot, section, dryRun)
+		return runInteractiveEdit(cmd, req, dryRun)
 	}
 
-	// If --content is empty, try --file
-	if content == "" {
-		filePath, _ := cmd.Flags().GetString("file")
-		if filePath != "" {
-			fileBytes, err := os.ReadFile(filePath) // #nosec G304 -- path supplied via CLI flag by the invoking user
-			if err != nil {
-				return fmt.Errorf("failed to read file: %w", err)
-			}
-			content = string(fileBytes)
-		}
+	content, err := resolveEditContent(cmd, req)
+	if err != nil {
+		return err
 	}
-
-	// If still empty, try reading from stdin
-	if content == "" {
-		var err error
-		content, err = readStdin()
-		if err != nil {
-			return fmt.Errorf("failed to read stdin: %w", err)
-		}
-	}
-
-	if content == "" {
-		return usageErr(fmt.Errorf("content is required (use --content, --file, or pipe from stdin)"))
-	}
+	req.content = content
 
 	// --dry-run resolves the content and reports what would be written
 	// without contacting the wiki. It deliberately skips client creation so
 	// an agent can preview a change without valid credentials — this is the
 	// safeguard the primary write previously lacked.
 	if dryRun {
-		return emitEditDryRun(cmd, title, summary, section, content, minor, bot)
+		return emitEditDryRun(cmd, req)
 	}
 
+	return submitEdit(cmd, req)
+}
+
+// checkInteractiveConflicts rejects flag combinations that conflict with
+// --interactive. Conflicts with --content/--file/stdin are caught here
+// rather than inside the interactive helper so the user gets one error
+// covering all input-source problems. --json is incompatible because the
+// editor is an inherently human-driven flow; advertising "ignored" behavior
+// would silently change the contract under --json.
+func checkInteractiveConflicts(cmd *cobra.Command, req editRequest) error {
+	if isJSON(cmd) {
+		return usageErr(fmt.Errorf("--interactive cannot be combined with --json (the editor is interactive by definition)"))
+	}
+	if req.content != "" {
+		return usageErr(fmt.Errorf("--interactive cannot be combined with --content"))
+	}
+	if filePath, _ := cmd.Flags().GetString("file"); filePath != "" {
+		return usageErr(fmt.Errorf("--interactive cannot be combined with --file"))
+	}
+	// readStdin reports "no piped data" as empty+nil rather than an error,
+	// so a stdin leak from a parent shell would silently win over -i.
+	// Refuse explicitly: if stdin has data, the user almost certainly
+	// meant to pipe it.
+	stdinContent, err := readStdin()
+	if err != nil {
+		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+	if stdinContent != "" {
+		return usageErr(fmt.Errorf("--interactive cannot be combined with piped stdin"))
+	}
+	if req.section != "" {
+		return usageErr(fmt.Errorf("--interactive cannot be combined with --section (interactive mode edits the full page)"))
+	}
+	return nil
+}
+
+// resolveEditContent returns the page content from --content, --file, or
+// piped stdin, in that order of precedence. An empty result from all three
+// sources is a usage error.
+func resolveEditContent(cmd *cobra.Command, req editRequest) (string, error) {
+	if req.content != "" {
+		return req.content, nil
+	}
+
+	// --content is empty: try --file
+	content, err := contentFromFileFlag(cmd)
+	if err != nil {
+		return "", err
+	}
+	if content != "" {
+		return content, nil
+	}
+
+	// Still empty: try reading from stdin
+	content, err = readStdin()
+	if err != nil {
+		return "", fmt.Errorf("failed to read stdin: %w", err)
+	}
+	if content == "" {
+		return "", usageErr(fmt.Errorf("content is required (use --content, --file, or pipe from stdin)"))
+	}
+	return content, nil
+}
+
+// contentFromFileFlag reads the file named by --file, or returns empty when
+// the flag is unset.
+func contentFromFileFlag(cmd *cobra.Command) (string, error) {
+	filePath, _ := cmd.Flags().GetString("file")
+	if filePath == "" {
+		return "", nil
+	}
+	fileBytes, err := os.ReadFile(filePath) // #nosec G304 -- path supplied via CLI flag by the invoking user
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+	return string(fileBytes), nil
+}
+
+// submitEdit performs the non-interactive edit, including the CAPTCHA retry
+// loop and result reporting.
+func submitEdit(cmd *cobra.Command, req editRequest) error {
 	client, err := newWikiClient(cmd)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
-		Title:   title,
-		Content: content,
-		Summary: summary,
-		Minor:   minor,
-		Bot:     bot,
-		Section: section,
-	})
+	result, err := client.EditPage(cmd.Context(), req.toArgs())
 	if err != nil {
 		return fmt.Errorf("edit failed: %w", err)
 	}
 
-	// CAPTCHA retry loop
-	for !result.Success && result.CaptchaType != "" {
-		if isJSON(cmd) {
-			break
-		}
-		result = promptAndRetryCaptcha(cmd, client, title, content, summary, minor, bot, section, result)
-	}
+	session := editSession{client: client, req: req}
+	result = session.retryLoop(cmd, result)
 
 	if isJSON(cmd) {
 		return printJSON(result)
 	}
+	printEditOutcome(result)
+	return nil
+}
 
-	// Human-readable output
+// printEditOutcome reports the edit result in human-readable form.
+func printEditOutcome(result wiki.EditResult) {
 	if !result.Success {
 		fmt.Printf("Failed to edit %s: %s\n", result.Title, result.Message)
-	} else if result.NewPage {
+		return
+	}
+	printEditSuccess(result)
+}
+
+// printEditSuccess reports a successful edit: created vs edited, plus the
+// page URL when the wiki returned one.
+func printEditSuccess(result wiki.EditResult) {
+	if result.NewPage {
 		fmt.Printf("Created %s (rev: %d)\n", result.Title, result.RevisionID)
 	} else {
 		fmt.Printf("Edited %s (rev: %d)\n", result.Title, result.RevisionID)
 	}
-	if result.Success && result.PageURL != "" {
+	if result.PageURL != "" {
 		fmt.Printf("URL: %s\n", result.PageURL)
 	}
-
-	return nil
 }
 
 // emitEditDryRun reports what `wiki edit` would write, without performing
 // the edit. JSON under --json, otherwise a short human-readable block. The
 // content itself is summarized by byte count rather than echoed, so a large
 // page doesn't flood the output.
-func emitEditDryRun(cmd *cobra.Command, title, summary, section, content string, minor, bot bool) error {
+func emitEditDryRun(cmd *cobra.Command, req editRequest) error {
 	if isJSON(cmd) {
 		return printJSON(map[string]any{
 			"dry_run":       true,
 			"action":        "edit",
-			"title":         title,
-			"summary":       summary,
-			"section":       section,
-			"minor":         minor,
-			"bot":           bot,
-			"content_bytes": len(content),
+			"title":         req.title,
+			"summary":       req.summary,
+			"section":       req.section,
+			"minor":         req.minor,
+			"bot":           req.bot,
+			"content_bytes": len(req.content),
 		})
 	}
 	fmt.Printf("DRY RUN — no change made.\n")
-	fmt.Printf("  would edit: %s\n", title)
-	fmt.Printf("  summary:    %s\n", summary)
-	if section != "" {
-		fmt.Printf("  section:    %s\n", section)
+	fmt.Printf("  would edit: %s\n", req.title)
+	fmt.Printf("  summary:    %s\n", req.summary)
+	if req.section != "" {
+		fmt.Printf("  section:    %s\n", req.section)
 	}
-	fmt.Printf("  content:    %d bytes\n", len(content))
-	fmt.Printf("  minor=%t bot=%t\n", minor, bot)
+	fmt.Printf("  content:    %d bytes\n", len(req.content))
+	fmt.Printf("  minor=%t bot=%t\n", req.minor, req.bot)
 	return nil
+}
+
+// editSession pairs a wiki client with the request being submitted so the
+// CAPTCHA-retry helpers share state instead of long argument lists.
+type editSession struct {
+	client *wiki.Client
+	req    editRequest
+}
+
+// retryLoop keeps prompting for CAPTCHA answers until the edit succeeds,
+// the CAPTCHA requirement clears, or JSON mode makes prompting impossible.
+func (s editSession) retryLoop(cmd *cobra.Command, result wiki.EditResult) wiki.EditResult {
+	for !result.Success && result.CaptchaType != "" {
+		if isJSON(cmd) {
+			break
+		}
+		result = s.promptAndRetryCaptcha(cmd, result)
+	}
+	return result
 }
 
 // promptAndRetryCaptcha prompts the user for a CAPTCHA answer and retries
 // the edit. Tries /dev/tty first, then os.Stdin if it's a terminal. Prints
 // a hint to stderr when no interactive prompt is available.
-func promptAndRetryCaptcha(cmd *cobra.Command, client *wiki.Client, title, content, summary string, minor, bot bool, section string, original wiki.EditResult) wiki.EditResult {
+func (s editSession) promptAndRetryCaptcha(cmd *cobra.Command, original wiki.EditResult) wiki.EditResult {
 	question := original.CaptchaQuestion
 	if question == "" {
 		question = fmt.Sprintf("CAPTCHA type: %s", original.CaptchaType)
 	}
 
-	var in io.Reader
-	var out io.Writer
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err == nil {
-		defer tty.Close()
-		in = tty
-		out = tty
-	} else if info, statErr := os.Stdin.Stat(); statErr == nil && info.Mode()&os.ModeCharDevice != 0 {
-		in = os.Stdin
-		out = os.Stderr
-	}
+	in, out, cleanup := captchaPromptIO()
+	defer cleanup()
 
 	if in != nil {
 		br := bufio.NewReader(in)
@@ -239,7 +321,7 @@ func promptAndRetryCaptcha(cmd *cobra.Command, client *wiki.Client, title, conte
 			if answer != "" {
 				// Non-interactive edits don't fetch the page first, so there
 				// is no base timestamp to assert against.
-				return retryEditWithCaptcha(cmd.Context(), client, title, content, summary, minor, bot, section, "", original, answer)
+				return s.retryEditWithCaptcha(cmd.Context(), original, answer)
 			}
 		}
 	}
@@ -249,22 +331,32 @@ func promptAndRetryCaptcha(cmd *cobra.Command, client *wiki.Client, title, conte
 	return original
 }
 
-func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, content, summary string, minor, bot bool, section, baseTimestamp string, original wiki.EditResult, answer string) wiki.EditResult {
-	result, err := client.EditPage(ctx, wiki.EditPageArgs{
-		Title:         title,
-		Content:       content,
-		Summary:       summary,
-		Minor:         minor,
-		Bot:           bot,
-		Section:       section,
-		CaptchaID:     original.CaptchaID,
-		CaptchaWord:   answer,
-		BaseTimestamp: baseTimestamp,
-	})
+// captchaPromptIO resolves where CAPTCHA prompts read from and write to:
+// /dev/tty when available, otherwise os.Stdin if it is a terminal. A nil
+// reader means no interactive prompt is possible. The returned cleanup
+// closes /dev/tty when it was opened.
+func captchaPromptIO() (io.Reader, io.Writer, func()) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		return tty, tty, func() { _ = tty.Close() }
+	}
+	if info, statErr := os.Stdin.Stat(); statErr == nil && info.Mode()&os.ModeCharDevice != 0 {
+		return os.Stdin, os.Stderr, func() {}
+	}
+	return nil, nil, func() {}
+}
+
+// retryEditWithCaptcha re-submits the edit with the CAPTCHA answer attached.
+func (s editSession) retryEditWithCaptcha(ctx context.Context, original wiki.EditResult, answer string) wiki.EditResult {
+	args := s.req.toArgs()
+	args.CaptchaID = original.CaptchaID
+	args.CaptchaWord = answer
+
+	result, err := s.client.EditPage(ctx, args)
 	if err != nil {
 		return wiki.EditResult{
 			Success: false,
-			Title:   title,
+			Title:   s.req.title,
 			Message: fmt.Sprintf("Edit failed on CAPTCHA retry: %v", err),
 		}
 	}
@@ -292,7 +384,7 @@ func retryEditWithCaptcha(ctx context.Context, client *wiki.Client, title, conte
 //   - with --dry-run, shows the diff and skips submission
 //   - on submit failure, keeps the temp file and prints its path so the
 //     user can recover the buffer
-func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bool, section string, dryRun bool) error {
+func runInteractiveEdit(cmd *cobra.Command, req editRequest, dryRun bool) error {
 	editor, err := resolveEditor()
 	if err != nil {
 		return usageErr(err)
@@ -304,52 +396,106 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 	}
 	defer client.Close()
 
-	original, baseTimestamp, err := fetchInteractivePage(cmd.Context(), client, title)
+	session, err := newInteractiveEditSession(cmd, client, req, dryRun)
 	if err != nil {
-		return fmt.Errorf("failed to fetch page: %w", err)
+		return err
+	}
+	session.editor = editor
+
+	newContent, submit, err := session.collectBuffer()
+	if err != nil || !submit {
+		return err
+	}
+	return session.finish(newContent)
+}
+
+// interactiveEditSession carries the state shared by the phases of an
+// interactive edit: the wiki client, the pending request, and the temp
+// buffer staged on disk.
+type interactiveEditSession struct {
+	cmd      *cobra.Command
+	client   *wiki.Client
+	req      editRequest
+	editor   string
+	tmpFile  string
+	original []byte
+	dryRun   bool
+}
+
+// newInteractiveEditSession fetches the current page content and stages it
+// in the temp buffer the editor will open.
+func newInteractiveEditSession(cmd *cobra.Command, client *wiki.Client, req editRequest, dryRun bool) (*interactiveEditSession, error) {
+	original, baseTimestamp, err := fetchInteractivePage(cmd.Context(), client, req.title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch page: %w", err)
+	}
+	req.baseTimestamp = baseTimestamp
+
+	tmpFile, originalBytes, err := writeInteractiveBuffer(req.title, original)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare edit buffer: %w", err)
 	}
 
-	tmpFile, originalBytes, err := writeInteractiveBuffer(title, original)
-	if err != nil {
-		return fmt.Errorf("failed to prepare edit buffer: %w", err)
-	}
+	return &interactiveEditSession{
+		cmd:      cmd,
+		client:   client,
+		req:      req,
+		tmpFile:  tmpFile,
+		original: originalBytes,
+		dryRun:   dryRun,
+	}, nil
+}
 
-	fmt.Fprintf(os.Stderr, "Editing %q in %s (buffer: %s)\n", title, editor, tmpFile)
-	if dryRun {
+// announce tells the user which editor is opening and how to cancel.
+func (s *interactiveEditSession) announce() {
+	fmt.Fprintf(os.Stderr, "Editing %q in %s (buffer: %s)\n", s.req.title, s.editor, s.tmpFile)
+	if s.dryRun {
 		fmt.Fprintf(os.Stderr, "Dry run: save and quit to preview changes. Empty the buffer or leave it unchanged to cancel.\n")
 	} else {
 		fmt.Fprintf(os.Stderr, "Save and quit to submit. Empty the buffer or leave it unchanged to cancel.\n")
 	}
+}
 
-	if err := runEditor(editor, tmpFile); err != nil {
+// collectBuffer opens the editor on the temp buffer and returns the saved
+// content. submit=false means the edit was skipped (unchanged or empty
+// buffer) and the reason was already reported to the user.
+func (s *interactiveEditSession) collectBuffer() (newContent []byte, submit bool, err error) {
+	s.announce()
+
+	if err := s.runEditor(); err != nil {
 		// Editor failure is not an edit failure: keep the buffer so the
 		// user can retry manually.
-		return fmt.Errorf("editor exited with error: %w (buffer kept at %s)", err, tmpFile)
+		return nil, false, fmt.Errorf("editor exited with error: %w (buffer kept at %s)", err, s.tmpFile)
 	}
 
-	newContent, err := os.ReadFile(tmpFile) // #nosec G304 -- tmpFile is our own path created minutes ago in this process
+	newContent, err = os.ReadFile(s.tmpFile) // #nosec G304 -- tmpFile is our own path created minutes ago in this process
 	if err != nil {
-		return fmt.Errorf("failed to read edited buffer: %w (buffer kept at %s)", err, tmpFile)
+		return nil, false, fmt.Errorf("failed to read edited buffer: %w (buffer kept at %s)", err, s.tmpFile)
 	}
 
-	if bytes.Equal(newContent, originalBytes) {
-		_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
+	if bytes.Equal(newContent, s.original) {
+		_ = os.Remove(s.tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
 		fmt.Fprintln(os.Stderr, "Buffer unchanged — edit skipped.")
-		return nil
+		return nil, false, nil
 	}
 	if strings.TrimSpace(string(newContent)) == "" {
-		_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
+		_ = os.Remove(s.tmpFile) //nolint:errcheck // best-effort cleanup of unused buffer
 		fmt.Fprintln(os.Stderr, "Buffer is empty — edit skipped.")
-		return nil
+		return nil, false, nil
 	}
+	return newContent, true, nil
+}
 
+// finish reviews the change with the user and, unless this is a dry run,
+// submits it.
+func (s *interactiveEditSession) finish(newContent []byte) error {
 	// Always show the diff so the user can review what will change.
-	showInteractiveDiff(title, originalBytes, newContent, tmpFile)
+	s.showDiff(newContent)
 
 	// Prompt for confirmation. In dry-run mode the prompt says so, making
 	// it clear that confirming still won't submit.
 	prompt := "Submit this edit?"
-	if dryRun {
+	if s.dryRun {
 		prompt = "Submit this edit (dry run)?"
 	}
 	if !promptConfirm(prompt) {
@@ -357,50 +503,67 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 		return nil
 	}
 
-	if dryRun {
-		fmt.Fprintf(os.Stderr, "\nDRY RUN — no change made. Buffer kept at: %s\n", tmpFile)
-		fmt.Fprintf(os.Stderr, "To submit: wiki edit %q --file %s\n", title, tmpFile)
+	if s.dryRun {
+		fmt.Fprintf(os.Stderr, "\nDRY RUN — no change made. Buffer kept at: %s\n", s.tmpFile)
+		fmt.Fprintf(os.Stderr, "To submit: wiki edit %q --file %s\n", s.req.title, s.tmpFile)
 		return nil
 	}
+
+	return s.submit(newContent)
+}
+
+// submit performs the interactive edit against the wiki, handling edit
+// conflicts, CAPTCHA retries, and result reporting.
+func (s *interactiveEditSession) submit(newContent []byte) error {
+	s.req.content = string(newContent)
 
 	// BaseTimestamp makes the wiki reject the submit with 'editconflict'
 	// if someone else edited the page while the editor was open, instead
 	// of silently overwriting their change. Interactive sessions last
 	// minutes, not milliseconds, so this window is real.
-	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
-		Title:         title,
-		Content:       string(newContent),
-		Summary:       summary,
-		Minor:         minor,
-		Bot:           bot,
-		Section:       section,
-		BaseTimestamp: baseTimestamp,
-	})
+	result, err := s.client.EditPage(s.cmd.Context(), s.req.toArgs())
 	if err != nil {
-		if strings.Contains(err.Error(), "editconflict") {
-			fmt.Fprintf(os.Stderr, "Edit conflict: %q was edited by someone else while your editor was open.\n", title)
-			fmt.Fprintf(os.Stderr, "Your changes are kept at: %s\n", tmpFile)
-			fmt.Fprintf(os.Stderr, "Re-run 'wiki edit %q -i' to fetch the latest version and reapply them.\n", title)
-			return fmt.Errorf("edit conflict on %q (buffer kept at %s)", title, tmpFile)
-		}
-		return fmt.Errorf("edit failed: %w (buffer kept at %s)", err, tmpFile)
+		return s.submitError(err)
 	}
 
-	// CAPTCHA retry loop mirrors the non-interactive flow so an interactive
-	// edit doesn't lose the saved buffer if the wiki requires CAPTCHA.
-	// An empty answer or repeated wrong answers break the loop — Ctrl-C
-	// is the other exit.
+	result = s.retryCaptchaLoop(result)
+	return s.report(result)
+}
+
+// submitError translates a failed submit into a user-facing error, with
+// special handling for edit conflicts. The buffer is always kept.
+func (s *interactiveEditSession) submitError(err error) error {
+	if strings.Contains(err.Error(), "editconflict") {
+		fmt.Fprintf(os.Stderr, "Edit conflict: %q was edited by someone else while your editor was open.\n", s.req.title)
+		fmt.Fprintf(os.Stderr, "Your changes are kept at: %s\n", s.tmpFile)
+		fmt.Fprintf(os.Stderr, "Re-run 'wiki edit %q -i' to fetch the latest version and reapply them.\n", s.req.title)
+		return fmt.Errorf("edit conflict on %q (buffer kept at %s)", s.req.title, s.tmpFile)
+	}
+	return fmt.Errorf("edit failed: %w (buffer kept at %s)", err, s.tmpFile)
+}
+
+// retryCaptchaLoop mirrors the non-interactive CAPTCHA flow so an
+// interactive edit doesn't lose the saved buffer if the wiki requires
+// CAPTCHA. An empty answer or repeated wrong answers break the loop —
+// Ctrl-C is the other exit.
+func (s *interactiveEditSession) retryCaptchaLoop(result wiki.EditResult) wiki.EditResult {
 	const maxCAPTCHARetries = 3
+	session := editSession{client: s.client, req: s.req}
 	for attempt := 0; !result.Success && result.CaptchaType != "" && attempt < maxCAPTCHARetries; attempt++ {
 		fmt.Fprintf(os.Stderr, "CAPTCHA required: %s\n", result.CaptchaQuestion)
 		answer, ok := promptInteractiveAnswer()
 		if !ok || answer == "" {
 			break
 		}
-		result = retryEditWithCaptcha(cmd.Context(), client, title, string(newContent), summary, minor, bot, section, baseTimestamp, result, answer)
+		result = session.retryEditWithCaptcha(s.cmd.Context(), result, answer)
 	}
+	return result
+}
 
-	if isJSON(cmd) {
+// report prints the outcome of an interactive edit and cleans up the temp
+// buffer on success.
+func (s *interactiveEditSession) report(result wiki.EditResult) error {
+	if isJSON(s.cmd) {
 		// Defensive: runEdit refuses --json + --interactive, but keep the
 		// guard so the helper is safe in isolation.
 		return printJSON(result)
@@ -410,21 +573,14 @@ func runInteractiveEdit(cmd *cobra.Command, title, summary string, minor, bot bo
 		// Don't delete the buffer on failure — the user may want to retry
 		// manually or attach it to a bug report.
 		fmt.Fprintf(os.Stderr, "Failed to edit %s: %s\n", result.Title, result.Message)
-		fmt.Fprintf(os.Stderr, "Buffer kept at %s\n", tmpFile)
+		fmt.Fprintf(os.Stderr, "Buffer kept at %s\n", s.tmpFile)
 		return fmt.Errorf("edit failed: %s", result.Message)
 	}
 
 	// Edit succeeded — buffer can be cleaned up safely.
-	_ = os.Remove(tmpFile) //nolint:errcheck // best-effort cleanup after successful edit
+	_ = os.Remove(s.tmpFile) //nolint:errcheck // best-effort cleanup after successful edit
 
-	if result.NewPage {
-		fmt.Printf("Created %s (rev: %d)\n", result.Title, result.RevisionID)
-	} else {
-		fmt.Printf("Edited %s (rev: %d)\n", result.Title, result.RevisionID)
-	}
-	if result.PageURL != "" {
-		fmt.Printf("URL: %s\n", result.PageURL)
-	}
+	printEditSuccess(result)
 	return nil
 }
 
@@ -442,20 +598,20 @@ func resolveEditor() (string, error) {
 	return "", errors.New("no editor configured: set $VISUAL or $EDITOR to an executable in $PATH")
 }
 
-// showInteractiveDiff displays a unified diff between the original and new
-// content for interactive edits. It writes the original to a temp file,
-// runs diff, and cleans up.
-func showInteractiveDiff(title string, original []byte, newContent []byte, tmpFile string) {
-	origFile := tmpFile + ".orig"
-	if err := os.WriteFile(origFile, original, 0o600); err != nil {
+// showDiff displays a unified diff between the original and new content for
+// interactive edits. It writes the original to a temp file, runs diff, and
+// cleans up.
+func (s *interactiveEditSession) showDiff(newContent []byte) {
+	origFile := s.tmpFile + ".orig"
+	if err := os.WriteFile(origFile, s.original, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot create temp file for diff: %v\n", err)
-		fmt.Fprintf(os.Stderr, "New content is at: %s\n", tmpFile)
+		fmt.Fprintf(os.Stderr, "New content is at: %s\n", s.tmpFile)
 		return
 	}
 	defer os.Remove(origFile) //nolint:errcheck // best-effort cleanup
 
 	// #nosec G204 -- both paths are self-created temp files, not user input
-	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, tmpFile) //nolint:gosec // G204: self-created temp files
+	diffCmd := exec.Command("diff", "-u", "--label", "original", "--label", "edited", origFile, s.tmpFile) //nolint:gosec // G204: self-created temp files
 
 	diffCmd.Stdout = os.Stdout
 	diffCmd.Stderr = os.Stderr
@@ -482,7 +638,7 @@ func fetchInteractivePage(ctx context.Context, client *wiki.Client, title string
 }
 
 // writeInteractiveBuffer stages the page content in a temp file and returns
-// the path along with the exact bytes we wrote, so runInteractiveEdit can
+// the path along with the exact bytes we wrote, so the interactive flow can
 // later compare against the saved buffer to detect "no-op" edits. The file
 // is 0600 because it may briefly contain unreviewed content from the wiki.
 func writeInteractiveBuffer(title, content string) (path string, original []byte, err error) {
@@ -520,37 +676,37 @@ func writeInteractiveBuffer(title, content string) (path string, original []byte
 // title. We do not try to round-trip the title — only to give the user
 // something recognizable in their `ls /tmp` output.
 func slugifyForTmpFile(title string) string {
-	var b strings.Builder
-	for _, r := range title {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-' || r == '_' || r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('_')
-		}
-	}
-	out := strings.Trim(b.String(), "_")
+	out := strings.Trim(strings.Map(slugRune, title), "_")
 	if len(out) > 64 {
 		out = out[:64]
 	}
 	return out
 }
 
-// runEditor launches editor with tmpFile as its argument. The child inherits
-// /dev/tty when available so it can read user input even if the CLI was
-// invoked with stdin/stdout piped. If /dev/tty cannot be opened we fail
+// slugRune maps a title rune to its temp-file-name replacement: ASCII
+// letters, digits, and a few separator characters pass through, everything
+// else becomes an underscore.
+func slugRune(r rune) rune {
+	isAlnum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	if isAlnum || strings.ContainsRune("-_.", r) {
+		return r
+	}
+	return '_'
+}
+
+// runEditor launches the resolved editor on the temp buffer. The child
+// inherits /dev/tty when available so it can read user input even if the CLI
+// was invoked with stdin/stdout piped. If /dev/tty cannot be opened we fail
 // rather than fall back silently, because the editor would otherwise hang
 // waiting on the parent's stdio.
-func runEditor(editor, tmpFile string) error {
+func (s *interactiveEditSession) runEditor() error {
 	tty := openTTYForChild()
 	if tty == nil {
 		return fmt.Errorf("no interactive terminal available; run from a real terminal to use --interactive")
 	}
 	defer tty.Close() //nolint:errcheck // tty close on exit, error non-actionable
 
-	cmd := exec.Command(editor, tmpFile) // #nosec G204 -- editor is user-configured via $VISUAL/$EDITOR; this is the canonical "launch the user's editor" use of exec.Command
+	cmd := exec.Command(s.editor, s.tmpFile) // #nosec G204 -- editor is user-configured via $VISUAL/$EDITOR; this is the canonical "launch the user's editor" use of exec.Command
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty

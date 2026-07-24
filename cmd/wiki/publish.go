@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/olgasafonova/mediawiki-mcp-server/converter"
-	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
 	"github.com/spf13/cobra"
 )
 
@@ -38,8 +37,6 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	filePath := args[0]
 	pageTitle := args[1]
 
-	summary, _ := cmd.Flags().GetString("summary")
-	minor, _ := cmd.Flags().GetBool("minor")
 	theme, _ := cmd.Flags().GetString("theme")
 	addCSS, _ := cmd.Flags().GetBool("css")
 	preview, _ := cmd.Flags().GetBool("preview")
@@ -60,46 +57,50 @@ func runPublish(cmd *cobra.Command, args []string) error {
 
 	// Preview mode: print and stop
 	if preview {
-		if isJSON(cmd) {
-			return printJSON(map[string]string{
-				"file":     filePath,
-				"page":     pageTitle,
-				"wikitext": wikitext,
-			})
-		}
-		fmt.Printf("--- Preview: %s -> %s ---\n\n", filepath.Base(filePath), pageTitle)
-		fmt.Println(wikitext)
-		return nil
+		return emitPublishPreview(cmd, filePath, pageTitle, wikitext)
 	}
 
-	// Publish to wiki
+	return publishWikitext(cmd, filePath, pageTitle, wikitext)
+}
+
+// emitPublishPreview prints the converted wikitext without publishing.
+func emitPublishPreview(cmd *cobra.Command, filePath, pageTitle, wikitext string) error {
+	if isJSON(cmd) {
+		return printJSON(map[string]string{
+			"file":     filePath,
+			"page":     pageTitle,
+			"wikitext": wikitext,
+		})
+	}
+	fmt.Printf("--- Preview: %s -> %s ---\n\n", filepath.Base(filePath), pageTitle)
+	fmt.Println(wikitext)
+	return nil
+}
+
+// publishWikitext submits the converted wikitext to the wiki, including the
+// CAPTCHA retry loop and result reporting.
+func publishWikitext(cmd *cobra.Command, filePath, pageTitle, wikitext string) error {
+	summary, _ := cmd.Flags().GetString("summary")
+	minor, _ := cmd.Flags().GetBool("minor")
+	if summary == "" {
+		summary = fmt.Sprintf("Published from %s", filepath.Base(filePath))
+	}
+
 	client, err := newWikiClient(cmd)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	if summary == "" {
-		summary = fmt.Sprintf("Published from %s", filepath.Base(filePath))
-	}
-
-	result, err := client.EditPage(cmd.Context(), wiki.EditPageArgs{
-		Title:   pageTitle,
-		Content: wikitext,
-		Summary: summary,
-		Minor:   minor,
-	})
+	req := editRequest{title: pageTitle, content: wikitext, summary: summary, minor: minor}
+	result, err := client.EditPage(cmd.Context(), req.toArgs())
 	if err != nil {
 		return fmt.Errorf("publish failed: %w", err)
 	}
 
 	// CAPTCHA retry loop
-	for !result.Success && result.CaptchaType != "" {
-		if isJSON(cmd) {
-			break
-		}
-		result = promptAndRetryCaptcha(cmd, client, pageTitle, wikitext, summary, minor, false, "", result)
-	}
+	session := editSession{client: client, req: req}
+	result = session.retryLoop(cmd, result)
 
 	if isJSON(cmd) {
 		return printJSON(result)

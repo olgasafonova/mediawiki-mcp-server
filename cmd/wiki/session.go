@@ -90,6 +90,12 @@ func writeSessionFile(sessions map[string]wiki.SessionState) error {
 	if err != nil {
 		return fmt.Errorf("marshal sessions: %w", err)
 	}
+	return atomicWriteSessionData(path, data)
+}
+
+// atomicWriteSessionData writes data to a temp file next to path and renames
+// it into place, so a process killed mid-write can't leave a corrupt file.
+func atomicWriteSessionData(path string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "sessions-*.json.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)

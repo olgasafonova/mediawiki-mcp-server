@@ -65,7 +65,8 @@ func runPage(cmd *cobra.Command, args []string) error {
 	return runPageSingle(cmd, client, ctx, args[0])
 }
 
-func runPageSection(cmd *cobra.Command, client *wiki.Client, ctx context.Context, title string, sectionIdx int) error {
+func runPageSection(cmd *cobra.Command, client *wiki.Client, ctx context.Context, title string) error {
+	sectionIdx, _ := cmd.Flags().GetInt("section")
 	result, err := client.GetSections(ctx, wiki.GetSectionsArgs{
 		Title:   title,
 		Section: sectionIdx,
@@ -101,7 +102,7 @@ func runPageSingle(cmd *cobra.Command, client *wiki.Client, ctx context.Context,
 	sectionIdx, _ := cmd.Flags().GetInt("section")
 
 	if sectionIdx >= 0 {
-		return runPageSection(cmd, client, ctx, title, sectionIdx)
+		return runPageSection(cmd, client, ctx, title)
 	}
 
 	result, err := client.GetPage(ctx, wiki.GetPageArgs{

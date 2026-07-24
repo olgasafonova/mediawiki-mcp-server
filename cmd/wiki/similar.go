@@ -59,12 +59,19 @@ func runSimilar(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printSimilarPages(result)
+	return nil
+}
+
+// printSimilarPages renders the similarity table, or the "nothing found"
+// note with the server's explanation when present.
+func printSimilarPages(result wiki.FindSimilarPagesResult) {
 	if len(result.SimilarPages) == 0 {
 		fmt.Printf("No similar pages found for %q (compared %d pages).\n", result.SourcePage, result.TotalCompared)
 		if result.Message != "" {
 			fmt.Println(result.Message)
 		}
-		return nil
+		return
 	}
 
 	fmt.Printf("Similar to %q (compared %d pages)\n\n", result.SourcePage, result.TotalCompared)
@@ -72,18 +79,16 @@ func runSimilar(cmd *cobra.Command, args []string) error {
 	tw := table()
 	fmt.Fprintf(tw, "SCORE\tTITLE\tLINKED\tBACKLINKED\tCOMMON TERMS\n")
 	for _, p := range result.SimilarPages {
-		linked := "no"
-		if p.IsLinked {
-			linked = "yes"
-		}
-		backlinked := "no"
-		if p.LinksBack {
-			backlinked = "yes"
-		}
 		terms := truncate(strings.Join(p.CommonTerms, ", "), 60)
-		fmt.Fprintf(tw, "%.2f\t%s\t%s\t%s\t%s\n", p.SimilarityScore, p.Title, linked, backlinked, terms)
+		fmt.Fprintf(tw, "%.2f\t%s\t%s\t%s\t%s\n", p.SimilarityScore, p.Title, yesNo(p.IsLinked), yesNo(p.LinksBack), terms)
 	}
 	_ = tw.Flush()
+}
 
-	return nil
+// yesNo renders a boolean as a table-friendly "yes"/"no".
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }

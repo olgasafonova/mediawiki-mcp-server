@@ -56,27 +56,48 @@ func runReplace(cmd *cobra.Command, args []string) error {
 	return runSingleReplace(cmd, args[0])
 }
 
+// requireFindReplace reads the --find/--replace flags and enforces that both
+// were provided. An explicitly empty --replace (deletion) is allowed.
+func requireFindReplace(cmd *cobra.Command) (find, replace string, err error) {
+	find, _ = cmd.Flags().GetString("find")
+	replace, _ = cmd.Flags().GetString("replace")
+	if find == "" {
+		return "", "", fmt.Errorf("--find is required")
+	}
+	if replace == "" && !cmd.Flags().Changed("replace") {
+		return "", "", fmt.Errorf("--replace is required")
+	}
+	return find, replace, nil
+}
+
+// setupReplace runs the scaffolding shared by both replace modes: wiki
+// client creation and --find/--replace validation. The caller owns closing
+// the returned client.
+func setupReplace(cmd *cobra.Command) (client *wiki.Client, find, replace string, err error) {
+	client, err = newWikiClient(cmd)
+	if err != nil {
+		return nil, "", "", err
+	}
+	find, replace, err = requireFindReplace(cmd)
+	if err != nil {
+		client.Close()
+		return nil, "", "", err
+	}
+	return client, find, replace, nil
+}
+
 func runSingleReplace(cmd *cobra.Command, title string) error {
-	client, err := newWikiClient(cmd)
+	client, find, replace, err := setupReplace(cmd)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	find, _ := cmd.Flags().GetString("find")
-	replace, _ := cmd.Flags().GetString("replace")
 	useRegex, _ := cmd.Flags().GetBool("regex")
 	all, _ := cmd.Flags().GetBool("all")
 	preview, _ := cmd.Flags().GetBool("preview")
 	summary, _ := cmd.Flags().GetString("summary")
 	minor, _ := cmd.Flags().GetBool("minor")
-
-	if find == "" {
-		return fmt.Errorf("--find is required")
-	}
-	if replace == "" && !cmd.Flags().Changed("replace") {
-		return fmt.Errorf("--replace is required")
-	}
 
 	result, err := client.FindReplace(context.Background(), wiki.FindReplaceArgs{
 		Title:    title,
@@ -96,10 +117,16 @@ func runSingleReplace(cmd *cobra.Command, title string) error {
 		return printJSON(result)
 	}
 
-	// Human-readable output
+	printSingleReplaceResult(result, find, title, preview)
+	return nil
+}
+
+// printSingleReplaceResult renders the human-readable outcome of a
+// single-page replace, listing the changed lines.
+func printSingleReplaceResult(result wiki.FindReplaceResult, find, title string, preview bool) {
 	if result.MatchCount == 0 {
 		fmt.Printf("No matches for %q in %s\n", find, title)
-		return nil
+		return
 	}
 
 	if preview {
@@ -113,19 +140,28 @@ func runSingleReplace(cmd *cobra.Command, title string) error {
 		fmt.Printf("    - %s\n", change.Before)
 		fmt.Printf("    + %s\n", change.After)
 	}
+}
 
-	return nil
+// splitPagesFlag turns the comma-separated --pages value into a trimmed,
+// empty-free list of page titles.
+func splitPagesFlag(pagesStr string) []string {
+	var pages []string
+	for _, p := range strings.Split(pagesStr, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			pages = append(pages, p)
+		}
+	}
+	return pages
 }
 
 func runBulkReplace(cmd *cobra.Command) error {
-	client, err := newWikiClient(cmd)
+	client, find, replace, err := setupReplace(cmd)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	find, _ := cmd.Flags().GetString("find")
-	replace, _ := cmd.Flags().GetString("replace")
 	useRegex, _ := cmd.Flags().GetBool("regex")
 	preview, _ := cmd.Flags().GetBool("preview")
 	summary, _ := cmd.Flags().GetString("summary")
@@ -133,25 +169,8 @@ func runBulkReplace(cmd *cobra.Command) error {
 	pagesStr, _ := cmd.Flags().GetString("pages")
 	category, _ := cmd.Flags().GetString("category")
 
-	if find == "" {
-		return fmt.Errorf("--find is required")
-	}
-	if replace == "" && !cmd.Flags().Changed("replace") {
-		return fmt.Errorf("--replace is required")
-	}
-
-	var pages []string
-	if pagesStr != "" {
-		for _, p := range strings.Split(pagesStr, ",") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				pages = append(pages, p)
-			}
-		}
-	}
-
 	result, err := client.BulkReplace(context.Background(), wiki.BulkReplaceArgs{
-		Pages:    pages,
+		Pages:    splitPagesFlag(pagesStr),
 		Category: category,
 		Find:     find,
 		Replace:  replace,
@@ -168,7 +187,13 @@ func runBulkReplace(cmd *cobra.Command) error {
 		return printJSON(result)
 	}
 
-	// Human-readable output
+	printBulkReplaceResult(result, preview)
+	return nil
+}
+
+// printBulkReplaceResult renders the human-readable summary and per-page
+// table for a bulk replace.
+func printBulkReplaceResult(result wiki.BulkReplaceResult, preview bool) {
 	if preview {
 		fmt.Printf("Preview: %d pages processed, %d with matches, %d total changes\n\n",
 			result.PagesProcessed, result.PagesModified, result.TotalChanges)
@@ -183,6 +208,4 @@ func runBulkReplace(cmd *cobra.Command) error {
 		fmt.Fprintf(tw, "%s\t%d\t%d\n", r.Title, r.MatchCount, r.ReplaceCount)
 	}
 	_ = tw.Flush()
-
-	return nil
 }

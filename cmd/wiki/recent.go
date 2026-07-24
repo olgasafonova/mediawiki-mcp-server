@@ -60,22 +60,32 @@ func runRecent(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
-	// Aggregated output
 	if result.Aggregated != nil {
-		fmt.Printf("Recent changes aggregated by %s (%d total)\n\n", result.Aggregated.By, result.Aggregated.TotalChanges)
-		tw := table()
-		fmt.Fprintf(tw, "KEY\tCOUNT\n")
-		for _, item := range result.Aggregated.Items {
-			fmt.Fprintf(tw, "%s\t%d\n", item.Key, item.Count)
-		}
-		_ = tw.Flush()
+		printAggregatedChanges(result.Aggregated)
 		return nil
 	}
 
-	// Raw changes output
+	printRecentChanges(result)
+	return nil
+}
+
+// printAggregatedChanges renders the KEY/COUNT table for aggregated mode.
+func printAggregatedChanges(agg *wiki.AggregatedChanges) {
+	fmt.Printf("Recent changes aggregated by %s (%d total)\n\n", agg.By, agg.TotalChanges)
+	tw := table()
+	fmt.Fprintf(tw, "KEY\tCOUNT\n")
+	for _, item := range agg.Items {
+		fmt.Fprintf(tw, "%s\t%d\n", item.Key, item.Count)
+	}
+	_ = tw.Flush()
+}
+
+// printRecentChanges renders the raw change list with a continuation hint
+// when more results are available.
+func printRecentChanges(result wiki.RecentChangesResult) {
 	if len(result.Changes) == 0 {
 		fmt.Println("No recent changes found.")
-		return nil
+		return
 	}
 
 	fmt.Printf("Recent changes (%d)", len(result.Changes))
@@ -97,6 +107,4 @@ func runRecent(cmd *cobra.Command, args []string) error {
 	if result.HasMore && result.ContinueFrom != "" {
 		fmt.Printf("\nMore results available. Use --continue %q to see next page.\n", result.ContinueFrom)
 	}
-
-	return nil
 }
