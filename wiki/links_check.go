@@ -9,10 +9,16 @@ import (
 	"time"
 )
 
+// isCheckableLinkScheme reports whether the URL scheme is one the link
+// checker can probe (http or https).
+func isCheckableLinkScheme(scheme string) bool {
+	return scheme == "http" || scheme == "https"
+}
+
 func validateLinkURLForCheck(rawURL string) (LinkCheckResult, bool) {
 	r := LinkCheckResult{URL: rawURL}
 	parsed, err := url.Parse(rawURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || !isCheckableLinkScheme(parsed.Scheme) {
 		r.Status = "invalid_url"
 		r.Error = fmt.Sprintf("[%s] Invalid URL format", SSRFCodeInvalidURL)
 		r.Broken = true

@@ -35,20 +35,7 @@ func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, err
 		return SearchResult{}, err
 	}
 
-	limit := normalizeLimit(args.Limit, 20, MaxLimit)
-
-	params := url.Values{}
-	params.Set("action", "query")
-	params.Set("list", "search")
-	params.Set("srsearch", args.Query)
-	params.Set("srlimit", strconv.Itoa(limit))
-	params.Set("srprop", "snippet|size|timestamp")
-
-	if args.Offset > 0 {
-		params.Set("sroffset", strconv.Itoa(args.Offset))
-	}
-
-	resp, err := c.apiRequest(ctx, params)
+	resp, err := c.apiRequest(ctx, buildSearchParams(args))
 	if err != nil {
 		return SearchResult{}, err
 	}
@@ -64,22 +51,7 @@ func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, err
 		totalHits = getInt(searchInfo["totalhits"])
 	}
 
-	searchResults := getSlice(query["search"])
-	results := make([]SearchHit, 0, len(searchResults))
-
-	for _, sr := range searchResults {
-		item := getMap(sr)
-		if item == nil {
-			continue
-		}
-		hit := SearchHit{
-			PageID:  getInt(item["pageid"]),
-			Title:   getString(item["title"]),
-			Snippet: stripHTMLTags(getString(item["snippet"])),
-			Size:    getInt(item["size"]),
-		}
-		results = append(results, hit)
-	}
+	results := parseSearchHits(getSlice(query["search"]))
 
 	result := SearchResult{
 		Query:     args.Query,
@@ -93,6 +65,41 @@ func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, err
 	}
 
 	return result, nil
+}
+
+// buildSearchParams assembles the MediaWiki API parameters for a search call
+func buildSearchParams(args SearchArgs) url.Values {
+	limit := normalizeLimit(args.Limit, 20, MaxLimit)
+
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("list", "search")
+	params.Set("srsearch", args.Query)
+	params.Set("srlimit", strconv.Itoa(limit))
+	params.Set("srprop", "snippet|size|timestamp")
+
+	if args.Offset > 0 {
+		params.Set("sroffset", strconv.Itoa(args.Offset))
+	}
+	return params
+}
+
+// parseSearchHits converts raw API search entries into SearchHit values
+func parseSearchHits(searchResults []any) []SearchHit {
+	results := make([]SearchHit, 0, len(searchResults))
+	for _, sr := range searchResults {
+		item := getMap(sr)
+		if item == nil {
+			continue
+		}
+		results = append(results, SearchHit{
+			PageID:  getInt(item["pageid"]),
+			Title:   getString(item["title"]),
+			Snippet: stripHTMLTags(getString(item["snippet"])),
+			Size:    getInt(item["size"]),
+		})
+	}
+	return results
 }
 
 // SearchInPage searches for text within a specific wiki page
@@ -216,12 +223,21 @@ func (c *Client) SearchInFile(ctx context.Context, args SearchInFileArgs) (Searc
 		Matches:  make([]FileSearchMatch, 0),
 	}
 
-	// Handle based on file type
+	if err := searchFileContent(&result, fileType, fileData, args.Query); err != nil {
+		return SearchInFileResult{}, err
+	}
+
+	return result, nil
+}
+
+// searchFileContent dispatches the in-file search based on file type and
+// fills in the matches, searchability, and message on the result.
+func searchFileContent(result *SearchInFileResult, fileType string, fileData []byte, query string) error {
 	switch strings.ToLower(fileType) {
 	case "pdf", "application/pdf":
-		matches, searchable, message, err := SearchInPDF(fileData, args.Query)
+		matches, searchable, message, err := SearchInPDF(fileData, query)
 		if err != nil {
-			return SearchInFileResult{}, err
+			return err
 		}
 		result.Matches = matches
 		result.MatchCount = len(matches)
@@ -230,23 +246,25 @@ func (c *Client) SearchInFile(ctx context.Context, args SearchInFileArgs) (Searc
 
 	case "txt", "text", "text/plain", "md", "markdown", "csv", "json", "xml", "html":
 		// Text-based files - search directly
-		text := string(fileData)
-		matches := searchInText(text, args.Query, 1)
-		result.Matches = matches
-		result.MatchCount = len(matches)
-		result.Searchable = true
-		if len(matches) == 0 {
-			result.Message = fmt.Sprintf("No matches found for '%s'", args.Query)
-		} else {
-			result.Message = fmt.Sprintf("Found %d matches", len(matches))
-		}
+		applyTextMatches(result, searchInText(string(fileData), query, 1), query)
 
 	default:
 		result.Searchable = false
 		result.Message = fmt.Sprintf("File type '%s' is not supported for text search. Supported types: PDF (text-based), TXT, MD, CSV, JSON, XML, HTML", fileType)
 	}
+	return nil
+}
 
-	return result, nil
+// applyTextMatches records text-search matches and a summary message on the result
+func applyTextMatches(result *SearchInFileResult, matches []FileSearchMatch, query string) {
+	result.Matches = matches
+	result.MatchCount = len(matches)
+	result.Searchable = true
+	if len(matches) == 0 {
+		result.Message = fmt.Sprintf("No matches found for '%s'", query)
+	} else {
+		result.Message = fmt.Sprintf("Found %d matches", len(matches))
+	}
 }
 
 // FindSimilarPages finds pages with similar content to the given page
