@@ -289,7 +289,7 @@ func (c *Client) BulkReplace(ctx context.Context, args BulkReplaceArgs) (BulkRep
 	}
 
 	limit := normalizeLimit(args.Limit, 10, 50)
-	pagesToProcess, err := c.collectPagesFromArgs(ctx, args.Pages, args.Category, limit, "pages")
+	pagesToProcess, err := c.collectPagesFromArgs(ctx, pageSelection{Pages: args.Pages, Category: args.Category, Limit: limit, FieldName: "pages"})
 	if err != nil {
 		return BulkReplaceResult{}, err
 	}

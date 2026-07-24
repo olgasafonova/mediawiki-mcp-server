@@ -72,6 +72,13 @@ func runTranslations(cmd *cobra.Command, _ []string) error {
 		return printJSON(result)
 	}
 
+	printTranslationsTable(result)
+	return nil
+}
+
+// printTranslationsTable renders the per-page translation matrix with one
+// column per checked language.
+func printTranslationsTable(result wiki.CheckTranslationsResult) {
 	fmt.Printf("Checked %d page(s) in [%s] using pattern=%s\n",
 		result.PagesChecked, strings.Join(result.LanguagesChecked, ", "), result.Pattern)
 	fmt.Printf("Missing translations: %d\n\n", result.MissingCount)
@@ -82,22 +89,21 @@ func runTranslations(cmd *cobra.Command, _ []string) error {
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 
 	for _, p := range result.Pages {
-		row := []string{p.BasePage}
-		if p.Complete {
-			row = append(row, "yes")
-		} else {
-			row = append(row, "no")
-		}
-		for _, lang := range result.LanguagesChecked {
-			if st, ok := p.Translations[lang]; ok && st.Exists {
-				row = append(row, "ok")
-			} else {
-				row = append(row, "-")
-			}
-		}
-		fmt.Fprintln(tw, strings.Join(row, "\t"))
+		fmt.Fprintln(tw, strings.Join(translationRow(p, result.LanguagesChecked), "\t"))
 	}
 	_ = tw.Flush()
+}
 
-	return nil
+// translationRow builds one table row: base page, completeness, and an
+// "ok"/"-" marker per language.
+func translationRow(p wiki.PageTranslationResult, languages []string) []string {
+	row := []string{p.BasePage, yesNo(p.Complete)}
+	for _, lang := range languages {
+		if st, ok := p.Translations[lang]; ok && st.Exists {
+			row = append(row, "ok")
+		} else {
+			row = append(row, "-")
+		}
+	}
+	return row
 }

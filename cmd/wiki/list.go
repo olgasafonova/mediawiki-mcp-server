@@ -228,9 +228,16 @@ func runListUsers(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printUsersTable(result)
+	return nil
+}
+
+// printUsersTable renders the user list with group labeling and a
+// continuation hint when more results are available.
+func printUsersTable(result wiki.ListUsersResult) {
 	if len(result.Users) == 0 {
 		fmt.Println("No users found.")
-		return nil
+		return
 	}
 
 	label := "Users"
@@ -255,6 +262,4 @@ func runListUsers(cmd *cobra.Command, args []string) error {
 	if result.HasMore {
 		fmt.Printf("\nMore users available. Use --continue %q to see next page.\n", result.ContinueFrom)
 	}
-
-	return nil
 }

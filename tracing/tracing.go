@@ -49,49 +49,21 @@ func Setup(ctx context.Context, config Config) (func(context.Context) error, err
 		return func(context.Context) error { return nil }, nil
 	}
 
-	// Build resource with service information
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(config.ServiceName),
-			semconv.ServiceVersion(config.ServiceVersion),
-			attribute.String("environment", config.Environment),
-		),
-	)
+	res, err := buildResource(config)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create appropriate exporter
-	var exporter sdktrace.SpanExporter
-	if config.OTLPEndpoint != "" {
-		exporter, err = otlptracehttp.New(ctx,
-			otlptracehttp.WithEndpoint(config.OTLPEndpoint),
-			otlptracehttp.WithInsecure(),
-		)
-	} else {
-		exporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
-	}
+	exporter, err := newExporter(ctx, config)
 	if err != nil {
 		return nil, err
-	}
-
-	// Create sampler based on config
-	var sampler sdktrace.Sampler
-	if config.SampleRate >= 1.0 {
-		sampler = sdktrace.AlwaysSample()
-	} else if config.SampleRate <= 0 {
-		sampler = sdktrace.NeverSample()
-	} else {
-		sampler = sdktrace.TraceIDRatioBased(config.SampleRate)
 	}
 
 	// Create trace provider
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sampler),
+		sdktrace.WithSampler(newSampler(config.SampleRate)),
 	)
 
 	// Set global providers
@@ -102,6 +74,41 @@ func Setup(ctx context.Context, config Config) (func(context.Context) error, err
 	))
 
 	return tp.Shutdown, nil
+}
+
+// buildResource merges the default resource with service information
+func buildResource(config Config) (*resource.Resource, error) {
+	return resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(config.ServiceName),
+			semconv.ServiceVersion(config.ServiceVersion),
+			attribute.String("environment", config.Environment),
+		),
+	)
+}
+
+// newExporter creates an OTLP exporter when an endpoint is configured, otherwise stdout
+func newExporter(ctx context.Context, config Config) (sdktrace.SpanExporter, error) {
+	if config.OTLPEndpoint != "" {
+		return otlptracehttp.New(ctx,
+			otlptracehttp.WithEndpoint(config.OTLPEndpoint),
+			otlptracehttp.WithInsecure(),
+		)
+	}
+	return stdouttrace.New(stdouttrace.WithPrettyPrint())
+}
+
+// newSampler maps a sample rate to the corresponding sampler
+func newSampler(rate float64) sdktrace.Sampler {
+	if rate >= 1.0 {
+		return sdktrace.AlwaysSample()
+	}
+	if rate <= 0 {
+		return sdktrace.NeverSample()
+	}
+	return sdktrace.TraceIDRatioBased(rate)
 }
 
 // Tracer returns the named tracer for the server

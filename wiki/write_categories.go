@@ -67,12 +67,20 @@ func buildCategoryEditSummary(added, removed []string) string {
 	return strings.Join(parts, ". ")
 }
 
-func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs) (ManageCategoriesResult, error) {
+// validateManageCategoriesArgs checks the required inputs for ManageCategories.
+func validateManageCategoriesArgs(args ManageCategoriesArgs) error {
 	if args.Title == "" {
-		return ManageCategoriesResult{}, fmt.Errorf("title is required")
+		return fmt.Errorf("title is required")
 	}
 	if len(args.Add) == 0 && len(args.Remove) == 0 {
-		return ManageCategoriesResult{}, fmt.Errorf("at least one category to add or remove is required")
+		return fmt.Errorf("at least one category to add or remove is required")
+	}
+	return nil
+}
+
+func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs) (ManageCategoriesResult, error) {
+	if err := validateManageCategoriesArgs(args); err != nil {
+		return ManageCategoriesResult{}, err
 	}
 
 	page, err := c.GetPage(ctx, GetPageArgs{Title: args.Title, Format: "wikitext"})
@@ -81,21 +89,12 @@ func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs
 	}
 
 	preview := args.PreviewEnabled()
-	existing := parseExistingCategories(page.Content)
 	result := ManageCategoriesResult{
-		Title:             page.Title,
-		Preview:           preview,
-		CurrentCategories: keysOf(existing),
+		Title:   page.Title,
+		Preview: preview,
 	}
 
-	newContent, removed, notFound := removeCategoriesFromContent(page.Content, args.Remove, existing)
-	result.Removed = removed
-	result.NotFound = notFound
-
-	newContent, added, alreadyPresent := addCategoriesToContent(newContent, args.Add, existing)
-	result.Added = added
-	result.AlreadyPresent = alreadyPresent
-	result.CurrentCategories = keysOf(existing)
+	newContent := applyCategoryChanges(page, args, &result)
 
 	if len(result.Added) == 0 && len(result.Removed) == 0 {
 		result.Success = true
@@ -108,25 +107,57 @@ func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs
 		return result, nil
 	}
 
-	summary := args.Summary
-	if summary == "" {
-		summary = buildCategoryEditSummary(result.Added, result.Removed)
-	}
-	oldRevision := page.Revision
-	editResult, err := c.EditPage(ctx, EditPageArgs{
+	edit := EditPageArgs{
 		Title:   page.Title,
 		Content: newContent,
-		Summary: summary,
+		Summary: categoryEditSummary(args, result),
 		Minor:   true,
-	})
+	}
+	if err := c.commitCategoryChanges(ctx, edit, page.Revision, &result); err != nil {
+		return ManageCategoriesResult{}, err
+	}
+	return result, nil
+}
+
+// applyCategoryChanges rewrites the page content per the requested add/remove
+// lists, records the per-category outcome on the result, and returns the
+// rewritten wikitext.
+func applyCategoryChanges(page PageContent, args ManageCategoriesArgs, result *ManageCategoriesResult) string {
+	existing := parseExistingCategories(page.Content)
+
+	newContent, removed, notFound := removeCategoriesFromContent(page.Content, args.Remove, existing)
+	result.Removed = removed
+	result.NotFound = notFound
+
+	newContent, added, alreadyPresent := addCategoriesToContent(newContent, args.Add, existing)
+	result.Added = added
+	result.AlreadyPresent = alreadyPresent
+	result.CurrentCategories = keysOf(existing)
+
+	return newContent
+}
+
+// categoryEditSummary returns the user-provided summary, or a generated one
+// describing the applied changes.
+func categoryEditSummary(args ManageCategoriesArgs, result ManageCategoriesResult) string {
+	if args.Summary != "" {
+		return args.Summary
+	}
+	return buildCategoryEditSummary(result.Added, result.Removed)
+}
+
+// commitCategoryChanges saves the rewritten content and fills in the edit
+// outcome and revision info on the result.
+func (c *Client) commitCategoryChanges(ctx context.Context, edit EditPageArgs, oldRevision int, result *ManageCategoriesResult) error {
+	editResult, err := c.EditPage(ctx, edit)
 	if err != nil {
-		return ManageCategoriesResult{}, fmt.Errorf("failed to save changes: %w", err)
+		return fmt.Errorf("failed to save changes: %w", err)
 	}
 	result.Success = editResult.Success
 	result.RevisionID = editResult.RevisionID
 	result.Message = fmt.Sprintf("Added %d, removed %d categories", len(result.Added), len(result.Removed))
-	result.Revision, result.Undo = c.buildEditRevisionInfo(page.Title, oldRevision, editResult.RevisionID)
-	return result, nil
+	result.Revision, result.Undo = c.buildEditRevisionInfo(edit.Title, oldRevision, editResult.RevisionID)
+	return nil
 }
 
 // keysOf returns the keys of a string-bool map as a slice.

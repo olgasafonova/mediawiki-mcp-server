@@ -313,28 +313,36 @@ func newMCPServer(logger *slog.Logger) *mcp.Server {
 // the wiki resources. It returns a cleanup function for any audit logger.
 func registerToolsAndResources(server *mcp.Server, client *wiki.Client, logger *slog.Logger) func() {
 	registry := tools.NewHandlerRegistry(client, logger)
-	cleanup := func() {}
-
-	// Handler-level audit logging covers all tool calls, not just writes.
-	if auditLogPath := os.Getenv("MEDIAWIKI_AUDIT_LOG"); auditLogPath != "" {
-		toolAuditLogger, err := tools.NewFileToolAuditLogger(auditLogPath, logger)
-		if err != nil {
-			logger.Warn("Failed to create tool audit logger", "path", auditLogPath, "error", err)
-		} else {
-			registry.WithAuditLogger(toolAuditLogger)
-			cleanup = func() {
-				if err := toolAuditLogger.Close(); err != nil {
-					logger.Warn("Failed to close tool audit logger", "error", err)
-				}
-			}
-			logger.Info("Tool audit logging enabled", "path", auditLogPath)
-		}
-	}
+	cleanup := setupToolAuditLogging(registry, logger)
 
 	registry.RegisterAll(server)
 	registerConverterTool(server, logger)
 	registerResources(server, client, logger)
 	return cleanup
+}
+
+// setupToolAuditLogging enables handler-level audit logging (all tool calls,
+// not just writes) when MEDIAWIKI_AUDIT_LOG is set. It returns the cleanup
+// function that closes the logger (a no-op when auditing is disabled).
+func setupToolAuditLogging(registry *tools.HandlerRegistry, logger *slog.Logger) func() {
+	auditLogPath := os.Getenv("MEDIAWIKI_AUDIT_LOG")
+	if auditLogPath == "" {
+		return func() {}
+	}
+
+	toolAuditLogger, err := tools.NewFileToolAuditLogger(auditLogPath, logger)
+	if err != nil {
+		logger.Warn("Failed to create tool audit logger", "path", auditLogPath, "error", err)
+		return func() {}
+	}
+
+	registry.WithAuditLogger(toolAuditLogger)
+	logger.Info("Tool audit logging enabled", "path", auditLogPath)
+	return func() {
+		if err := toolAuditLogger.Close(); err != nil {
+			logger.Warn("Failed to close tool audit logger", "error", err)
+		}
+	}
 }
 
 // buildServerCard builds the SEP-2127 Server Card for HTTP discovery.

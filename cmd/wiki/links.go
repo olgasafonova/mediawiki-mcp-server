@@ -164,6 +164,13 @@ func runLinksBacklinks(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	printBacklinks(result, limit)
+	return nil
+}
+
+// printBacklinks renders the backlink table, with a hint for fetching more
+// results when the wiki truncated the list at limit.
+func printBacklinks(result wiki.GetBacklinksResult, limit int) {
 	fmt.Printf("Pages linking to %q (%d)", result.Title, result.Count)
 	if result.HasMore {
 		fmt.Printf(" (showing %d)", len(result.Backlinks))
@@ -185,8 +192,6 @@ func runLinksBacklinks(cmd *cobra.Command, args []string) error {
 	if result.HasMore {
 		fmt.Printf("\nMore results available. Use --limit %d to see more.\n", limit*2)
 	}
-
-	return nil
 }
 
 // ========== broken ==========
@@ -235,9 +240,16 @@ func runLinksBroken(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printBrokenLinksReport(result)
+	return nil
+}
+
+// printBrokenLinksReport summarizes the broken-link scan and lists the
+// affected pages, skipping clean ones.
+func printBrokenLinksReport(result wiki.FindBrokenInternalLinksResult) {
 	if result.BrokenCount == 0 {
 		fmt.Printf("No broken internal links found (%d pages checked).\n", result.PagesChecked)
-		return nil
+		return
 	}
 
 	fmt.Printf("Found %d broken internal links across %d pages:\n\n", result.BrokenCount, result.PagesChecked)
@@ -246,18 +258,22 @@ func runLinksBroken(cmd *cobra.Command, args []string) error {
 		if page.BrokenCount == 0 {
 			continue
 		}
-		fmt.Printf("  %s (%d broken):\n", page.Title, page.BrokenCount)
-		for _, link := range page.BrokenLinks {
-			if link.Line > 0 {
-				fmt.Printf("    -> %s (line %d)\n", link.Target, link.Line)
-			} else {
-				fmt.Printf("    -> %s\n", link.Target)
-			}
-		}
-		fmt.Println()
+		printBrokenLinksPage(page)
 	}
+}
 
-	return nil
+// printBrokenLinksPage lists the broken links found on one page, with line
+// numbers when the scanner recorded them.
+func printBrokenLinksPage(page wiki.PageBrokenLinksResult) {
+	fmt.Printf("  %s (%d broken):\n", page.Title, page.BrokenCount)
+	for _, link := range page.BrokenLinks {
+		if link.Line > 0 {
+			fmt.Printf("    -> %s (line %d)\n", link.Target, link.Line)
+		} else {
+			fmt.Printf("    -> %s\n", link.Target)
+		}
+	}
+	fmt.Println()
 }
 
 // ========== check ==========

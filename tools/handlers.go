@@ -345,62 +345,100 @@ func (h *HandlerRegistry) logExecution(spec ToolSpec, args, result any) {
 }
 
 // appendArgAttrs adds tool-specific argument attributes to attrs.
-// Type-asserted over reflection for performance on the hot path.
+// Type-asserted over reflection for performance on the hot path; split into
+// read-tool and write-tool halves to keep each type switch small.
 func appendArgAttrs(attrs []any, args any) []any {
-	switch a := args.(type) {
-	case wiki.SearchArgs:
-		return append(attrs, "query", a.Query)
-	case wiki.GetPageArgs:
-		return append(attrs, "title", a.Title, "format", a.Format)
-	case wiki.SearchInPageArgs:
-		return append(attrs, "title", a.Title, "query", a.Query)
-	case wiki.EditPageArgs:
-		return append(attrs, "title", a.Title, "content_len", len(a.Content))
-	case wiki.FindReplaceArgs:
-		return append(attrs, "title", a.Title, "preview", a.PreviewEnabled())
-	case wiki.BulkReplaceArgs:
-		return append(attrs, "pages_count", len(a.Pages), "preview", a.PreviewEnabled())
-	case wiki.GetPagesBatchArgs:
-		return append(attrs, "titles_count", len(a.Titles))
-	case wiki.SearchAndReadArgs:
-		return append(attrs, "query", a.Query, "read_count", a.ReadCount)
-	case wiki.GetPageSummaryArgs:
-		return append(attrs, "title", a.Title)
-	case wiki.MovePageArgs:
-		return append(attrs, "from", a.From, "to", a.To)
-	case wiki.ManageCategoriesArgs:
-		return append(attrs, "title", a.Title, "add", len(a.Add), "remove", len(a.Remove))
-	case wiki.GetStalePagesArgs:
-		return append(attrs, "days", a.Days, "category", a.Category)
+	if out, ok := readArgAttrs(attrs, args); ok {
+		return out
+	}
+	if out, ok := writeArgAttrs(attrs, args); ok {
+		return out
 	}
 	return attrs
 }
 
-// appendResultAttrs adds tool-specific result attributes to attrs.
+// readArgAttrs covers the arguments of read-only tools (search, fetch, inspect).
+func readArgAttrs(attrs []any, args any) ([]any, bool) {
+	switch a := args.(type) {
+	case wiki.SearchArgs:
+		return append(attrs, "query", a.Query), true
+	case wiki.GetPageArgs:
+		return append(attrs, "title", a.Title, "format", a.Format), true
+	case wiki.SearchInPageArgs:
+		return append(attrs, "title", a.Title, "query", a.Query), true
+	case wiki.GetPagesBatchArgs:
+		return append(attrs, "titles_count", len(a.Titles)), true
+	case wiki.SearchAndReadArgs:
+		return append(attrs, "query", a.Query, "read_count", a.ReadCount), true
+	case wiki.GetPageSummaryArgs:
+		return append(attrs, "title", a.Title), true
+	case wiki.GetStalePagesArgs:
+		return append(attrs, "days", a.Days, "category", a.Category), true
+	}
+	return attrs, false
+}
+
+// writeArgAttrs covers the arguments of mutating tools (edit, replace, move).
+func writeArgAttrs(attrs []any, args any) ([]any, bool) {
+	switch a := args.(type) {
+	case wiki.EditPageArgs:
+		return append(attrs, "title", a.Title, "content_len", len(a.Content)), true
+	case wiki.FindReplaceArgs:
+		return append(attrs, "title", a.Title, "preview", a.PreviewEnabled()), true
+	case wiki.BulkReplaceArgs:
+		return append(attrs, "pages_count", len(a.Pages), "preview", a.PreviewEnabled()), true
+	case wiki.MovePageArgs:
+		return append(attrs, "from", a.From, "to", a.To), true
+	case wiki.ManageCategoriesArgs:
+		return append(attrs, "title", a.Title, "add", len(a.Add), "remove", len(a.Remove)), true
+	}
+	return attrs, false
+}
+
+// appendResultAttrs adds tool-specific result attributes to attrs, split the
+// same way as appendArgAttrs.
 func appendResultAttrs(attrs []any, result any) []any {
-	switch r := result.(type) {
-	case wiki.SearchResult:
-		return append(attrs, "results_count", len(r.Results), "total_hits", r.TotalHits)
-	case wiki.PageContent:
-		return append(attrs, "output_chars", len(r.Content))
-	case wiki.EditResult:
-		return append(attrs, "success", r.Success, "new_page", r.NewPage)
-	case wiki.FindReplaceResult:
-		return append(attrs, "matches", r.MatchCount, "replaced", r.ReplaceCount)
-	case wiki.BulkReplaceResult:
-		return append(attrs, "pages_modified", r.PagesModified, "total_changes", r.TotalChanges)
-	case wiki.GetPagesBatchResult:
-		return append(attrs, "found", r.FoundCount, "missing", r.MissingCount)
-	case wiki.SearchAndReadResult:
-		return append(attrs, "total_hits", r.TotalHits, "pages_read", len(r.Pages))
-	case wiki.PageSummaryResult:
-		return append(attrs, "sections", r.SectionCount, "length", r.Length)
-	case wiki.MovePageResult:
-		return append(attrs, "success", r.Success, "from", r.From, "to", r.To)
-	case wiki.ManageCategoriesResult:
-		return append(attrs, "added", len(r.Added), "removed", len(r.Removed))
-	case wiki.GetStalePagesResult:
-		return append(attrs, "stale_count", r.StaleCount, "scanned", r.TotalScanned)
+	if out, ok := readResultAttrs(attrs, result); ok {
+		return out
+	}
+	if out, ok := writeResultAttrs(attrs, result); ok {
+		return out
 	}
 	return attrs
+}
+
+// readResultAttrs covers the results of read-only tools.
+func readResultAttrs(attrs []any, result any) ([]any, bool) {
+	switch r := result.(type) {
+	case wiki.SearchResult:
+		return append(attrs, "results_count", len(r.Results), "total_hits", r.TotalHits), true
+	case wiki.PageContent:
+		return append(attrs, "output_chars", len(r.Content)), true
+	case wiki.GetPagesBatchResult:
+		return append(attrs, "found", r.FoundCount, "missing", r.MissingCount), true
+	case wiki.SearchAndReadResult:
+		return append(attrs, "total_hits", r.TotalHits, "pages_read", len(r.Pages)), true
+	case wiki.PageSummaryResult:
+		return append(attrs, "sections", r.SectionCount, "length", r.Length), true
+	case wiki.GetStalePagesResult:
+		return append(attrs, "stale_count", r.StaleCount, "scanned", r.TotalScanned), true
+	}
+	return attrs, false
+}
+
+// writeResultAttrs covers the results of mutating tools.
+func writeResultAttrs(attrs []any, result any) ([]any, bool) {
+	switch r := result.(type) {
+	case wiki.EditResult:
+		return append(attrs, "success", r.Success, "new_page", r.NewPage), true
+	case wiki.FindReplaceResult:
+		return append(attrs, "matches", r.MatchCount, "replaced", r.ReplaceCount), true
+	case wiki.BulkReplaceResult:
+		return append(attrs, "pages_modified", r.PagesModified, "total_changes", r.TotalChanges), true
+	case wiki.MovePageResult:
+		return append(attrs, "success", r.Success, "from", r.From, "to", r.To), true
+	case wiki.ManageCategoriesResult:
+		return append(attrs, "added", len(r.Added), "removed", len(r.Removed)), true
+	}
+	return attrs, false
 }

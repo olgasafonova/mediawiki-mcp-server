@@ -43,27 +43,13 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	comment, _ := cmd.Flags().GetString("comment")
 	force, _ := cmd.Flags().GetBool("force")
 
-	if filePath == "" && fileURL == "" {
-		return usageErr(fmt.Errorf("--file or --url is required"))
-	}
-	if filePath != "" && fileURL != "" {
-		return usageErr(fmt.Errorf("--file and --url are mutually exclusive"))
+	if err := validateUploadSource(filePath, fileURL); err != nil {
+		return err
 	}
 
-	// Read the file locally on the user's behalf and hand the bytes to the
-	// wiki client via FileData. The client deliberately refuses to read
-	// arbitrary local files itself (MCP-safety), so the CLI is the right
-	// layer to do filesystem I/O.
-	var fileData []byte
-	if filePath != "" {
-		abs, err := filepath.Abs(filePath)
-		if err != nil {
-			return fmt.Errorf("resolve %s: %w", filePath, err)
-		}
-		fileData, err = os.ReadFile(abs) // #nosec G304 -- path supplied via CLI flag by the invoking user
-		if err != nil {
-			return fmt.Errorf("read %s: %w", abs, err)
-		}
+	fileData, err := readUploadFile(filePath)
+	if err != nil {
+		return err
 	}
 
 	client, err := newWikiClient(cmd)
@@ -88,6 +74,44 @@ func runUpload(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printUploadResult(cmd, result)
+	return nil
+}
+
+// validateUploadSource enforces that exactly one of --file/--url was given.
+func validateUploadSource(filePath, fileURL string) error {
+	if filePath == "" && fileURL == "" {
+		return usageErr(fmt.Errorf("--file or --url is required"))
+	}
+	if filePath != "" && fileURL != "" {
+		return usageErr(fmt.Errorf("--file and --url are mutually exclusive"))
+	}
+	return nil
+}
+
+// readUploadFile reads the local upload source on the user's behalf so the
+// bytes can be handed to the wiki client via FileData. The client
+// deliberately refuses to read arbitrary local files itself (MCP-safety),
+// so the CLI is the right layer to do filesystem I/O. An empty path (URL
+// mode) returns nil data.
+func readUploadFile(filePath string) ([]byte, error) {
+	if filePath == "" {
+		return nil, nil
+	}
+	abs, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", filePath, err)
+	}
+	fileData, err := os.ReadFile(abs) // #nosec G304 -- path supplied via CLI flag by the invoking user
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", abs, err)
+	}
+	return fileData, nil
+}
+
+// printUploadResult renders the upload outcome, sending any wiki warnings
+// to stderr.
+func printUploadResult(cmd *cobra.Command, result wiki.UploadFileResult) {
 	if result.Success {
 		fmt.Printf("Uploaded %s", result.Filename)
 		if result.URL != "" {
@@ -100,5 +124,4 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	for _, w := range result.Warnings {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
 	}
-	return nil
 }

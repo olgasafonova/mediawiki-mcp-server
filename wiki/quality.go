@@ -7,37 +7,54 @@ import (
 	"time"
 )
 
-// collectPagesFromArgs resolves the set of pages to operate on from either
-// an explicit list or a category. Returns an error if neither is specified.
-// pagesFieldName is used in the "neither specified" error message so callers
-// can match their own argument naming (e.g. "pages" vs "base_pages").
-func (c *Client) collectPagesFromArgs(ctx context.Context, pages []string, category string, limit int, pagesFieldName string) ([]string, error) {
-	if len(pages) > 0 {
-		if len(pages) > limit {
-			pages = pages[:limit]
-		}
-		return pages, nil
-	}
-	if category != "" {
-		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
-			Category: category,
-			Limit:    limit,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get category members: %w", err)
-		}
-		titles := make([]string, 0, len(catResult.Members))
-		for _, p := range catResult.Members {
-			titles = append(titles, p.Title)
-		}
-		return titles, nil
-	}
-	return nil, fmt.Errorf("either '%s' or 'category' must be specified", pagesFieldName)
+// pageSelection describes which pages an operation should run on: either an
+// explicit list or a category. FieldName is used in the "neither specified"
+// error message so callers can match their own argument naming
+// (e.g. "pages" vs "base_pages").
+type pageSelection struct {
+	Pages     []string
+	Category  string
+	Limit     int
+	FieldName string
 }
 
-// CheckTerminology checks pages for terminology inconsistencies based on a wiki glossary
-// validTranslationPatterns is the set of accepted translation pattern names.
-// healthCheckApply mutates the audit result with one check's outcome.
+// collectPagesFromArgs resolves the set of pages to operate on from a
+// pageSelection. Returns an error if neither pages nor category is specified.
+func (c *Client) collectPagesFromArgs(ctx context.Context, sel pageSelection) ([]string, error) {
+	if len(sel.Pages) > 0 {
+		return capPageList(sel.Pages, sel.Limit), nil
+	}
+	if sel.Category != "" {
+		return c.categoryPageTitles(ctx, sel.Category, sel.Limit)
+	}
+	return nil, fmt.Errorf("either '%s' or 'category' must be specified", sel.FieldName)
+}
+
+// capPageList truncates the page list to at most limit entries.
+func capPageList(pages []string, limit int) []string {
+	if len(pages) > limit {
+		return pages[:limit]
+	}
+	return pages
+}
+
+// categoryPageTitles returns the titles of up to limit members of a category.
+func (c *Client) categoryPageTitles(ctx context.Context, category string, limit int) ([]string, error) {
+	catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{
+		Category: category,
+		Limit:    limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get category members: %w", err)
+	}
+	titles := make([]string, 0, len(catResult.Members))
+	for _, p := range catResult.Members {
+		titles = append(titles, p.Title)
+	}
+	return titles, nil
+}
+
+// listPagesForStaleCheck gathers candidate page titles for a staleness audit;
 // the caller filters them by last-edited timestamp.
 func (c *Client) listPagesForStaleCheck(ctx context.Context, args GetStalePagesArgs, limit int) ([]string, error) {
 	if args.Category != "" {
@@ -79,18 +96,23 @@ func (c *Client) findStaleInBatches(ctx context.Context, titles []string, cutoff
 		if ctx.Err() != nil {
 			break
 		}
-		end := i + MaxBatchSize
-		if end > len(titles) {
-			end = len(titles)
-		}
-		batchInfo, err := c.GetPagesInfoBatch(ctx, GetPagesInfoBatchArgs{Titles: titles[i:end]})
-		if err != nil {
-			continue
-		}
-		for _, info := range batchInfo.Pages {
-			if page, ok := staleEntryFromInfo(info, cutoff); ok {
-				stale = append(stale, page)
-			}
+		end := min(i+MaxBatchSize, len(titles))
+		stale = append(stale, c.staleInBatch(ctx, titles[i:end], cutoff)...)
+	}
+	return stale
+}
+
+// staleInBatch fetches info for one batch of titles and returns the entries
+// last touched before cutoff. A failed batch yields no entries.
+func (c *Client) staleInBatch(ctx context.Context, batch []string, cutoff time.Time) []StalePage {
+	batchInfo, err := c.GetPagesInfoBatch(ctx, GetPagesInfoBatchArgs{Titles: batch})
+	if err != nil {
+		return nil
+	}
+	stale := make([]StalePage, 0)
+	for _, info := range batchInfo.Pages {
+		if page, ok := staleEntryFromInfo(info, cutoff); ok {
+			stale = append(stale, page)
 		}
 	}
 	return stale

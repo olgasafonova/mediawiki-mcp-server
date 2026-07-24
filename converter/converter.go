@@ -144,57 +144,69 @@ func convertLinks(text string) string {
 	return text
 }
 
+// calloutForm describes one callout syntax variant: how to match it (the
+// pattern gets the callout type spliced in), how to clean the captured
+// content, and what separates the label from the content in the output.
+type calloutForm struct {
+	pattern string
+	clean   func(string) string
+	sep     string
+}
+
+// calloutForms lists the supported callout syntaxes, in match order:
+// multi-line ("> [!TYPE]\n> content") before single-line ("> [!TYPE] content").
+var calloutForms = []calloutForm{
+	{pattern: `(?im)^>\s*\[!%s\]\s*\n?((?:>.*\n?)+)`, clean: cleanCalloutContent, sep: "<br/>"},
+	{pattern: `(?im)^>\s*\[!%s\]\s+(.+)$`, clean: strings.TrimSpace, sep: " "},
+}
+
 // convertCallouts converts markdown callouts to MediaWiki styled boxes
 func convertCallouts(text string, theme Theme) string {
 	for calloutType, style := range theme.Callouts {
-		// Multi-line callout: > [!TYPE]\n> content
-		pattern := fmt.Sprintf(`(?im)^>\s*\[!%s\]\s*\n?((?:>.*\n?)+)`, calloutType)
-		calloutRegex := regexp.MustCompile(pattern)
-
-		text = calloutRegex.ReplaceAllStringFunc(text, func(match string) string {
-			contentRegex := regexp.MustCompile(`(?im)^>\s*\[!` + calloutType + `\]\s*\n?((?:>.*\n?)+)`)
-			submatch := contentRegex.FindStringSubmatch(match)
-			if len(submatch) < 2 {
-				return match
-			}
-
-			// Clean content lines
-			contentLines := strings.Split(submatch[1], "\n")
-			var cleanLines []string
-			for _, line := range contentLines {
-				cleaned := regexp.MustCompile(`^>\s?`).ReplaceAllString(line, "")
-				if strings.TrimSpace(cleaned) != "" || len(cleanLines) > 0 {
-					cleanLines = append(cleanLines, cleaned)
-				}
-			}
-			content := strings.TrimSpace(strings.Join(cleanLines, "<br/>"))
-
-			return fmt.Sprintf(`{| class="wikitable" style="border-left:4px solid %s; background-color:%s; width:100%%;"
-| <div style="padding:0.5em;">
-<strong style="color:%s;">%s %s:</strong><br/>%s
-</div>
-|}`, style.BorderColor, style.BgColor, style.TextColor, style.Emoji, style.Label, content)
-		})
-
-		// Single-line callout: > [!TYPE] content
-		singleLinePattern := fmt.Sprintf(`(?im)^>\s*\[!%s\]\s+(.+)$`, calloutType)
-		singleLineRegex := regexp.MustCompile(singleLinePattern)
-		text = singleLineRegex.ReplaceAllStringFunc(text, func(match string) string {
-			submatch := singleLineRegex.FindStringSubmatch(match)
-			if len(submatch) < 2 {
-				return match
-			}
-			content := strings.TrimSpace(submatch[1])
-
-			return fmt.Sprintf(`{| class="wikitable" style="border-left:4px solid %s; background-color:%s; width:100%%;"
-| <div style="padding:0.5em;">
-<strong style="color:%s;">%s %s:</strong> %s
-</div>
-|}`, style.BorderColor, style.BgColor, style.TextColor, style.Emoji, style.Label, content)
-		})
+		for _, form := range calloutForms {
+			text = convertCalloutForm(text, calloutType, form, style)
+		}
 	}
 
 	return text
+}
+
+// renderCalloutBox formats a styled wikitable callout box. sep separates the
+// label from the content ("<br/>" for multi-line callouts, " " for single-line).
+func renderCalloutBox(style CalloutStyle, sep, content string) string {
+	return fmt.Sprintf(`{| class="wikitable" style="border-left:4px solid %s; background-color:%s; width:100%%;"
+| <div style="padding:0.5em;">
+<strong style="color:%s;">%s %s:</strong>%s%s
+</div>
+|}`, style.BorderColor, style.BgColor, style.TextColor, style.Emoji, style.Label, sep, content)
+}
+
+// cleanCalloutContent strips the leading "> " quote markers and joins the
+// remaining lines with <br/>, dropping leading blank lines.
+func cleanCalloutContent(raw string) string {
+	quoteMarker := regexp.MustCompile(`^>\s?`)
+	var cleanLines []string
+	for _, line := range strings.Split(raw, "\n") {
+		cleaned := quoteMarker.ReplaceAllString(line, "")
+		if strings.TrimSpace(cleaned) != "" || len(cleanLines) > 0 {
+			cleanLines = append(cleanLines, cleaned)
+		}
+	}
+	return strings.TrimSpace(strings.Join(cleanLines, "<br/>"))
+}
+
+// convertCalloutForm converts every occurrence of one callout syntax variant
+// for one callout type into a styled box.
+func convertCalloutForm(text, calloutType string, form calloutForm, style CalloutStyle) string {
+	calloutRegex := regexp.MustCompile(fmt.Sprintf(form.pattern, calloutType))
+
+	return calloutRegex.ReplaceAllStringFunc(text, func(match string) string {
+		submatch := calloutRegex.FindStringSubmatch(match)
+		if len(submatch) < 2 {
+			return match
+		}
+		return renderCalloutBox(style, form.sep, form.clean(submatch[1]))
+	})
 }
 
 // convertCode converts code formatting
@@ -271,29 +283,37 @@ func reverseChangelogOrder(text string) string {
 		changelogEndIdx = nextSection[0]
 	}
 
-	var versions []string
-	for i, match := range versionMatches {
-		start := match[0]
-		var end int
-		if i < len(versionMatches)-1 {
-			end = versionMatches[i+1][0]
-		} else {
-			end = changelogEndIdx
-		}
-		if start < end {
-			versions = append(versions, remainingText[start:end])
-		}
-	}
-
-	// Reverse
-	for i, j := 0, len(versions)-1; i < j; i, j = i+1, j-1 {
-		versions[i], versions[j] = versions[j], versions[i]
-	}
+	versions := sliceVersionSections(remainingText, versionMatches, changelogEndIdx)
+	reverseStringsInPlace(versions)
 
 	afterChangelog := remainingText[changelogEndIdx:]
 	newChangelog := changelogHeader + "\n\n" + strings.Join(versions, "")
 
 	return beforeChangelog + newChangelog + afterChangelog
+}
+
+// sliceVersionSections cuts the changelog body into one string per version
+// section, using the match positions as boundaries.
+func sliceVersionSections(remainingText string, versionMatches [][]int, changelogEndIdx int) []string {
+	var versions []string
+	for i, match := range versionMatches {
+		start := match[0]
+		end := changelogEndIdx
+		if i < len(versionMatches)-1 {
+			end = versionMatches[i+1][0]
+		}
+		if start < end {
+			versions = append(versions, remainingText[start:end])
+		}
+	}
+	return versions
+}
+
+// reverseStringsInPlace reverses the order of the elements in s.
+func reverseStringsInPlace(s []string) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
 }
 
 // prettifyCheckmarks replaces plain checkmarks with emoji

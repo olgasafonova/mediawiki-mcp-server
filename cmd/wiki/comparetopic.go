@@ -58,6 +58,14 @@ func runCompareTopic(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	printTopicMentions(result)
+	printTopicInconsistencies(result.Inconsistencies)
+	return nil
+}
+
+// printTopicMentions renders the per-page mention table with the server's
+// summary when present.
+func printTopicMentions(result wiki.CompareTopicResult) {
 	fmt.Printf("%q mentioned on %d page(s)\n", result.Topic, result.PagesFound)
 	if result.Summary != "" {
 		fmt.Println(result.Summary)
@@ -70,18 +78,21 @@ func runCompareTopic(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(tw, "%s\t%d\t%s\n", m.PageTitle, m.Mentions, m.LastEdited)
 	}
 	_ = tw.Flush()
+}
 
-	if len(result.Inconsistencies) > 0 {
-		fmt.Printf("\nInconsistencies (%d):\n", len(result.Inconsistencies))
-		for _, inc := range result.Inconsistencies {
-			fmt.Printf("  [%s] %s vs %s\n", inc.Type, inc.PageA, inc.PageB)
-			fmt.Printf("    A: %s\n", truncate(strings.TrimSpace(inc.ValueA), 100))
-			fmt.Printf("    B: %s\n", truncate(strings.TrimSpace(inc.ValueB), 100))
-			if inc.Description != "" {
-				fmt.Printf("    %s\n", inc.Description)
-			}
+// printTopicInconsistencies lists cross-page value conflicts; silent when
+// there are none.
+func printTopicInconsistencies(incs []wiki.Inconsistency) {
+	if len(incs) == 0 {
+		return
+	}
+	fmt.Printf("\nInconsistencies (%d):\n", len(incs))
+	for _, inc := range incs {
+		fmt.Printf("  [%s] %s vs %s\n", inc.Type, inc.PageA, inc.PageB)
+		fmt.Printf("    A: %s\n", truncate(strings.TrimSpace(inc.ValueA), 100))
+		fmt.Printf("    B: %s\n", truncate(strings.TrimSpace(inc.ValueB), 100))
+		if inc.Description != "" {
+			fmt.Printf("    %s\n", inc.Description)
 		}
 	}
-
-	return nil
 }

@@ -85,35 +85,42 @@ func (c *Client) login(ctx context.Context) error {
 	// likely timed out." from the wiki.
 	c.resetCookies()
 
-	loginToken, err := c.fetchLoginToken(ctx)
-	if err != nil {
-		return err
+	conflict, err := c.loginAttempt(ctx)
+	if conflict {
+		// A BotPasswordSessionProvider conflict is retryable once with fresh cookies.
+		c.logger.Warn("BotPasswordSessionProvider conflict detected, resetting cookies")
+		c.resetCookies()
+		return c.loginFresh(ctx)
 	}
-
-	login, err := c.performLoginRequest(ctx, loginToken)
 	if err != nil {
-		// A BotPasswordSessionProvider conflict on the request itself: retry once
-		// with fresh cookies.
-		if strings.Contains(err.Error(), "BotPasswordSessionProvider") {
-			c.logger.Warn("BotPasswordSessionProvider conflict detected, resetting cookies")
-			c.resetCookies()
-			return c.loginFresh(ctx)
-		}
-		return fmt.Errorf("login failed: %w", err)
-	}
-
-	if err := c.checkLoginResult(login); err != nil {
-		// A BotPasswordSessionProvider conflict reported in the result: retry once.
-		if isBotPasswordSessionConflict(login) {
-			c.logger.Warn("BotPasswordSessionProvider conflict in login result, resetting cookies")
-			c.resetCookies()
-			return c.loginFresh(ctx)
-		}
 		return err
 	}
 
 	c.markLoggedIn("Successfully logged in")
 	return nil
+}
+
+// loginAttempt performs one login round trip (token fetch + login action).
+// It reports conflict=true when the wiki signals a BotPasswordSessionProvider
+// conflict, either as a request error or in the login result.
+func (c *Client) loginAttempt(ctx context.Context) (conflict bool, err error) {
+	loginToken, err := c.fetchLoginToken(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	login, err := c.performLoginRequest(ctx, loginToken)
+	if err != nil {
+		if strings.Contains(err.Error(), "BotPasswordSessionProvider") {
+			return true, err
+		}
+		return false, fmt.Errorf("login failed: %w", err)
+	}
+
+	if err := c.checkLoginResult(login); err != nil {
+		return isBotPasswordSessionConflict(login), err
+	}
+	return false, nil
 }
 
 func (c *Client) loginFresh(ctx context.Context) error {

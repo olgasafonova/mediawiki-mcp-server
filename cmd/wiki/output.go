@@ -43,6 +43,7 @@ func truncate(s string, maxLen int) string {
 // Shared by `wiki list pages` and `wiki list members` since both emit the same
 // shape (header, table of PageSummary, optional continuation hint). The caller
 // composes header + emptyMsg so the wording stays specific to each command.
+// The flat argument list is pinned by output_test.go.
 func printIDTitleTable(header, emptyMsg, noun string, items []wiki.PageSummary, hasMore bool, continueFrom string) {
 	if len(items) == 0 {
 		fmt.Println(emptyMsg)

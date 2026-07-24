@@ -43,9 +43,37 @@ func (e *ConfigError) Error() string {
 
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
+	baseURL, err := loadBaseURLFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
+	timeout, err := loadTimeoutFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
+	maxRetries, err := loadMaxRetriesFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Config{
+		BaseURL:    baseURL,
+		Username:   os.Getenv("MEDIAWIKI_USERNAME"),
+		Password:   os.Getenv("MEDIAWIKI_PASSWORD"),
+		Timeout:    timeout,
+		UserAgent:  loadUserAgentFromEnv(),
+		MaxRetries: maxRetries,
+	}, nil
+}
+
+// loadBaseURLFromEnv reads and validates MEDIAWIKI_URL, enforcing HTTPS unless
+// MEDIAWIKI_ALLOW_INSECURE=true.
+func loadBaseURLFromEnv() (string, error) {
 	baseURL := os.Getenv("MEDIAWIKI_URL")
 	if baseURL == "" {
-		return nil, &ConfigError{
+		return "", &ConfigError{
 			Field:   "MEDIAWIKI_URL",
 			Message: "environment variable is required but not set",
 			Suggestion: `Set the MEDIAWIKI_URL environment variable to your wiki's API endpoint.
@@ -63,58 +91,61 @@ Or in your MCP configuration:
 	// Validate URL format and enforce HTTPS (unless MEDIAWIKI_ALLOW_INSECURE=true)
 	allowInsecure, _ := strconv.ParseBool(os.Getenv("MEDIAWIKI_ALLOW_INSECURE"))
 	if err := validateWikiURL(baseURL, allowInsecure); err != nil {
-		return nil, err
+		return "", err
 	}
+	return baseURL, nil
+}
 
-	timeout := 30 * time.Second
-	if t := os.Getenv("MEDIAWIKI_TIMEOUT"); t != "" {
-		d, err := time.ParseDuration(t)
-		if err != nil {
-			return nil, &ConfigError{
-				Field:   "MEDIAWIKI_TIMEOUT",
-				Message: fmt.Sprintf("invalid duration format: %q", t),
-				Suggestion: `Use a valid Go duration string.
+// loadTimeoutFromEnv reads MEDIAWIKI_TIMEOUT, defaulting to 30 seconds.
+func loadTimeoutFromEnv() (time.Duration, error) {
+	t := os.Getenv("MEDIAWIKI_TIMEOUT")
+	if t == "" {
+		return 30 * time.Second, nil
+	}
+	d, err := time.ParseDuration(t)
+	if err != nil {
+		return 0, &ConfigError{
+			Field:   "MEDIAWIKI_TIMEOUT",
+			Message: fmt.Sprintf("invalid duration format: %q", t),
+			Suggestion: `Use a valid Go duration string.
 
 Examples:
   export MEDIAWIKI_TIMEOUT="30s"   # 30 seconds
   export MEDIAWIKI_TIMEOUT="2m"    # 2 minutes
   export MEDIAWIKI_TIMEOUT="1m30s" # 1 minute 30 seconds`,
-			}
 		}
-		timeout = d
 	}
+	return d, nil
+}
 
-	maxRetries := 3
-	if r := os.Getenv("MEDIAWIKI_MAX_RETRIES"); r != "" {
-		n, err := strconv.Atoi(r)
-		if err != nil || n < 0 {
-			return nil, &ConfigError{
-				Field:   "MEDIAWIKI_MAX_RETRIES",
-				Message: fmt.Sprintf("must be a non-negative integer, got: %q", r),
-				Suggestion: `Set a non-negative integer for retry attempts.
+// loadMaxRetriesFromEnv reads MEDIAWIKI_MAX_RETRIES, defaulting to 3.
+func loadMaxRetriesFromEnv() (int, error) {
+	r := os.Getenv("MEDIAWIKI_MAX_RETRIES")
+	if r == "" {
+		return 3, nil
+	}
+	n, err := strconv.Atoi(r)
+	if err != nil || n < 0 {
+		return 0, &ConfigError{
+			Field:   "MEDIAWIKI_MAX_RETRIES",
+			Message: fmt.Sprintf("must be a non-negative integer, got: %q", r),
+			Suggestion: `Set a non-negative integer for retry attempts.
 
 Examples:
   export MEDIAWIKI_MAX_RETRIES="3"  # Default: 3 retries
   export MEDIAWIKI_MAX_RETRIES="0"  # No retries
   export MEDIAWIKI_MAX_RETRIES="5"  # 5 retries`,
-			}
 		}
-		maxRetries = n
 	}
+	return n, nil
+}
 
-	userAgent := os.Getenv("MEDIAWIKI_USER_AGENT")
-	if userAgent == "" {
-		userAgent = "MediaWikiMCPServer/1.0 (https://github.com/olgasafonova/mediawiki-mcp-server)"
+// loadUserAgentFromEnv reads MEDIAWIKI_USER_AGENT, falling back to the default.
+func loadUserAgentFromEnv() string {
+	if userAgent := os.Getenv("MEDIAWIKI_USER_AGENT"); userAgent != "" {
+		return userAgent
 	}
-
-	return &Config{
-		BaseURL:    baseURL,
-		Username:   os.Getenv("MEDIAWIKI_USERNAME"),
-		Password:   os.Getenv("MEDIAWIKI_PASSWORD"),
-		Timeout:    timeout,
-		UserAgent:  userAgent,
-		MaxRetries: maxRetries,
-	}, nil
+	return "MediaWikiMCPServer/1.0 (https://github.com/olgasafonova/mediawiki-mcp-server)"
 }
 
 // validateWikiURLScheme accepts only https, or http when allowInsecure is true.
@@ -207,7 +238,7 @@ func LoadConfigOrUnconfigured() (*Config, error) {
 	}
 
 	// If the only problem is a missing URL, return an unconfigured config
-	if configErr, ok := err.(*ConfigError); ok && configErr.Field == "MEDIAWIKI_URL" && configErr.Message == "environment variable is required but not set" {
+	if isMissingURLError(err) {
 		return &Config{
 			Timeout:    30 * time.Second,
 			UserAgent:  "MediaWikiMCPServer/1.0 (https://github.com/olgasafonova/mediawiki-mcp-server)",
@@ -216,4 +247,14 @@ func LoadConfigOrUnconfigured() (*Config, error) {
 	}
 
 	return nil, err
+}
+
+// isMissingURLError reports whether the error is the ConfigError raised when
+// MEDIAWIKI_URL is not set at all (as opposed to set but invalid).
+func isMissingURLError(err error) bool {
+	configErr, ok := err.(*ConfigError)
+	if !ok {
+		return false
+	}
+	return configErr.Field == "MEDIAWIKI_URL" && configErr.Message == "environment variable is required but not set"
 }
