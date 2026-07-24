@@ -5,7 +5,22 @@ import (
 	"strings"
 )
 
-// convertTables converts Markdown tables to MediaWiki format
+// Table-recognition patterns: a pipe-bounded row and a header separator row.
+var (
+	tablePipeRegex      = regexp.MustCompile(`^\|.*\|$`)
+	tableSeparatorRegex = regexp.MustCompile(`^\|[\s\-:|]+\|$`)
+)
+
+// isTableStart reports whether line opens a Markdown table (pipe-bounded row).
+func isTableStart(line string) bool {
+	return strings.Contains(line, "|") && tablePipeRegex.MatchString(line)
+}
+
+// isTableSeparatorRow reports whether line is a header separator like |---|---|.
+func isTableSeparatorRow(line string) bool {
+	return tableSeparatorRegex.MatchString(line) && strings.Contains(line, "-")
+}
+
 // splitTableCells extracts the middle cells from a pipe-bounded line.
 func splitTableCells(line string) []string {
 	cells := strings.Split(line, "|")
@@ -45,8 +60,11 @@ func emitTableHeader(line string, lines []string, i int, result *[]string) int {
 	return i
 }
 
-// emitTableBodyRow appends a non-header row's cells, skipping pure separator rows.
+// emitTableBodyRow appends a non-header row's cells, skipping separator rows.
 func emitTableBodyRow(line string, result *[]string) {
+	if isTableSeparatorRow(line) {
+		return
+	}
 	cells := splitTableCells(line)
 	if cells == nil || cellsAreAllDashes(cells) {
 		return
@@ -57,37 +75,31 @@ func emitTableBodyRow(line string, result *[]string) {
 	}
 }
 
+// convertTables converts Markdown tables to MediaWiki format
 func convertTables(text string) string {
 	lines := strings.Split(text, "\n")
 	result := make([]string, 0, len(lines))
 	inTable := false
 
-	pipeRegex := regexp.MustCompile(`^\|.*\|$`)
-	separatorRegex := regexp.MustCompile(`^\|[\s\-:|]+\|$`)
-
 	i := 0
 	for i < len(lines) {
 		line := strings.TrimSpace(lines[i])
 
-		if !inTable && strings.Contains(line, "|") && pipeRegex.MatchString(line) {
+		switch {
+		case !inTable && isTableStart(line):
 			inTable = true
 			i = emitTableHeader(line, lines, i, &result)
-			continue
-		}
-		if inTable && strings.Contains(line, "|") {
-			if !(separatorRegex.MatchString(line) && strings.Contains(line, "-")) {
-				emitTableBodyRow(line, &result)
-			}
+		case inTable && strings.Contains(line, "|"):
+			emitTableBodyRow(line, &result)
 			i++
-			continue
+		default:
+			if inTable {
+				result = append(result, "|}")
+				inTable = false
+			}
+			result = append(result, lines[i])
+			i++
 		}
-		if inTable && !strings.Contains(line, "|") {
-			result = append(result, "|}")
-			inTable = false
-		}
-
-		result = append(result, lines[i])
-		i++
 	}
 
 	if inTable {
