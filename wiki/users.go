@@ -49,45 +49,60 @@ func (c *Client) ListUsers(ctx context.Context, args ListUsersArgs) (ListUsersRe
 		return ListUsersResult{}, fmt.Errorf("unexpected response format: missing allusers")
 	}
 
-	users := make([]UserInfo, 0, len(allusers))
-	for _, u := range allusers {
-		user, ok := u.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		userInfo := UserInfo{
-			UserID:       getInt(user["userid"]),
-			Name:         getString(user["name"]),
-			EditCount:    getInt(user["editcount"]),
-			Registration: getString(user["registration"]),
-		}
-
-		// Extract groups
-		if groups, ok := user["groups"].([]interface{}); ok {
-			for _, g := range groups {
-				if groupName, ok := g.(string); ok {
-					userInfo.Groups = append(userInfo.Groups, groupName)
-				}
-			}
-		}
-
-		users = append(users, userInfo)
-	}
+	users := parseAllUsers(allusers)
 
 	result := ListUsersResult{
 		Users:      users,
 		TotalCount: len(users),
 		Group:      args.Group,
 	}
+	applyUsersContinuation(resp, &result)
+	return result, nil
+}
 
-	// Check for continuation
-	if cont, ok := resp["continue"].(map[string]interface{}); ok {
-		if aufrom, ok := cont["aufrom"].(string); ok {
-			result.HasMore = true
-			result.ContinueFrom = aufrom
+// parseAllUsers converts the raw allusers list into UserInfo values,
+// skipping malformed entries.
+func parseAllUsers(allusers []interface{}) []UserInfo {
+	users := make([]UserInfo, 0, len(allusers))
+	for _, u := range allusers {
+		if userInfo, ok := parseUserInfo(u); ok {
+			users = append(users, userInfo)
 		}
 	}
+	return users
+}
 
-	return result, nil
+// parseUserInfo builds a UserInfo from one allusers entry.
+func parseUserInfo(u interface{}) (UserInfo, bool) {
+	user := getMap(u)
+	if user == nil {
+		return UserInfo{}, false
+	}
+
+	userInfo := UserInfo{
+		UserID:       getInt(user["userid"]),
+		Name:         getString(user["name"]),
+		EditCount:    getInt(user["editcount"]),
+		Registration: getString(user["registration"]),
+	}
+
+	// Extract groups
+	for _, g := range getSlice(user["groups"]) {
+		if groupName, ok := g.(string); ok {
+			userInfo.Groups = append(userInfo.Groups, groupName)
+		}
+	}
+	return userInfo, true
+}
+
+// applyUsersContinuation sets pagination fields from the API continue block.
+func applyUsersContinuation(resp map[string]interface{}, result *ListUsersResult) {
+	cont := getMap(resp["continue"])
+	if cont == nil {
+		return
+	}
+	if aufrom, ok := cont["aufrom"].(string); ok {
+		result.HasMore = true
+		result.ContinueFrom = aufrom
+	}
 }

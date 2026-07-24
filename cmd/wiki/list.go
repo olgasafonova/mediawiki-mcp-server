@@ -73,8 +73,14 @@ func runListPages(cmd *cobra.Command, args []string) error {
 		header += fmt.Sprintf(", ~%d estimated total", result.TotalEstimate)
 	}
 
-	printIDTitleTable(header, "No pages found.", "pages",
-		result.Pages, result.HasMore, result.ContinueFrom)
+	printIDTitleTable(idTitleTable{
+		Header:       header,
+		EmptyMsg:     "No pages found.",
+		Noun:         "pages",
+		Items:        result.Pages,
+		HasMore:      result.HasMore,
+		ContinueFrom: result.ContinueFrom,
+	})
 	return nil
 }
 
@@ -181,8 +187,14 @@ func runListMembers(cmd *cobra.Command, args []string) error {
 	}
 
 	emptyMsg := fmt.Sprintf("No members found in category %q.", category)
-	printIDTitleTable(header, emptyMsg, "members",
-		result.Members, result.HasMore, result.ContinueFrom)
+	printIDTitleTable(idTitleTable{
+		Header:       header,
+		EmptyMsg:     emptyMsg,
+		Noun:         "members",
+		Items:        result.Members,
+		HasMore:      result.HasMore,
+		ContinueFrom: result.ContinueFrom,
+	})
 	return nil
 }
 
@@ -228,9 +240,16 @@ func runListUsers(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printUsersTable(result)
+	return nil
+}
+
+// printUsersTable renders the user list with group labeling and a
+// continuation hint when more results are available.
+func printUsersTable(result wiki.ListUsersResult) {
 	if len(result.Users) == 0 {
 		fmt.Println("No users found.")
-		return nil
+		return
 	}
 
 	label := "Users"
@@ -255,6 +274,4 @@ func runListUsers(cmd *cobra.Command, args []string) error {
 	if result.HasMore {
 		fmt.Printf("\nMore users available. Use --continue %q to see next page.\n", result.ContinueFrom)
 	}
-
-	return nil
 }

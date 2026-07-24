@@ -65,15 +65,20 @@ func (c *Client) ListPages(ctx context.Context, args ListPagesArgs) (ListPagesRe
 		TotalCount:    len(pages), // Deprecated: kept for backwards compatibility
 	}
 	applyContinuation(resp, &result)
-
-	// Try to get namespace statistics for total estimate (only when no prefix filter)
-	if args.Prefix == "" && args.Namespace >= 0 {
-		if estimate := c.getNamespacePageCount(ctx, args.Namespace); estimate > 0 {
-			result.TotalEstimate = estimate
-		}
-	}
+	c.applyTotalEstimate(ctx, args, &result)
 
 	return result, nil
+}
+
+// applyTotalEstimate adds a namespace-wide page-count estimate from site
+// statistics (only when no prefix filter narrows the listing).
+func (c *Client) applyTotalEstimate(ctx context.Context, args ListPagesArgs, result *ListPagesResult) {
+	if args.Prefix != "" || args.Namespace < 0 {
+		return
+	}
+	if estimate := c.getNamespacePageCount(ctx, args.Namespace); estimate > 0 {
+		result.TotalEstimate = estimate
+	}
 }
 
 // buildListPagesParams assembles the allpages query parameters from args.
@@ -154,18 +159,9 @@ func (c *Client) GetPageInfo(ctx context.Context, args PageInfoArgs) (PageInfo, 
 	params.Set("cllimit", "50")
 	params.Set("pllimit", "max")
 
-	resp, err := c.apiRequest(ctx, params)
+	pages, err := c.queryPages(ctx, params)
 	if err != nil {
 		return PageInfo{}, err
-	}
-
-	query, ok := resp["query"].(map[string]interface{})
-	if !ok {
-		return PageInfo{}, fmt.Errorf("unexpected API response: missing 'query' object")
-	}
-	pages, ok := query["pages"].(map[string]interface{})
-	if !ok {
-		return PageInfo{}, fmt.Errorf("unexpected API response: missing 'pages' object")
 	}
 
 	info, found := firstPageInfo(pages, args.Title)
@@ -248,6 +244,20 @@ func (c *Client) GetWikiInfo(ctx context.Context, args WikiInfoArgs) (WikiInfo, 
 	if !ok {
 		return WikiInfo{}, fmt.Errorf("unexpected API response: missing 'query' object")
 	}
+
+	info, err := parseWikiInfo(query)
+	if err != nil {
+		return WikiInfo{}, err
+	}
+
+	// Cache the result
+	c.setCache(cacheKey, info, "wiki_info")
+
+	return info, nil
+}
+
+// parseWikiInfo builds a WikiInfo from the siteinfo query object.
+func parseWikiInfo(query map[string]interface{}) (WikiInfo, error) {
 	general, ok := query["general"].(map[string]interface{})
 	if !ok {
 		return WikiInfo{}, fmt.Errorf("unexpected API response: missing 'general' object")
@@ -265,24 +275,25 @@ func (c *Client) GetWikiInfo(ctx context.Context, args WikiInfoArgs) (WikiInfo, 
 		Timezone:    getString(general["timezone"]),
 		WriteAPI:    general["writeapi"] != nil,
 	}
-
-	// Statistics
-	if stats, ok := query["statistics"].(map[string]interface{}); ok {
-		info.Statistics = &WikiStats{
-			Pages:       getInt(stats["pages"]),
-			Articles:    getInt(stats["articles"]),
-			Edits:       getInt(stats["edits"]),
-			Images:      getInt(stats["images"]),
-			Users:       getInt(stats["users"]),
-			ActiveUsers: getInt(stats["activeusers"]),
-			Admins:      getInt(stats["admins"]),
-		}
-	}
-
-	// Cache the result
-	c.setCache(cacheKey, info, "wiki_info")
-
+	info.Statistics = parseWikiStats(query["statistics"])
 	return info, nil
+}
+
+// parseWikiStats converts the statistics object, if present, into WikiStats.
+func parseWikiStats(v interface{}) *WikiStats {
+	stats := getMap(v)
+	if stats == nil {
+		return nil
+	}
+	return &WikiStats{
+		Pages:       getInt(stats["pages"]),
+		Articles:    getInt(stats["articles"]),
+		Edits:       getInt(stats["edits"]),
+		Images:      getInt(stats["images"]),
+		Users:       getInt(stats["users"]),
+		ActiveUsers: getInt(stats["activeusers"]),
+		Admins:      getInt(stats["admins"]),
+	}
 }
 
 // ResolveTitle tries to find the correct page title with fuzzy matching
@@ -301,13 +312,7 @@ func (c *Client) ResolveTitle(ctx context.Context, args ResolveTitleArgs) (Resol
 	}
 
 	// First try exact match with normalization
-	normalizedTitle := normalizePageTitle(args.Title)
-	info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: normalizedTitle})
-	if err == nil && info.Exists {
-		result.ExactMatch = true
-		result.ResolvedTitle = info.Title
-		result.PageID = info.PageID
-		result.Message = "Exact match found"
+	if c.tryExactMatch(ctx, args.Title, &result) {
 		return result, nil
 	}
 
@@ -326,6 +331,20 @@ func (c *Client) ResolveTitle(ctx context.Context, args ResolveTitleArgs) (Resol
 	}
 	applyResolveMessage(args.Title, &result)
 	return result, nil
+}
+
+// tryExactMatch resolves the normalized title directly. Returns true (and
+// fills result) when an existing page matched exactly.
+func (c *Client) tryExactMatch(ctx context.Context, title string, result *ResolveTitleResult) bool {
+	info, err := c.GetPageInfo(ctx, PageInfoArgs{Title: normalizePageTitle(title)})
+	if err != nil || !info.Exists {
+		return false
+	}
+	result.ExactMatch = true
+	result.ResolvedTitle = info.Title
+	result.PageID = info.PageID
+	result.Message = "Exact match found"
+	return true
 }
 
 // rankTitleSuggestions scores each search hit against the query title and
@@ -381,18 +400,7 @@ func calculateSimilarity(s1, s2 string) float64 {
 		return 0.0
 	}
 
-	// Count common words
-	set1 := make(map[string]bool)
-	for _, w := range words1 {
-		set1[w] = true
-	}
-
-	common := 0
-	for _, w := range words2 {
-		if set1[w] {
-			common++
-		}
-	}
+	common := commonWordCount(words1, words2)
 
 	// Jaccard similarity
 	union := len(words1) + len(words2) - common
@@ -401,4 +409,19 @@ func calculateSimilarity(s1, s2 string) float64 {
 	}
 
 	return float64(common) / float64(union)
+}
+
+// commonWordCount counts how many words of words2 also appear in words1.
+func commonWordCount(words1, words2 []string) int {
+	set1 := make(map[string]bool)
+	for _, w := range words1 {
+		set1[w] = true
+	}
+	common := 0
+	for _, w := range words2 {
+		if set1[w] {
+			common++
+		}
+	}
+	return common
 }

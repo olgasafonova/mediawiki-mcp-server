@@ -252,18 +252,24 @@ func (c *Client) GetBacklinks(ctx context.Context, args GetBacklinksArgs) (GetBa
 
 	result := GetBacklinksResult{
 		Title:     args.Title,
-		Backlinks: make([]BacklinkInfo, 0, len(backlinks)),
-	}
-	for _, bl := range backlinks {
-		if info, ok := backlinkInfoFromEntry(bl); ok {
-			result.Backlinks = append(result.Backlinks, info)
-		}
+		Backlinks: parseBacklinkEntries(backlinks),
 	}
 	result.Count = len(result.Backlinks)
 	if _, ok := resp["continue"]; ok {
 		result.HasMore = true
 	}
 	return result, nil
+}
+
+// parseBacklinkEntries converts raw API backlink entries into BacklinkInfo values
+func parseBacklinkEntries(backlinks []interface{}) []BacklinkInfo {
+	infos := make([]BacklinkInfo, 0, len(backlinks))
+	for _, bl := range backlinks {
+		if info, ok := backlinkInfoFromEntry(bl); ok {
+			infos = append(infos, info)
+		}
+	}
+	return infos
 }
 
 // FindBrokenInternalLinks finds internal wiki links that point to non-existent pages

@@ -28,37 +28,12 @@ func (c *Client) GetImages(ctx context.Context, args GetImagesArgs) (GetImagesRe
 	params.Set("prop", "images")
 	params.Set("imlimit", strconv.Itoa(limit))
 
-	resp, err := c.apiRequest(ctx, params)
+	pages, err := c.queryPages(ctx, params)
 	if err != nil {
 		return GetImagesResult{}, err
 	}
 
-	query, ok := resp["query"].(map[string]interface{})
-	if !ok {
-		return GetImagesResult{}, fmt.Errorf("unexpected API response: missing 'query' object")
-	}
-	pages, ok := query["pages"].(map[string]interface{})
-	if !ok {
-		return GetImagesResult{}, fmt.Errorf("unexpected API response: missing 'pages' object")
-	}
-
-	var imageTitles []string
-	for _, p := range pages {
-		page, ok := p.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if images, ok := page["images"].([]interface{}); ok {
-			for _, img := range images {
-				i, ok := img.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				imageTitles = append(imageTitles, getString(i["title"]))
-			}
-		}
-	}
-
+	imageTitles := imageTitlesFromPages(pages)
 	if len(imageTitles) == 0 {
 		return GetImagesResult{
 			Title:  normalizedTitle,
@@ -71,15 +46,7 @@ func (c *Client) GetImages(ctx context.Context, args GetImagesArgs) (GetImagesRe
 	images, err := c.getImageInfo(ctx, imageTitles)
 	if err != nil {
 		// Return basic info without URLs if imageinfo fails
-		basicImages := make([]ImageInfo, 0, len(imageTitles))
-		for _, t := range imageTitles {
-			basicImages = append(basicImages, ImageInfo{Title: t})
-		}
-		return GetImagesResult{
-			Title:  normalizedTitle,
-			Images: basicImages,
-			Count:  len(basicImages),
-		}, nil
+		return basicImagesResult(normalizedTitle, imageTitles), nil
 	}
 
 	return GetImagesResult{
@@ -89,6 +56,45 @@ func (c *Client) GetImages(ctx context.Context, args GetImagesArgs) (GetImagesRe
 	}, nil
 }
 
+// imageTitlesFromPages collects image titles from all page objects in a
+// query response.
+func imageTitlesFromPages(pages map[string]interface{}) []string {
+	var titles []string
+	for _, p := range pages {
+		titles = append(titles, imageTitlesFromPage(p)...)
+	}
+	return titles
+}
+
+// imageTitlesFromPage extracts image titles from a single page object.
+func imageTitlesFromPage(p interface{}) []string {
+	page := getMap(p)
+	if page == nil {
+		return nil
+	}
+	var titles []string
+	for _, img := range getSlice(page["images"]) {
+		if m := getMap(img); m != nil {
+			titles = append(titles, getString(m["title"]))
+		}
+	}
+	return titles
+}
+
+// basicImagesResult builds a title-only result used when the imageinfo
+// lookup fails.
+func basicImagesResult(normalizedTitle string, imageTitles []string) GetImagesResult {
+	basicImages := make([]ImageInfo, 0, len(imageTitles))
+	for _, t := range imageTitles {
+		basicImages = append(basicImages, ImageInfo{Title: t})
+	}
+	return GetImagesResult{
+		Title:  normalizedTitle,
+		Images: basicImages,
+		Count:  len(basicImages),
+	}
+}
+
 // getImageInfo retrieves detailed info for images
 func (c *Client) getImageInfo(ctx context.Context, titles []string) ([]ImageInfo, error) {
 	if len(titles) == 0 {
@@ -96,63 +102,54 @@ func (c *Client) getImageInfo(ctx context.Context, titles []string) ([]ImageInfo
 	}
 
 	// Batch in groups of 50
-	batchSize := 50
 	var allImages []ImageInfo
+	for _, batch := range chunkStrings(titles, 50) {
+		allImages = append(allImages, c.imageInfoBatch(ctx, batch)...)
+	}
+	return allImages, nil
+}
 
-	for i := 0; i < len(titles); i += batchSize {
-		end := i + batchSize
-		if end > len(titles) {
-			end = len(titles)
-		}
-		batch := titles[i:end]
+// imageInfoBatch fetches imageinfo for one batch of titles. Failed batches
+// are skipped and yield no entries.
+func (c *Client) imageInfoBatch(ctx context.Context, batch []string) []ImageInfo {
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("titles", strings.Join(batch, "|"))
+	params.Set("prop", "imageinfo")
+	params.Set("iiprop", "url|size|mime")
+	params.Set("iiurlwidth", "300") // Get thumbnail URL
 
-		params := url.Values{}
-		params.Set("action", "query")
-		params.Set("titles", strings.Join(batch, "|"))
-		params.Set("prop", "imageinfo")
-		params.Set("iiprop", "url|size|mime")
-		params.Set("iiurlwidth", "300") // Get thumbnail URL
-
-		resp, err := c.apiRequest(ctx, params)
-		if err != nil {
-			continue
-		}
-
-		query, ok := resp["query"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		pages, ok := query["pages"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		for _, p := range pages {
-			page, ok := p.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			title := getString(page["title"])
-
-			imgInfo := ImageInfo{Title: title}
-
-			if imageinfo, ok := page["imageinfo"].([]interface{}); ok && len(imageinfo) > 0 {
-				info, ok := imageinfo[0].(map[string]interface{})
-				if !ok {
-					allImages = append(allImages, imgInfo)
-					continue
-				}
-				imgInfo.URL = getString(info["url"])
-				imgInfo.ThumbURL = getString(info["thumburl"])
-				imgInfo.Width = getInt(info["width"])
-				imgInfo.Height = getInt(info["height"])
-				imgInfo.Size = getInt(info["size"])
-				imgInfo.MimeType = getString(info["mime"])
-			}
-
-			allImages = append(allImages, imgInfo)
-		}
+	pages, err := c.queryPages(ctx, params)
+	if err != nil {
+		return nil
 	}
 
-	return allImages, nil
+	images := make([]ImageInfo, 0, len(pages))
+	for _, p := range pages {
+		if page := getMap(p); page != nil {
+			images = append(images, imageInfoFromPage(page))
+		}
+	}
+	return images
+}
+
+// imageInfoFromPage builds an ImageInfo from a single page object, filling
+// URL and dimension fields when imageinfo data is present.
+func imageInfoFromPage(page map[string]interface{}) ImageInfo {
+	imgInfo := ImageInfo{Title: getString(page["title"])}
+	imageinfo := getSlice(page["imageinfo"])
+	if len(imageinfo) == 0 {
+		return imgInfo
+	}
+	info := getMap(imageinfo[0])
+	if info == nil {
+		return imgInfo
+	}
+	imgInfo.URL = getString(info["url"])
+	imgInfo.ThumbURL = getString(info["thumburl"])
+	imgInfo.Width = getInt(info["width"])
+	imgInfo.Height = getInt(info["height"])
+	imgInfo.Size = getInt(info["size"])
+	imgInfo.MimeType = getString(info["mime"])
+	return imgInfo
 }

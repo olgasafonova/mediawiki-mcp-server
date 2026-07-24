@@ -39,28 +39,39 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+// idTitleTable describes a paginated list of pages identified by ID and Title.
+// The caller composes Header + EmptyMsg so the wording stays specific to each
+// command.
+type idTitleTable struct {
+	Header       string
+	EmptyMsg     string
+	Noun         string
+	Items        []wiki.PageSummary
+	HasMore      bool
+	ContinueFrom string
+}
+
 // printIDTitleTable prints a paginated list of pages identified by ID and Title.
 // Shared by `wiki list pages` and `wiki list members` since both emit the same
-// shape (header, table of PageSummary, optional continuation hint). The caller
-// composes header + emptyMsg so the wording stays specific to each command.
-func printIDTitleTable(header, emptyMsg, noun string, items []wiki.PageSummary, hasMore bool, continueFrom string) {
-	if len(items) == 0 {
-		fmt.Println(emptyMsg)
+// shape (header, table of PageSummary, optional continuation hint).
+func printIDTitleTable(t idTitleTable) {
+	if len(t.Items) == 0 {
+		fmt.Println(t.EmptyMsg)
 		return
 	}
 
-	fmt.Println(header)
+	fmt.Println(t.Header)
 	fmt.Println()
 
 	tw := table()
 	fmt.Fprintf(tw, "ID\tTITLE\n")
-	for _, item := range items {
+	for _, item := range t.Items {
 		fmt.Fprintf(tw, "%d\t%s\n", item.PageID, item.Title)
 	}
 	_ = tw.Flush()
 
-	if hasMore {
-		fmt.Printf("\nMore %s available. Use --continue %q to see next page.\n", noun, continueFrom)
+	if t.HasMore {
+		fmt.Printf("\nMore %s available. Use --continue %q to see next page.\n", t.Noun, t.ContinueFrom)
 	}
 }
 

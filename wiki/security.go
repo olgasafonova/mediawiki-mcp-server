@@ -34,23 +34,9 @@ const UploadAllowlistEnv = "MEDIAWIKI_UPLOAD_ALLOWED_DOMAINS"
 // the wiki SSRF-on-behalf-of-the-bot access to any reachable URL, so
 // fail-closed is the correct default for an MCP-exposed tool.
 func validateUploadDomain(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
+	hostname, err := uploadHostname(rawURL)
 	if err != nil {
-		return &SSRFError{
-			Code:    SSRFCodeInvalidURL,
-			URL:     rawURL,
-			Reason:  fmt.Sprintf("URL parse failed: %v", err),
-			Blocked: true,
-		}
-	}
-	hostname := strings.ToLower(parsed.Hostname())
-	if hostname == "" {
-		return &SSRFError{
-			Code:    SSRFCodeInvalidURL,
-			URL:     rawURL,
-			Reason:  "missing host",
-			Blocked: true,
-		}
+		return err
 	}
 
 	raw := strings.TrimSpace(os.Getenv(UploadAllowlistEnv))
@@ -66,21 +52,8 @@ func validateUploadDomain(rawURL string) error {
 		}
 	}
 
-	for _, entry := range strings.Split(raw, ",") {
-		allowed := strings.TrimSpace(strings.ToLower(entry))
-		if allowed == "" {
-			continue
-		}
-		if strings.HasPrefix(allowed, "*.") {
-			suffix := allowed[1:] // ".example.com"
-			if strings.HasSuffix(hostname, suffix) && hostname != suffix[1:] {
-				return nil
-			}
-			continue
-		}
-		if hostname == allowed {
-			return nil
-		}
+	if uploadHostAllowed(hostname, raw) {
+		return nil
 	}
 
 	return &SSRFError{
@@ -91,6 +64,54 @@ func validateUploadDomain(rawURL string) error {
 			hostname, UploadAllowlistEnv),
 		Blocked: true,
 	}
+}
+
+// uploadHostname parses the raw URL and returns its lowercased hostname,
+// or a structured *SSRFError when the URL is malformed or hostless.
+func uploadHostname(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  fmt.Sprintf("URL parse failed: %v", err),
+			Blocked: true,
+		}
+	}
+	hostname := strings.ToLower(parsed.Hostname())
+	if hostname == "" {
+		return "", &SSRFError{
+			Code:    SSRFCodeInvalidURL,
+			URL:     rawURL,
+			Reason:  "missing host",
+			Blocked: true,
+		}
+	}
+	return hostname, nil
+}
+
+// uploadHostAllowed reports whether the hostname matches any entry in the
+// comma-separated allowlist.
+func uploadHostAllowed(hostname, allowlist string) bool {
+	for _, entry := range strings.Split(allowlist, ",") {
+		if matchesAllowlistEntry(hostname, strings.TrimSpace(strings.ToLower(entry))) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesAllowlistEntry reports whether the hostname matches one allowlist
+// entry. A leading "*." matches subdomains only, never the apex domain.
+func matchesAllowlistEntry(hostname, allowed string) bool {
+	if allowed == "" {
+		return false
+	}
+	if strings.HasPrefix(allowed, "*.") {
+		suffix := allowed[1:] // ".example.com"
+		return strings.HasSuffix(hostname, suffix) && hostname != suffix[1:]
+	}
+	return hostname == allowed
 }
 
 // Private/internal IP ranges that should be blocked for SSRF protection

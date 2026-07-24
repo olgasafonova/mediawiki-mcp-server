@@ -150,22 +150,37 @@ func hashContent(content string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// auditEntryParams groups the inputs needed to build an AuditEntry for a
+// page edit or upload operation.
+type auditEntryParams struct {
+	Operation  AuditOperation
+	Title      string
+	Content    string
+	Summary    string
+	Minor      bool
+	Bot        bool
+	Success    bool
+	PageID     int
+	RevisionID int
+	ErrMsg     string
+}
+
 // buildAuditEntry creates an AuditEntry for a page edit operation
-func (c *Client) buildAuditEntry(operation AuditOperation, title, content, summary string, minor, bot, success bool, pageID, revisionID int, errMsg string) AuditEntry {
+func (c *Client) buildAuditEntry(p auditEntryParams) AuditEntry {
 	return AuditEntry{
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-		Operation:   operation,
-		Title:       title,
-		PageID:      pageID,
-		RevisionID:  revisionID,
-		ContentHash: hashContent(content),
-		ContentSize: len(content),
-		Summary:     summary,
-		Minor:       minor,
-		Bot:         bot,
+		Operation:   p.Operation,
+		Title:       p.Title,
+		PageID:      p.PageID,
+		RevisionID:  p.RevisionID,
+		ContentHash: hashContent(p.Content),
+		ContentSize: len(p.Content),
+		Summary:     p.Summary,
+		Minor:       p.Minor,
+		Bot:         p.Bot,
 		WikiURL:     c.config.BaseURL,
-		Success:     success,
-		Error:       errMsg,
+		Success:     p.Success,
+		Error:       p.ErrMsg,
 	}
 }
 

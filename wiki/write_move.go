@@ -14,6 +14,24 @@ func (c *Client) performMove(ctx context.Context, args MovePageArgs) (map[string
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
 
+	resp, err := c.apiRequest(ctx, buildMoveParams(args, token))
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for badtoken error so caller can retry
+	if errInfo, ok := resp["error"].(map[string]interface{}); ok {
+		code := getString(errInfo["code"])
+		if code == "badtoken" {
+			return nil, fmt.Errorf("%s: %s", code, getString(errInfo["info"]))
+		}
+	}
+
+	return resp, nil
+}
+
+// buildMoveParams assembles the MediaWiki API parameters for a move action
+func buildMoveParams(args MovePageArgs, token string) url.Values {
 	params := url.Values{}
 	params.Set("action", "move")
 	params.Set("from", args.From)
@@ -28,31 +46,16 @@ func (c *Client) performMove(ctx context.Context, args MovePageArgs) (map[string
 		params.Set("noredirect", "1")
 	}
 
-	// Default: move talk page
-	if !args.MoveTalk {
-		// MediaWiki moves talk by default, so we only set movetalk=0 if explicitly disabled
-	} else {
+	// MediaWiki moves the talk page by default; only send the flag when
+	// explicitly requested.
+	if args.MoveTalk {
 		params.Set("movetalk", "1")
 	}
 
 	if args.MoveSubpages {
 		params.Set("movesubpages", "1")
 	}
-
-	resp, err := c.apiRequest(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check for badtoken error so caller can retry
-	if errInfo, ok := resp["error"].(map[string]interface{}); ok {
-		code := getString(errInfo["code"])
-		if code == "badtoken" {
-			return nil, fmt.Errorf("%s: %s", code, getString(errInfo["info"]))
-		}
-	}
-
-	return resp, nil
+	return params
 }
 
 // MovePage moves (renames) a wiki page
@@ -83,14 +86,19 @@ func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResul
 		return MovePageResult{}, err
 	}
 
-	// Check for errors
+	return c.buildMoveResult(resp, args), nil
+}
+
+// buildMoveResult converts the move API response into a MovePageResult and
+// logs the audit entry on success.
+func (c *Client) buildMoveResult(resp map[string]interface{}, args MovePageArgs) MovePageResult {
 	if errInfo, ok := resp["error"].(map[string]interface{}); ok {
 		return MovePageResult{
 			Success: false,
 			From:    args.From,
 			To:      args.To,
 			Message: fmt.Sprintf("Move failed: %s", getString(errInfo["info"])),
-		}, nil
+		}
 	}
 
 	moveData, ok := resp["move"].(map[string]interface{})
@@ -100,7 +108,7 @@ func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResul
 			From:    args.From,
 			To:      args.To,
 			Message: "Unexpected response format",
-		}, nil
+		}
 	}
 
 	result := MovePageResult{
@@ -131,7 +139,7 @@ func (c *Client) MovePage(ctx context.Context, args MovePageArgs) (MovePageResul
 		Success:   true,
 	})
 
-	return result, nil
+	return result
 }
 
 // ManageCategories adds or removes categories from a page

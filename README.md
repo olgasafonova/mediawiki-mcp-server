@@ -3,7 +3,8 @@
 Connect your AI assistant to any MediaWiki wiki, or script it directly from the terminal. Search, read, and edit wiki content using natural language or the `wiki` CLI.
 
 [![CI](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/olgasafonova/mediawiki-mcp-server)](https://goreportcard.com/report/github.com/olgasafonova/mediawiki-mcp-server)
+![lint](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/lint.yml/badge.svg)
+<!-- CodeScene Code Health badge: add after onboarding repo at codescene.io -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Three ways to use it:**

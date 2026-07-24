@@ -141,56 +141,94 @@ func (NullToolAuditLogger) Close() error { return nil }
 
 // extractArgsSummary extracts key fields from tool arguments for audit logging.
 // Returns a concise summary like "title=API Reference" or "query=onboarding".
-// Never includes content bodies or sensitive data.
+// Never includes content bodies or sensitive data. The type switch is split
+// into one helper per tool category to keep each switch small.
 func extractArgsSummary(args any) string {
+	if s, ok := searchArgsSummary(args); ok {
+		return s
+	}
+	if s, ok := pageReadArgsSummary(args); ok {
+		return s
+	}
+	if s, ok := historyLinkArgsSummary(args); ok {
+		return s
+	}
+	if s, ok := writeArgsSummary(args); ok {
+		return s
+	}
+	return ""
+}
+
+// searchArgsSummary covers search and discovery tool arguments.
+func searchArgsSummary(args any) (string, bool) {
 	switch a := args.(type) {
 	case wiki.SearchArgs:
-		return fmt.Sprintf("query=%s", a.Query)
-	case wiki.GetPageArgs:
-		return fmt.Sprintf("title=%s", a.Title)
+		return fmt.Sprintf("query=%s", a.Query), true
 	case wiki.SearchInPageArgs:
-		return fmt.Sprintf("title=%s, query=%s", a.Title, a.Query)
+		return fmt.Sprintf("title=%s, query=%s", a.Title, a.Query), true
 	case wiki.SearchInFileArgs:
-		return fmt.Sprintf("filename=%s, query=%s", a.Filename, a.Query)
-	case wiki.ResolveTitleArgs:
-		return fmt.Sprintf("title=%s", a.Title)
+		return fmt.Sprintf("filename=%s, query=%s", a.Filename, a.Query), true
 	case wiki.ListPagesArgs:
-		return fmt.Sprintf("prefix=%s", a.Prefix)
-	case wiki.PageInfoArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.GetSectionsArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.GetRelatedArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.GetImagesArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.ParseArgs:
-		return fmt.Sprintf("title=%s", a.Title)
+		return fmt.Sprintf("prefix=%s", a.Prefix), true
 	case wiki.CategoryMembersArgs:
-		return fmt.Sprintf("category=%s", a.Category)
-	case wiki.GetRevisionsArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.CompareRevisionsArgs:
-		return fmt.Sprintf("from_title=%s, to_title=%s", a.FromTitle, a.ToTitle)
-	case wiki.GetExternalLinksArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.GetBacklinksArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.EditPageArgs:
-		return fmt.Sprintf("title=%s", a.Title)
-	case wiki.FindReplaceArgs:
-		return fmt.Sprintf("title=%s, preview=%t", a.Title, a.PreviewEnabled())
-	case wiki.ApplyFormattingArgs:
-		return fmt.Sprintf("title=%s, format=%s", a.Title, a.Format)
-	case wiki.BulkReplaceArgs:
-		return fmt.Sprintf("pages=%d, preview=%t", len(a.Pages), a.PreviewEnabled())
+		return fmt.Sprintf("category=%s", a.Category), true
 	case wiki.FindSimilarPagesArgs:
-		return fmt.Sprintf("page=%s", a.Page)
+		return fmt.Sprintf("page=%s", a.Page), true
 	case wiki.CompareTopicArgs:
-		return fmt.Sprintf("topic=%s", a.Topic)
-	default:
-		return ""
+		return fmt.Sprintf("topic=%s", a.Topic), true
 	}
+	return "", false
+}
+
+// pageReadArgsSummary covers single-page read tool arguments.
+func pageReadArgsSummary(args any) (string, bool) {
+	switch a := args.(type) {
+	case wiki.GetPageArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.ResolveTitleArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.PageInfoArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.GetSectionsArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.GetRelatedArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.GetImagesArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.ParseArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	}
+	return "", false
+}
+
+// historyLinkArgsSummary covers revision-history and link tool arguments.
+func historyLinkArgsSummary(args any) (string, bool) {
+	switch a := args.(type) {
+	case wiki.GetRevisionsArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.CompareRevisionsArgs:
+		return fmt.Sprintf("from_title=%s, to_title=%s", a.FromTitle, a.ToTitle), true
+	case wiki.GetExternalLinksArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.GetBacklinksArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	}
+	return "", false
+}
+
+// writeArgsSummary covers mutating tool arguments.
+func writeArgsSummary(args any) (string, bool) {
+	switch a := args.(type) {
+	case wiki.EditPageArgs:
+		return fmt.Sprintf("title=%s", a.Title), true
+	case wiki.FindReplaceArgs:
+		return fmt.Sprintf("title=%s, preview=%t", a.Title, a.PreviewEnabled()), true
+	case wiki.ApplyFormattingArgs:
+		return fmt.Sprintf("title=%s, format=%s", a.Title, a.Format), true
+	case wiki.BulkReplaceArgs:
+		return fmt.Sprintf("pages=%d, preview=%t", len(a.Pages), a.PreviewEnabled()), true
+	}
+	return "", false
 }
 
 // errorString returns the error message or empty string for nil errors.

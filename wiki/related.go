@@ -8,6 +8,32 @@ import (
 	"strings"
 )
 
+// relationScoring describes how a related-page source affects the map: the
+// relation and score bump applied when the page is already tracked, and the
+// initial relation/score when it is first seen.
+type relationScoring struct {
+	upgradeRelation string
+	upgradeDelta    int
+	newRelation     string
+	newScore        int
+}
+
+// recordRelated adds a page to relatedMap or upgrades an existing entry
+// according to the given scoring rules.
+func recordRelated(relatedMap map[string]*RelatedPage, title string, pageID int, scoring relationScoring) {
+	if existing, ok := relatedMap[title]; ok {
+		existing.Relation = scoring.upgradeRelation
+		existing.Score += scoring.upgradeDelta
+		return
+	}
+	relatedMap[title] = &RelatedPage{
+		Title:    title,
+		PageID:   pageID,
+		Relation: scoring.newRelation,
+		Score:    scoring.newScore,
+	}
+}
+
 // addCategoryRelations populates relatedMap from category memberships for the
 // source title. Returns the list of source-page categories for the result.
 func (c *Client) addCategoryRelations(ctx context.Context, normalizedTitle string, limit int, relatedMap map[string]*RelatedPage) []string {
@@ -53,6 +79,12 @@ func (c *Client) addCategoryMembers(ctx context.Context, cat, normalizedTitle st
 	}
 }
 
+// Scoring rules for the link-based relation sources.
+var (
+	linkScoring     = relationScoring{upgradeRelation: "linked_and_categorized", upgradeDelta: 2, newRelation: "linked_from", newScore: 2}
+	backlinkScoring = relationScoring{upgradeRelation: "bidirectional_link", upgradeDelta: 3, newRelation: "links_to", newScore: 1}
+)
+
 // addLinkRelations populates relatedMap with pages linked from the source page.
 func (c *Client) addLinkRelations(ctx context.Context, normalizedTitle string, limit int, relatedMap map[string]*RelatedPage) {
 	links, err := c.getPageLinks(ctx, normalizedTitle, limit)
@@ -60,41 +92,18 @@ func (c *Client) addLinkRelations(ctx context.Context, normalizedTitle string, l
 		return
 	}
 	for _, link := range links {
-		if existing, ok := relatedMap[link.Title]; ok {
-			existing.Relation = "linked_and_categorized"
-			existing.Score += 2
-			continue
-		}
-		relatedMap[link.Title] = &RelatedPage{
-			Title:    link.Title,
-			PageID:   link.PageID,
-			Relation: "linked_from",
-			Score:    2,
-		}
+		recordRelated(relatedMap, link.Title, link.PageID, linkScoring)
 	}
 }
 
 // addBacklinkRelations populates relatedMap with pages that link to the source page.
 func (c *Client) addBacklinkRelations(ctx context.Context, normalizedTitle string, limit int, relatedMap map[string]*RelatedPage) {
-	backlinks, err := c.GetBacklinks(ctx, GetBacklinksArgs{
-		Title: normalizedTitle,
-		Limit: limit,
-	})
+	backlinks, err := c.GetBacklinks(ctx, GetBacklinksArgs{Title: normalizedTitle, Limit: limit})
 	if err != nil {
 		return
 	}
 	for _, bl := range backlinks.Backlinks {
-		if existing, ok := relatedMap[bl.Title]; ok {
-			existing.Relation = "bidirectional_link"
-			existing.Score += 3
-			continue
-		}
-		relatedMap[bl.Title] = &RelatedPage{
-			Title:    bl.Title,
-			PageID:   bl.PageID,
-			Relation: "links_to",
-			Score:    1,
-		}
+		recordRelated(relatedMap, bl.Title, bl.PageID, backlinkScoring)
 	}
 }
 
@@ -115,6 +124,22 @@ func sortAndLimitRelated(relatedMap map[string]*RelatedPage, limit int) []Relate
 		related = related[:limit]
 	}
 	return related
+}
+
+// collectRelated gathers related pages into relatedMap using the requested
+// method(s). Returns the source-page categories when categories are consulted.
+func (c *Client) collectRelated(ctx context.Context, method, normalizedTitle string, limit int, relatedMap map[string]*RelatedPage) []string {
+	var categories []string
+	if method == "categories" || method == "all" {
+		categories = c.addCategoryRelations(ctx, normalizedTitle, limit, relatedMap)
+	}
+	if method == "links" || method == "all" {
+		c.addLinkRelations(ctx, normalizedTitle, limit, relatedMap)
+	}
+	if method == "backlinks" || method == "all" {
+		c.addBacklinkRelations(ctx, normalizedTitle, limit, relatedMap)
+	}
+	return categories
 }
 
 // GetRelated finds pages related to the given page
@@ -139,20 +164,30 @@ func (c *Client) GetRelated(ctx context.Context, args GetRelatedArgs) (GetRelate
 	}
 	relatedMap := make(map[string]*RelatedPage)
 
-	if method == "categories" || method == "all" {
-		result.Categories = c.addCategoryRelations(ctx, normalizedTitle, limit, relatedMap)
-	}
-	if method == "links" || method == "all" {
-		c.addLinkRelations(ctx, normalizedTitle, limit, relatedMap)
-	}
-	if method == "backlinks" || method == "all" {
-		c.addBacklinkRelations(ctx, normalizedTitle, limit, relatedMap)
-	}
+	result.Categories = c.collectRelated(ctx, method, normalizedTitle, limit, relatedMap)
 
 	related := sortAndLimitRelated(relatedMap, limit)
 	result.RelatedPages = related
 	result.Count = len(related)
 	return result, nil
+}
+
+// queryPages performs an API query request and returns the 'pages' object
+// from the response.
+func (c *Client) queryPages(ctx context.Context, params url.Values) (map[string]interface{}, error) {
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	query := getMap(resp["query"])
+	if query == nil {
+		return nil, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	pages := getMap(query["pages"])
+	if pages == nil {
+		return nil, fmt.Errorf("unexpected API response: missing 'pages' object")
+	}
+	return pages, nil
 }
 
 // getPageCategories gets categories for a page
@@ -163,41 +198,35 @@ func (c *Client) getPageCategories(ctx context.Context, title string) ([]string,
 	params.Set("prop", "categories")
 	params.Set("cllimit", "50")
 
-	resp, err := c.apiRequest(ctx, params)
+	pages, err := c.queryPages(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	query, ok := resp["query"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected API response: missing 'query' object")
-	}
-	pages, ok := query["pages"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected API response: missing 'pages' object")
-	}
-
 	var categories []string
 	for _, p := range pages {
-		page, ok := p.(map[string]interface{})
-		if !ok {
+		categories = append(categories, categoriesFromPage(p)...)
+	}
+	return categories, nil
+}
+
+// categoriesFromPage extracts category titles (without the "Category:" prefix)
+// from a single page object in an API response.
+func categoriesFromPage(p interface{}) []string {
+	page := getMap(p)
+	if page == nil {
+		return nil
+	}
+	var categories []string
+	for _, cat := range getSlice(page["categories"]) {
+		catMap := getMap(cat)
+		if catMap == nil {
 			continue
 		}
-		if cats, ok := page["categories"].([]interface{}); ok {
-			for _, cat := range cats {
-				c, ok := cat.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				catTitle := getString(c["title"])
-				// Remove "Category:" prefix
-				catTitle = strings.TrimPrefix(catTitle, "Category:")
-				categories = append(categories, catTitle)
-			}
-		}
+		catTitle := strings.TrimPrefix(getString(catMap["title"]), "Category:")
+		categories = append(categories, catTitle)
 	}
-
-	return categories, nil
+	return categories
 }
 
 // getPageLinks gets outgoing links from a page
@@ -209,38 +238,34 @@ func (c *Client) getPageLinks(ctx context.Context, title string, limit int) ([]P
 	params.Set("pllimit", strconv.Itoa(limit))
 	params.Set("plnamespace", "0") // Main namespace only
 
-	resp, err := c.apiRequest(ctx, params)
+	pages, err := c.queryPages(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	query, ok := resp["query"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected API response: missing 'query' object")
-	}
-	pages, ok := query["pages"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected API response: missing 'pages' object")
-	}
-
 	var links []PageSummary
 	for _, p := range pages {
-		page, ok := p.(map[string]interface{})
-		if !ok {
+		links = append(links, linksFromPage(p)...)
+	}
+	return links, nil
+}
+
+// linksFromPage extracts outgoing link summaries from a single page object in
+// an API response.
+func linksFromPage(p interface{}) []PageSummary {
+	page := getMap(p)
+	if page == nil {
+		return nil
+	}
+	var links []PageSummary
+	for _, l := range getSlice(page["links"]) {
+		link := getMap(l)
+		if link == nil {
 			continue
 		}
-		if linksList, ok := page["links"].([]interface{}); ok {
-			for _, l := range linksList {
-				link, ok := l.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				links = append(links, PageSummary{
-					Title: getString(link["title"]),
-				})
-			}
-		}
+		links = append(links, PageSummary{
+			Title: getString(link["title"]),
+		})
 	}
-
-	return links, nil
+	return links
 }

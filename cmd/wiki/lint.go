@@ -60,30 +60,53 @@ type lintResults struct {
 
 func runLintChecks(ctx context.Context, client *wiki.Client, opts lintOpts) (lintResults, error) {
 	var out lintResults
-	if opts.checks["terminology"] {
-		r, err := client.CheckTerminology(ctx, wiki.CheckTerminologyArgs{
-			Pages:        opts.pages,
-			Category:     opts.category,
-			GlossaryPage: opts.glossaryPage,
-			Limit:        opts.limit,
-		})
-		if err != nil {
-			return out, fmt.Errorf("terminology check failed: %w", err)
-		}
-		out.term = &r
+	term, err := runTerminologyCheck(ctx, client, opts)
+	if err != nil {
+		return out, err
 	}
-	if opts.checks["links"] {
-		r, err := client.FindBrokenInternalLinks(ctx, wiki.FindBrokenInternalLinksArgs{
-			Pages:    opts.pages,
-			Category: opts.category,
-			Limit:    opts.limit,
-		})
-		if err != nil {
-			return out, fmt.Errorf("broken links check failed: %w", err)
-		}
-		out.links = &r
+	out.term = term
+
+	links, err := runBrokenLinksCheck(ctx, client, opts)
+	if err != nil {
+		return out, err
 	}
+	out.links = links
 	return out, nil
+}
+
+// runTerminologyCheck runs the terminology check, or returns nil when the
+// check is not enabled in opts.
+func runTerminologyCheck(ctx context.Context, client *wiki.Client, opts lintOpts) (*wiki.CheckTerminologyResult, error) {
+	if !opts.checks["terminology"] {
+		return nil, nil
+	}
+	r, err := client.CheckTerminology(ctx, wiki.CheckTerminologyArgs{
+		Pages:        opts.pages,
+		Category:     opts.category,
+		GlossaryPage: opts.glossaryPage,
+		Limit:        opts.limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("terminology check failed: %w", err)
+	}
+	return &r, nil
+}
+
+// runBrokenLinksCheck runs the broken-internal-links check, or returns nil
+// when the check is not enabled in opts.
+func runBrokenLinksCheck(ctx context.Context, client *wiki.Client, opts lintOpts) (*wiki.FindBrokenInternalLinksResult, error) {
+	if !opts.checks["links"] {
+		return nil, nil
+	}
+	r, err := client.FindBrokenInternalLinks(ctx, wiki.FindBrokenInternalLinksArgs{
+		Pages:    opts.pages,
+		Category: opts.category,
+		Limit:    opts.limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("broken links check failed: %w", err)
+	}
+	return &r, nil
 }
 
 func printLintJSON(r lintResults) error {
@@ -120,18 +143,24 @@ func printBrokenLinks(r *wiki.FindBrokenInternalLinksResult) {
 	}
 	fmt.Printf("Broken Internal Links (%d):\n", r.BrokenCount)
 	for _, page := range r.Pages {
-		if page.BrokenCount == 0 {
-			continue
-		}
-		for _, link := range page.BrokenLinks {
-			if link.Line > 0 {
-				fmt.Printf("  %s -> %s (line %d)\n", page.Title, link.Target, link.Line)
-			} else {
-				fmt.Printf("  %s -> %s\n", page.Title, link.Target)
-			}
-		}
+		printPageBrokenLinks(page)
 	}
 	fmt.Println()
+}
+
+// printPageBrokenLinks lists one page's broken links in "page -> target"
+// form; silent for clean pages.
+func printPageBrokenLinks(page wiki.PageBrokenLinksResult) {
+	if page.BrokenCount == 0 {
+		return
+	}
+	for _, link := range page.BrokenLinks {
+		if link.Line > 0 {
+			fmt.Printf("  %s -> %s (line %d)\n", page.Title, link.Target, link.Line)
+		} else {
+			fmt.Printf("  %s -> %s\n", page.Title, link.Target)
+		}
+	}
 }
 
 func printLintSummary(r lintResults) (termIssues, brokenLinks int) {

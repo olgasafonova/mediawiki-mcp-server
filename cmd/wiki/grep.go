@@ -128,13 +128,20 @@ func runGrepFile(cmd *cobra.Command, args []string) error {
 		return printJSON(result)
 	}
 
+	printFileMatches(result, query)
+	return nil
+}
+
+// printFileMatches renders per-match locations (page/line) and context for
+// a file search, or explains why the file yielded nothing.
+func printFileMatches(result wiki.SearchInFileResult, query string) {
 	if !result.Searchable {
 		fmt.Printf("%s is not searchable: %s\n", result.Filename, result.Message)
-		return nil
+		return
 	}
 	if result.MatchCount == 0 {
 		fmt.Printf("No matches for %q in %s (%s)\n", query, result.Filename, result.FileType)
-		return nil
+		return
 	}
 
 	fmt.Printf("%s [%s]: %d match(es) for %q\n\n", result.Filename, result.FileType, result.MatchCount, query)
@@ -147,7 +154,6 @@ func runGrepFile(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("%s\n\n", m.Context)
 	}
-	return nil
 }
 
 // cmdCtx is a tiny helper so subcommands stay short. Background context is the

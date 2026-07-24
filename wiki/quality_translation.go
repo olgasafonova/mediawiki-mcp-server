@@ -82,7 +82,7 @@ func (c *Client) CheckTranslations(ctx context.Context, args CheckTranslationsAr
 	}
 
 	limit := normalizeLimit(args.Limit, 20, 100)
-	basePages, err := c.collectPagesFromArgs(ctx, args.BasePages, args.Category, limit, "base_pages")
+	basePages, err := c.collectPagesFromArgs(ctx, pageSelection{Pages: args.BasePages, Category: args.Category, Limit: limit, FieldName: "base_pages"})
 	if err != nil {
 		return CheckTranslationsResult{}, err
 	}

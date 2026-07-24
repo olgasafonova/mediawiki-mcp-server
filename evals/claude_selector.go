@@ -92,18 +92,23 @@ func (c *ClaudeSelector) SelectTool(input string) (string, map[string]any, error
 	}
 
 	for _, block := range resp.Content {
-		if block.Type != "tool_use" {
-			continue
+		if block.Type == "tool_use" {
+			return parseToolUseBlock(block)
 		}
-		tu := block.AsToolUse()
-		var args map[string]any
-		if len(tu.Input) > 0 {
-			if err := json.Unmarshal(tu.Input, &args); err != nil {
-				return tu.Name, nil, fmt.Errorf("parsing tool input: %w", err)
-			}
-		}
-		return tu.Name, args, nil
 	}
 
 	return "", nil, fmt.Errorf("no tool_use block in response")
+}
+
+// parseToolUseBlock decodes a tool_use content block into the tool name and
+// its unmarshalled arguments.
+func parseToolUseBlock(block anthropic.ContentBlockUnion) (string, map[string]any, error) {
+	tu := block.AsToolUse()
+	var args map[string]any
+	if len(tu.Input) > 0 {
+		if err := json.Unmarshal(tu.Input, &args); err != nil {
+			return tu.Name, nil, fmt.Errorf("parsing tool input: %w", err)
+		}
+	}
+	return tu.Name, args, nil
 }

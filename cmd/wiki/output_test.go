@@ -14,13 +14,24 @@ func TestPrintIDTitleTableNoPanic(t *testing.T) {
 		}
 	}()
 	// Empty path.
-	printIDTitleTable("Header", "none found", "pages", nil, false, "")
+	printIDTitleTable(idTitleTable{
+		Header:   "Header",
+		EmptyMsg: "none found",
+		Noun:     "pages",
+	})
 	// Populated path with continuation hint.
 	items := []wiki.PageSummary{
 		{PageID: 1, Title: "Alpha"},
 		{PageID: 2, Title: "Beta"},
 	}
-	printIDTitleTable("Header", "none", "pages", items, true, "cont-token")
+	printIDTitleTable(idTitleTable{
+		Header:       "Header",
+		EmptyMsg:     "none",
+		Noun:         "pages",
+		Items:        items,
+		HasMore:      true,
+		ContinueFrom: "cont-token",
+	})
 }
 
 func TestTruncate(t *testing.T) {

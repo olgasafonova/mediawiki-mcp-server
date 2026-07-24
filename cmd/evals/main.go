@@ -21,6 +21,15 @@ import (
 	"github.com/olgasafonova/mediawiki-mcp-server/evals"
 )
 
+// evalOptions carries the parsed CLI flags shared by all subcommands.
+type evalOptions struct {
+	dir     string
+	suite   string
+	model   string
+	verbose bool
+	jsonOut bool
+}
+
 func main() {
 	dir := flag.String("dir", "./evals", "Directory containing eval JSON files")
 	suite := flag.String("suite", "all", "Suite: tool_selection, confusion_pairs, arguments, or all")
@@ -30,8 +39,16 @@ func main() {
 	jsonOut := flag.Bool("json", false, "Emit results as JSON (run mode only)")
 	flag.Parse()
 
+	opts := evalOptions{
+		dir:     *dir,
+		suite:   *suite,
+		model:   *model,
+		verbose: *verbose,
+		jsonOut: *jsonOut,
+	}
+
 	if *run {
-		runEvals(*dir, *suite, *model, *jsonOut)
+		runEvals(opts)
 		return
 	}
 
@@ -39,89 +56,119 @@ func main() {
 	fmt.Println("============================================")
 	fmt.Println()
 
-	switch *suite {
+	switch opts.suite {
 	case "tool_selection":
-		loadToolSelection(*dir, *verbose)
+		loadToolSelection(opts)
 	case "confusion_pairs":
-		loadConfusionPairs(*dir, *verbose)
+		loadConfusionPairs(opts)
 	case "arguments":
-		loadArguments(*dir, *verbose)
+		loadArguments(opts)
 	case "all":
-		loadAll(*dir, *verbose)
+		loadAll(opts)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown suite: %s\n", *suite)
+		fmt.Fprintf(os.Stderr, "Unknown suite: %s\n", opts.suite)
 		os.Exit(1)
 	}
 }
 
-func runEvals(dir, suite, model string, jsonOut bool) {
-	selector, err := evals.NewClaudeSelector(model)
+// suiteSpec describes one runnable eval suite: its CLI key, display label,
+// and a loader+evaluator closure.
+type suiteSpec struct {
+	key   string
+	label string
+	run   func(opts evalOptions, selector *evals.ClaudeSelector) (*evals.EvalMetrics, error)
+}
+
+var suiteSpecs = []suiteSpec{
+	{"tool_selection", "Tool Selection", func(opts evalOptions, selector *evals.ClaudeSelector) (*evals.EvalMetrics, error) {
+		s, err := evals.LoadToolSelectionSuite(filepath.Join(opts.dir, "tool_selection.json"))
+		if err != nil {
+			return nil, err
+		}
+		metrics, _ := evals.EvaluateToolSelection(s, selector)
+		return metrics, nil
+	}},
+	{"confusion_pairs", "Confusion Pairs", func(opts evalOptions, selector *evals.ClaudeSelector) (*evals.EvalMetrics, error) {
+		s, err := evals.LoadConfusionPairSuite(filepath.Join(opts.dir, "confusion_pairs.json"))
+		if err != nil {
+			return nil, err
+		}
+		metrics, _ := evals.EvaluateConfusionPairs(s, selector)
+		return metrics, nil
+	}},
+	{"arguments", "Argument Correctness", func(opts evalOptions, selector *evals.ClaudeSelector) (*evals.EvalMetrics, error) {
+		s, err := evals.LoadArgumentSuite(filepath.Join(opts.dir, "argument_correctness.json"))
+		if err != nil {
+			return nil, err
+		}
+		metrics, _ := evals.EvaluateArguments(s, selector)
+		return metrics, nil
+	}},
+}
+
+func runEvals(opts evalOptions) {
+	selector, err := evals.NewClaudeSelector(opts.model)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing Claude selector: %v\n", err)
 		os.Exit(1)
 	}
 
-	if !jsonOut {
-		modelName := model
-		if modelName == "" {
-			modelName = "claude-sonnet-4-6 (default)"
-		}
-		fmt.Printf("Running evals against %s\n", modelName)
-		fmt.Println("Suite:", suite)
-		fmt.Println()
-	}
+	printRunHeader(opts)
+	results := runSelectedSuites(opts, selector)
 
+	if opts.jsonOut {
+		emitJSONResults(results)
+	}
+	exitOnFailures(results)
+}
+
+// runSelectedSuites runs every suite matching opts.suite and returns
+// the metrics keyed by suite name. Load errors are fatal.
+func runSelectedSuites(opts evalOptions, selector *evals.ClaudeSelector) map[string]*evals.EvalMetrics {
 	results := make(map[string]*evals.EvalMetrics)
-
-	if suite == "tool_selection" || suite == "all" {
-		s, err := evals.LoadToolSelectionSuite(filepath.Join(dir, "tool_selection.json"))
+	for _, spec := range suiteSpecs {
+		if opts.suite != spec.key && opts.suite != "all" {
+			continue
+		}
+		metrics, err := spec.run(opts, selector)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading tool_selection: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", spec.key, err)
 			os.Exit(1)
 		}
-		metrics, _ := evals.EvaluateToolSelection(s, selector)
-		results["tool_selection"] = metrics
-		if !jsonOut {
-			fmt.Print(evals.FormatMetrics(metrics, "Tool Selection"))
+		results[spec.key] = metrics
+		if !opts.jsonOut {
+			fmt.Print(evals.FormatMetrics(metrics, spec.label))
 		}
 	}
+	return results
+}
 
-	if suite == "confusion_pairs" || suite == "all" {
-		s, err := evals.LoadConfusionPairSuite(filepath.Join(dir, "confusion_pairs.json"))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading confusion_pairs: %v\n", err)
-			os.Exit(1)
-		}
-		metrics, _ := evals.EvaluateConfusionPairs(s, selector)
-		results["confusion_pairs"] = metrics
-		if !jsonOut {
-			fmt.Print(evals.FormatMetrics(metrics, "Confusion Pairs"))
-		}
+// printRunHeader prints the run banner unless JSON output is requested.
+func printRunHeader(opts evalOptions) {
+	if opts.jsonOut {
+		return
 	}
-
-	if suite == "arguments" || suite == "all" {
-		s, err := evals.LoadArgumentSuite(filepath.Join(dir, "argument_correctness.json"))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading arguments: %v\n", err)
-			os.Exit(1)
-		}
-		metrics, _ := evals.EvaluateArguments(s, selector)
-		results["arguments"] = metrics
-		if !jsonOut {
-			fmt.Print(evals.FormatMetrics(metrics, "Argument Correctness"))
-		}
+	modelName := opts.model
+	if modelName == "" {
+		modelName = "claude-sonnet-4-6 (default)"
 	}
+	fmt.Printf("Running evals against %s\n", modelName)
+	fmt.Println("Suite:", opts.suite)
+	fmt.Println()
+}
 
-	if jsonOut {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(results); err != nil {
-			fmt.Fprintf(os.Stderr, "Error encoding results: %v\n", err)
-			os.Exit(1)
-		}
+// emitJSONResults writes the metrics map as indented JSON to stdout.
+func emitJSONResults(results map[string]*evals.EvalMetrics) {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(results); err != nil {
+		fmt.Fprintf(os.Stderr, "Error encoding results: %v\n", err)
+		os.Exit(1)
 	}
+}
 
-	// Non-zero exit when any suite has failures, so CI can branch on it.
+// exitOnFailures exits non-zero when any suite has failures, so CI can branch on it.
+func exitOnFailures(results map[string]*evals.EvalMetrics) {
 	for _, m := range results {
 		if m.FailedTests > 0 {
 			os.Exit(1)
@@ -129,8 +176,8 @@ func runEvals(dir, suite, model string, jsonOut bool) {
 	}
 }
 
-func loadToolSelection(dir string, verbose bool) {
-	path := filepath.Join(dir, "tool_selection.json")
+func loadToolSelection(opts evalOptions) {
+	path := filepath.Join(opts.dir, "tool_selection.json")
 	suite, err := evals.LoadToolSelectionSuite(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading tool selection suite: %v\n", err)
@@ -163,20 +210,25 @@ func loadToolSelection(dir string, verbose bool) {
 	}
 	fmt.Println()
 
-	if verbose {
-		fmt.Println("Test Cases:")
-		for _, test := range suite.Tests {
-			fmt.Printf("  [%s] %s\n", test.ID, test.Input)
-			fmt.Printf("    -> %s\n", test.ExpectedTool)
-			if len(test.NotTools) > 0 {
-				fmt.Printf("    not: %v\n", test.NotTools)
-			}
+	if opts.verbose {
+		printToolSelectionTests(suite)
+	}
+}
+
+// printToolSelectionTests lists every tool-selection test case.
+func printToolSelectionTests(suite *evals.ToolSelectionSuite) {
+	fmt.Println("Test Cases:")
+	for _, test := range suite.Tests {
+		fmt.Printf("  [%s] %s\n", test.ID, test.Input)
+		fmt.Printf("    -> %s\n", test.ExpectedTool)
+		if len(test.NotTools) > 0 {
+			fmt.Printf("    not: %v\n", test.NotTools)
 		}
 	}
 }
 
-func loadConfusionPairs(dir string, verbose bool) {
-	path := filepath.Join(dir, "confusion_pairs.json")
+func loadConfusionPairs(opts evalOptions) {
+	path := filepath.Join(opts.dir, "confusion_pairs.json")
 	suite, err := evals.LoadConfusionPairSuite(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading confusion pairs suite: %v\n", err)
@@ -187,12 +239,7 @@ func loadConfusionPairs(dir string, verbose bool) {
 	fmt.Printf("Version: %s\n", suite.Version)
 	fmt.Printf("Description: %s\n", suite.Description)
 	fmt.Printf("Total Pairs: %d\n", len(suite.Pairs))
-
-	totalTests := 0
-	for _, pair := range suite.Pairs {
-		totalTests += len(pair.Tests)
-	}
-	fmt.Printf("Total Tests: %d\n", totalTests)
+	fmt.Printf("Total Tests: %d\n", countConfusionTests(suite))
 	fmt.Println()
 
 	fmt.Println("Confusion Pairs:")
@@ -202,7 +249,7 @@ func loadConfusionPairs(dir string, verbose bool) {
 		fmt.Printf("    Rule: %s\n", pair.Disambiguation)
 		fmt.Printf("    Tests: %d\n", len(pair.Tests))
 
-		if verbose {
+		if opts.verbose {
 			for _, test := range pair.Tests {
 				fmt.Printf("      \"%s\"\n", test.Input)
 				fmt.Printf("        -> %s (%s)\n", test.Expected, test.Reason)
@@ -212,8 +259,8 @@ func loadConfusionPairs(dir string, verbose bool) {
 	fmt.Println()
 }
 
-func loadArguments(dir string, verbose bool) {
-	path := filepath.Join(dir, "argument_correctness.json")
+func loadArguments(opts evalOptions) {
+	path := filepath.Join(opts.dir, "argument_correctness.json")
 	suite, err := evals.LoadArgumentSuite(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading argument suite: %v\n", err)
@@ -246,54 +293,74 @@ func loadArguments(dir string, verbose bool) {
 	fmt.Printf("  Preview Default: %s\n", suite.ValidationRules.PreviewDefault)
 	fmt.Println()
 
-	if verbose {
-		fmt.Println("Test Cases:")
-		for _, test := range suite.Tests {
-			fmt.Printf("  [%s] %s\n", test.ID, test.Input)
-			fmt.Printf("    Tool: %s\n", test.Tool)
-			fmt.Printf("    Required: %v\n", test.RequiredArgs)
-			fmt.Printf("    Expected: %v\n", test.ExpectedArgs)
-			if len(test.ForbiddenArgs) > 0 {
-				fmt.Printf("    Forbidden: %v\n", test.ForbiddenArgs)
-			}
-			if test.ArgNotes != "" {
-				fmt.Printf("    Notes: %s\n", test.ArgNotes)
-			}
+	if opts.verbose {
+		printArgumentTests(suite)
+	}
+}
+
+// printArgumentTests lists every argument-correctness test case.
+func printArgumentTests(suite *evals.ArgumentSuite) {
+	fmt.Println("Test Cases:")
+	for _, test := range suite.Tests {
+		fmt.Printf("  [%s] %s\n", test.ID, test.Input)
+		fmt.Printf("    Tool: %s\n", test.Tool)
+		fmt.Printf("    Required: %v\n", test.RequiredArgs)
+		fmt.Printf("    Expected: %v\n", test.ExpectedArgs)
+		if len(test.ForbiddenArgs) > 0 {
+			fmt.Printf("    Forbidden: %v\n", test.ForbiddenArgs)
+		}
+		if test.ArgNotes != "" {
+			fmt.Printf("    Notes: %s\n", test.ArgNotes)
 		}
 	}
 }
 
-func loadAll(dir string, verbose bool) {
-	toolSelection, confusionPairs, arguments, err := evals.LoadAllEvals(dir)
+func loadAll(opts evalOptions) {
+	toolSelection, confusionPairs, arguments, err := evals.LoadAllEvals(opts.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading evals: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Count totals
-	totalTests := len(toolSelection.Tests)
-	for _, pair := range confusionPairs.Pairs {
-		totalTests += len(pair.Tests)
-	}
-	totalTests += len(arguments.Tests)
+	confusionTests := countConfusionTests(confusionPairs)
+	totalTests := len(toolSelection.Tests) + confusionTests + len(arguments.Tests)
 
-	fmt.Printf("Loaded all evaluation suites from: %s\n\n", dir)
+	fmt.Printf("Loaded all evaluation suites from: %s\n\n", opts.dir)
 
 	fmt.Println("Summary:")
 	fmt.Println("--------")
 	fmt.Printf("Tool Selection Tests:   %d\n", len(toolSelection.Tests))
-
-	confusionTests := 0
-	for _, pair := range confusionPairs.Pairs {
-		confusionTests += len(pair.Tests)
-	}
 	fmt.Printf("Confusion Pair Tests:   %d (across %d pairs)\n", confusionTests, len(confusionPairs.Pairs))
 	fmt.Printf("Argument Tests:         %d\n", len(arguments.Tests))
 	fmt.Printf("----------------------\n")
 	fmt.Printf("Total Evaluation Tests: %d\n", totalTests)
 	fmt.Println()
 
-	// Show tool coverage
+	toolCoverage := collectToolCoverage(toolSelection, confusionPairs, arguments)
+	fmt.Printf("Tool Coverage: %d unique tools tested\n", len(toolCoverage))
+
+	if opts.verbose {
+		fmt.Println("\nCovered Tools:")
+		for tool := range toolCoverage {
+			fmt.Printf("  - %s\n", tool)
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Run against Claude: go run ./cmd/evals -run  (requires ANTHROPIC_API_KEY)")
+}
+
+// countConfusionTests sums the test cases across all confusion pairs.
+func countConfusionTests(confusionPairs *evals.ConfusionPairSuite) int {
+	total := 0
+	for _, pair := range confusionPairs.Pairs {
+		total += len(pair.Tests)
+	}
+	return total
+}
+
+// collectToolCoverage gathers the set of unique tools referenced by any suite.
+func collectToolCoverage(toolSelection *evals.ToolSelectionSuite, confusionPairs *evals.ConfusionPairSuite, arguments *evals.ArgumentSuite) map[string]bool {
 	toolCoverage := make(map[string]bool)
 	for _, test := range toolSelection.Tests {
 		toolCoverage[test.ExpectedTool] = true
@@ -306,16 +373,5 @@ func loadAll(dir string, verbose bool) {
 	for _, test := range arguments.Tests {
 		toolCoverage[test.Tool] = true
 	}
-
-	fmt.Printf("Tool Coverage: %d unique tools tested\n", len(toolCoverage))
-
-	if verbose {
-		fmt.Println("\nCovered Tools:")
-		for tool := range toolCoverage {
-			fmt.Printf("  - %s\n", tool)
-		}
-	}
-
-	fmt.Println()
-	fmt.Println("Run against Claude: go run ./cmd/evals -run  (requires ANTHROPIC_API_KEY)")
+	return toolCoverage
 }
