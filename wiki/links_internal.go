@@ -106,6 +106,14 @@ func uniqueLinkTargets(locations []linkLocation) []string {
 // PageBrokenLinksResult rows. Within each page, only the first occurrence of
 // each broken target is reported.
 func buildBrokenLinksResults(pages []string, fetched map[string]struct{}, locations []linkLocation, existence map[string]bool) []PageBrokenLinksResult {
+	pageResults := initBrokenLinkRows(pages, fetched)
+	recordBrokenLinks(pageResults, locations, existence)
+	return collectBrokenLinkRows(pages, pageResults)
+}
+
+// initBrokenLinkRows creates an empty result row for every page that was
+// successfully fetched.
+func initBrokenLinkRows(pages []string, fetched map[string]struct{}) map[string]*PageBrokenLinksResult {
 	pageResults := make(map[string]*PageBrokenLinksResult, len(fetched))
 	for _, title := range pages {
 		if _, ok := fetched[title]; ok {
@@ -115,23 +123,19 @@ func buildBrokenLinksResults(pages []string, fetched map[string]struct{}, locati
 			}
 		}
 	}
+	return pageResults
+}
 
+// recordBrokenLinks appends a BrokenLink for the first occurrence of each
+// target that does not exist on the wiki.
+func recordBrokenLinks(pageResults map[string]*PageBrokenLinksResult, locations []linkLocation, existence map[string]bool) {
 	seen := make(map[string]map[string]bool)
 	for _, loc := range locations {
 		pr := pageResults[loc.pageTitle]
-		if pr == nil {
+		if pr == nil || !firstLinkOccurrence(seen, loc) {
 			continue
 		}
-		if seen[loc.pageTitle] == nil {
-			seen[loc.pageTitle] = make(map[string]bool)
-		}
-		if seen[loc.pageTitle][loc.target] {
-			continue
-		}
-		seen[loc.pageTitle][loc.target] = true
-
-		exists, ok := existence[loc.target]
-		if !ok || !exists {
+		if !existence[loc.target] {
 			pr.BrokenLinks = append(pr.BrokenLinks, BrokenLink{
 				Target:  loc.target,
 				Line:    loc.line,
@@ -139,7 +143,24 @@ func buildBrokenLinksResults(pages []string, fetched map[string]struct{}, locati
 			})
 		}
 	}
+}
 
+// firstLinkOccurrence reports whether this page/target pair is new, marking it
+// as seen as a side effect.
+func firstLinkOccurrence(seen map[string]map[string]bool, loc linkLocation) bool {
+	if seen[loc.pageTitle] == nil {
+		seen[loc.pageTitle] = make(map[string]bool)
+	}
+	if seen[loc.pageTitle][loc.target] {
+		return false
+	}
+	seen[loc.pageTitle][loc.target] = true
+	return true
+}
+
+// collectBrokenLinkRows flattens the per-page rows back into input order and
+// fills in the broken-link counts.
+func collectBrokenLinkRows(pages []string, pageResults map[string]*PageBrokenLinksResult) []PageBrokenLinksResult {
 	out := make([]PageBrokenLinksResult, 0, len(pageResults))
 	for _, title := range pages {
 		if pr, ok := pageResults[title]; ok {
@@ -156,7 +177,7 @@ func (c *Client) FindBrokenInternalLinks(ctx context.Context, args FindBrokenInt
 	}
 
 	limit := normalizeLimit(args.Limit, 20, 100)
-	pagesToCheck, err := c.collectPagesFromArgs(ctx, args.Pages, args.Category, limit, "pages")
+	pagesToCheck, err := c.collectPagesFromArgs(ctx, pageSelection{Pages: args.Pages, Category: args.Category, Limit: limit, FieldName: "pages"})
 	if err != nil {
 		return FindBrokenInternalLinksResult{}, err
 	}
@@ -237,8 +258,6 @@ func orphanedPageMatchesFilter(entry interface{}, namespace int, prefix string) 
 // titles. On API failure, returns minimal entries (title only) so the caller
 // can still report the orphan list.
 func (c *Client) fetchOrphanInfoBatch(ctx context.Context, batch []string) []OrphanedPage {
-	out := make([]OrphanedPage, 0, len(batch))
-
 	infoParams := url.Values{}
 	infoParams.Set("action", "query")
 	infoParams.Set("titles", strings.Join(batch, "|"))
@@ -246,11 +265,23 @@ func (c *Client) fetchOrphanInfoBatch(ctx context.Context, batch []string) []Orp
 
 	infoResp, err := c.apiRequest(ctx, infoParams)
 	if err != nil {
-		for _, title := range batch {
-			out = append(out, OrphanedPage{Title: title})
-		}
-		return out
+		return minimalOrphanEntries(batch)
 	}
+	return parseOrphanInfoPages(infoResp, len(batch))
+}
+
+// minimalOrphanEntries builds title-only entries for a failed info batch.
+func minimalOrphanEntries(batch []string) []OrphanedPage {
+	out := make([]OrphanedPage, 0, len(batch))
+	for _, title := range batch {
+		out = append(out, OrphanedPage{Title: title})
+	}
+	return out
+}
+
+// parseOrphanInfoPages extracts detailed orphan entries from a page-info response.
+func parseOrphanInfoPages(infoResp map[string]interface{}, capacity int) []OrphanedPage {
+	out := make([]OrphanedPage, 0, capacity)
 	infoQuery, _ := infoResp["query"].(map[string]interface{})
 	pages, _ := infoQuery["pages"].(map[string]interface{})
 	for _, pageData := range pages {

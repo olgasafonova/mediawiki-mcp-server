@@ -16,42 +16,26 @@ type healthCheckApply func(*WikiHealthAuditResult)
 // individual checks don't need their own synchronization.
 type healthCheckFunc func(context.Context, WikiHealthAuditArgs, int) (healthCheckApply, error)
 
-// runLinksCheck checks for broken internal links and updates the broken-link summary.
-func (c *Client) runLinksCheck(ctx context.Context, args WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
-	r, err := c.FindBrokenInternalLinks(ctx, FindBrokenInternalLinksArgs{
-		Pages:    args.Pages,
-		Category: args.Category,
-		Limit:    limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return func(out *WikiHealthAuditResult) {
-		out.BrokenLinks = &r
-		out.Summary.BrokenLinksCount = r.BrokenCount
-		if r.PagesChecked > out.PagesAudited {
-			out.PagesAudited = r.PagesChecked
+// scopedCheck builds a healthCheckFunc from a fetch/wire pair, centralizing
+// the fetch-then-apply plumbing shared by every scoped health check.
+func scopedCheck[T any](
+	fetch func(context.Context, WikiHealthAuditArgs, int) (T, error),
+	wire func(*WikiHealthAuditResult, T),
+) healthCheckFunc {
+	return func(ctx context.Context, args WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
+		r, err := fetch(ctx, args, limit)
+		if err != nil {
+			return nil, err
 		}
-	}, nil
+		return func(out *WikiHealthAuditResult) { wire(out, r) }, nil
+	}
 }
 
-// runTerminologyCheck runs the terminology consistency check.
-func (c *Client) runTerminologyCheck(ctx context.Context, args WikiHealthAuditArgs, limit int) (healthCheckApply, error) {
-	r, err := c.CheckTerminology(ctx, CheckTerminologyArgs{
-		Pages:    args.Pages,
-		Category: args.Category,
-		Limit:    limit,
-	})
-	if err != nil {
-		return nil, err
+// raisePagesAudited lifts the audited-pages count to at least n.
+func raisePagesAudited(out *WikiHealthAuditResult, n int) {
+	if n > out.PagesAudited {
+		out.PagesAudited = n
 	}
-	return func(out *WikiHealthAuditResult) {
-		out.Terminology = &r
-		out.Summary.TerminologyIssues = r.IssuesFound
-		if r.PagesChecked > out.PagesAudited {
-			out.PagesAudited = r.PagesChecked
-		}
-	}, nil
 }
 
 // runOrphansCheck looks for pages with no incoming links in the main namespace.
@@ -146,13 +130,33 @@ func computeHealthScore(summary WikiHealthAuditSummary) int {
 }
 
 // healthAuditChecks returns the registry mapping check names to runners.
+// The links and terminology checks share the page scope (pages/category/limit),
+// so they are declared as scopedCheck fetch/wire pairs.
 func (c *Client) healthAuditChecks() map[string]healthCheckFunc {
 	return map[string]healthCheckFunc{
-		"links":       c.runLinksCheck,
-		"terminology": c.runTerminologyCheck,
-		"orphans":     c.runOrphansCheck,
-		"activity":    c.runActivityCheck,
-		"external":    c.runExternalCheck,
+		"links": scopedCheck(
+			func(ctx context.Context, args WikiHealthAuditArgs, limit int) (FindBrokenInternalLinksResult, error) {
+				return c.FindBrokenInternalLinks(ctx, FindBrokenInternalLinksArgs{Pages: args.Pages, Category: args.Category, Limit: limit})
+			},
+			func(out *WikiHealthAuditResult, r FindBrokenInternalLinksResult) {
+				out.BrokenLinks = &r
+				out.Summary.BrokenLinksCount = r.BrokenCount
+				raisePagesAudited(out, r.PagesChecked)
+			},
+		),
+		"terminology": scopedCheck(
+			func(ctx context.Context, args WikiHealthAuditArgs, limit int) (CheckTerminologyResult, error) {
+				return c.CheckTerminology(ctx, CheckTerminologyArgs{Pages: args.Pages, Category: args.Category, Limit: limit})
+			},
+			func(out *WikiHealthAuditResult, r CheckTerminologyResult) {
+				out.Terminology = &r
+				out.Summary.TerminologyIssues = r.IssuesFound
+				raisePagesAudited(out, r.PagesChecked)
+			},
+		),
+		"orphans":  c.runOrphansCheck,
+		"activity": c.runActivityCheck,
+		"external": c.runExternalCheck,
 	}
 }
 
