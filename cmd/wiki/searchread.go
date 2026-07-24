@@ -76,6 +76,10 @@ func printOtherHits(hits []wiki.SearchHit) {
 	}
 	fmt.Printf("\nOther hits:\n")
 	for _, h := range hits {
-		fmt.Printf("  %s\n", h.Title)
+		if h.URL != "" {
+			fmt.Printf("  %s  %s\n", h.Title, h.URL)
+		} else {
+			fmt.Printf("  %s\n", h.Title)
+		}
 	}
 }

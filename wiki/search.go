@@ -51,7 +51,7 @@ func (c *Client) Search(ctx context.Context, args SearchArgs) (SearchResult, err
 		totalHits = getInt(searchInfo["totalhits"])
 	}
 
-	results := parseSearchHits(getSlice(query["search"]))
+	results := c.parseSearchHits(ctx, getSlice(query["search"]))
 
 	result := SearchResult{
 		Query:     args.Query,
@@ -84,17 +84,21 @@ func buildSearchParams(args SearchArgs) url.Values {
 	return params
 }
 
-// parseSearchHits converts raw API search entries into SearchHit values
-func parseSearchHits(searchResults []any) []SearchHit {
+// parseSearchHits converts raw API search entries into SearchHit values.
+// Each hit carries the human-readable page URL built from the wiki's
+// ArticlePath; siteinfo is cached, so this costs at most one extra request.
+func (c *Client) parseSearchHits(ctx context.Context, searchResults []any) []SearchHit {
 	results := make([]SearchHit, 0, len(searchResults))
 	for _, sr := range searchResults {
 		item := getMap(sr)
 		if item == nil {
 			continue
 		}
+		title := getString(item["title"])
 		results = append(results, SearchHit{
 			PageID:  getInt(item["pageid"]),
-			Title:   getString(item["title"]),
+			Title:   title,
+			URL:     c.pageURL(ctx, title),
 			Snippet: stripHTMLTags(getString(item["snippet"])),
 			Size:    getInt(item["size"]),
 		})

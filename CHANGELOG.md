@@ -2,6 +2,11 @@
 
 All notable changes to MediaWiki MCP Server are documented here.
 
+## [Unreleased]
+
+### Added
+- **Page URL in search results** (#98, thanks @strk). `SearchHit` gains a `url` field built from the wiki's `ArticlePath` via siteinfo, falling back to the universal `index.php?title=` form when siteinfo is unavailable. Siteinfo is cached, so a search costs at most one extra API call. `wiki search` shows a `URL` column, `wiki search-read` prints the URL alongside each other hit, and JSON output carries `url` (omitted when empty).
+
 ## [1.34.0] - 2026-07-22
 
 ### Added

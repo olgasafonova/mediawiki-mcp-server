@@ -63,10 +63,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	tw := table()
-	fmt.Fprintf(tw, "TITLE\tSIZE\tSNIPPET\n")
+	fmt.Fprintf(tw, "TITLE\tURL\tSIZE\tSNIPPET\n")
 	for _, hit := range result.Results {
 		snippet := truncate(stripHTML(hit.Snippet), 80)
-		fmt.Fprintf(tw, "%s\t%d\t%s\n", hit.Title, hit.Size, snippet)
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", hit.Title, hit.URL, hit.Size, snippet)
 	}
 	_ = tw.Flush()
 

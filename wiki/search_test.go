@@ -1044,3 +1044,97 @@ func TestCompareTopic_NoResults(t *testing.T) {
 		t.Errorf("Expected no page mentions, got %d", len(result.PageMentions))
 	}
 }
+
+// searchHitURLServer returns a mock wiki that answers a search query with a
+// single hit. When articlePath is non-empty, siteinfo advertises it so the
+// pretty URL form is used; otherwise siteinfo is unusable and pageURL falls
+// back to the index.php form.
+func searchHitURLServer(t *testing.T, title, articlePath string) *httptest.Server {
+	t.Helper()
+	return mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.FormValue("meta") == "siteinfo" {
+			general := map[string]interface{}{}
+			if articlePath != "" {
+				general["server"] = "https://wiki.example.com"
+				general["articlepath"] = articlePath
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"query": map[string]interface{}{"general": general},
+			})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": map[string]interface{}{
+				"searchinfo": map[string]interface{}{"totalhits": float64(1)},
+				"search": []interface{}{
+					map[string]interface{}{
+						"pageid":  float64(7),
+						"title":   title,
+						"snippet": "some <b>content</b>",
+						"size":    float64(120),
+					},
+				},
+			},
+		})
+	})
+}
+
+func TestSearch_HitURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		title       string
+		articlePath string
+		want        string
+	}{
+		{
+			name:        "pretty article path",
+			title:       "Test Page",
+			articlePath: "/wiki/$1",
+			want:        "https://wiki.example.com/wiki/Test_Page",
+		},
+		{
+			name:        "subpage slash preserved",
+			title:       "User:Alice/Sandbox",
+			articlePath: "/wiki/$1",
+			want:        "https://wiki.example.com/wiki/User:Alice/Sandbox",
+		},
+		{
+			name:  "falls back to index.php when siteinfo is unusable",
+			title: "Test Page",
+			want:  "index.php?title=Test_Page",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := searchHitURLServer(t, tt.title, tt.articlePath)
+			defer server.Close()
+
+			client := createMockClient(t, server)
+			defer client.Close()
+
+			result, err := client.Search(context.Background(), SearchArgs{Query: "test"})
+			if err != nil {
+				t.Fatalf("Search failed: %v", err)
+			}
+			if len(result.Results) != 1 {
+				t.Fatalf("len(Results) = %d, want 1", len(result.Results))
+			}
+
+			got := result.Results[0].URL
+			if tt.articlePath != "" {
+				if got != tt.want {
+					t.Errorf("Results[0].URL = %q, want %q", got, tt.want)
+				}
+				return
+			}
+			if !strings.HasSuffix(got, tt.want) {
+				t.Errorf("Results[0].URL = %q, want suffix %q", got, tt.want)
+			}
+		})
+	}
+}
