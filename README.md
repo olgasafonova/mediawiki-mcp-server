@@ -4,7 +4,7 @@ Connect your AI assistant to any MediaWiki wiki, or script it directly from the 
 
 [![CI](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/ci.yml)
 ![lint](https://github.com/olgasafonova/mediawiki-mcp-server/actions/workflows/lint.yml/badge.svg)
-<!-- CodeScene Code Health badge: add after onboarding repo at codescene.io -->
+[![CodeScene Average Code Health](https://codescene.io/projects/82993/status-badges/average-code-health)](https://codescene.io/projects/82993)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Three ways to use it:**
