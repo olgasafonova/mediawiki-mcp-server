@@ -20,47 +20,47 @@ func (c *Client) WarmCache(ctx context.Context, titles []string) error {
 
 	// Use batch API to fetch multiple pages efficiently
 	const batchSize = 50
-	for i := 0; i < len(titles); i += batchSize {
-		end := i + batchSize
-		if end > len(titles) {
-			end = len(titles)
-		}
-		batch := titles[i:end]
-
-		// Fetch page info for the batch
-		params := url.Values{}
-		params.Set("action", "query")
-		params.Set("titles", strings.Join(batch, "|"))
-		params.Set("prop", "info|revisions")
-		params.Set("rvprop", "content|timestamp")
-		params.Set("rvslots", "main")
-
-		resp, err := c.apiRequest(ctx, params)
-		if err != nil {
-			c.logger.Warn("Cache warming failed for batch", "error", err)
-			continue
-		}
-
-		// Cache each page result
-		if query, ok := resp["query"].(map[string]interface{}); ok {
-			if pages, ok := query["pages"].(map[string]interface{}); ok {
-				for _, pageData := range pages {
-					page, ok := pageData.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					title := getString(page["title"])
-					if title != "" {
-						cacheKey := "page:" + normalizePageTitle(title)
-						c.setCache(cacheKey, page, "page_content")
-					}
-				}
-			}
-		}
+	for _, batch := range chunkStrings(titles, batchSize) {
+		c.warmCacheBatch(ctx, batch)
 	}
 
 	c.logger.Info("Cache warming complete", "cached", atomic.LoadInt64(&c.cacheCount))
 	return nil
+}
+
+// warmCacheBatch fetches page info for one batch of titles and caches each
+// returned page. Failures are logged and skipped (best effort).
+func (c *Client) warmCacheBatch(ctx context.Context, batch []string) {
+	params := url.Values{}
+	params.Set("action", "query")
+	params.Set("titles", strings.Join(batch, "|"))
+	params.Set("prop", "info|revisions")
+	params.Set("rvprop", "content|timestamp")
+	params.Set("rvslots", "main")
+
+	resp, err := c.apiRequest(ctx, params)
+	if err != nil {
+		c.logger.Warn("Cache warming failed for batch", "error", err)
+		return
+	}
+
+	// Cache each page result
+	for _, pageData := range getNestedMap(resp, "query", "pages") {
+		c.cacheWarmedPage(pageData)
+	}
+}
+
+// cacheWarmedPage stores one page object under its normalized-title cache key.
+func (c *Client) cacheWarmedPage(pageData interface{}) {
+	page := getMap(pageData)
+	if page == nil {
+		return
+	}
+	title := getString(page["title"])
+	if title == "" {
+		return
+	}
+	c.setCache("page:"+normalizePageTitle(title), page, "page_content")
 }
 
 // WarmCacheWithDefaults pre-loads common wiki pages like Main_Page and help pages.
@@ -115,17 +115,28 @@ func (c *Client) cleanupCache() {
 	}
 }
 
+// entryInfo pairs a cache key with its last access time for LRU sorting.
+type entryInfo struct {
+	key        string
+	accessedAt time.Time
+}
+
 func (c *Client) evictLRU(count int) {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 
-	// Collect all entries with their access times
-	type entryInfo struct {
-		key        string
-		accessedAt time.Time
-	}
-	var entries []entryInfo
+	evicted := c.evictOldest(c.entriesByAge(), count)
 
+	if evicted > 0 {
+		newCount := atomic.AddInt64(&c.cacheCount, -int64(evicted))
+		metrics.SetCacheSize(newCount)
+		metrics.CacheEvictions.Add(float64(evicted))
+	}
+}
+
+// entriesByAge returns all cache entries sorted by access time, oldest first.
+func (c *Client) entriesByAge() []entryInfo {
+	var entries []entryInfo
 	c.cache.Range(func(key, value interface{}) bool {
 		ce := value.(*CacheEntry)
 		ce.mu.Lock()
@@ -138,13 +149,15 @@ func (c *Client) evictLRU(count int) {
 		})
 		return true
 	})
-
-	// Sort by access time (oldest first)
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].accessedAt.Before(entries[j].accessedAt)
 	})
+	return entries
+}
 
-	// Evict the oldest entries
+// evictOldest deletes up to count entries (assumed sorted oldest first) and
+// returns how many were removed.
+func (c *Client) evictOldest(entries []entryInfo, count int) int {
 	evicted := 0
 	for _, entry := range entries {
 		if evicted >= count {
@@ -153,12 +166,14 @@ func (c *Client) evictLRU(count int) {
 		c.cache.Delete(entry.key)
 		evicted++
 	}
+	return evicted
+}
 
-	if evicted > 0 {
-		newCount := atomic.AddInt64(&c.cacheCount, -int64(evicted))
-		metrics.SetCacheSize(newCount)
-		metrics.CacheEvictions.Add(float64(evicted))
-	}
+// touchEntry marks a cache entry as freshly accessed for LRU tracking.
+func touchEntry(ce *CacheEntry, now time.Time) {
+	ce.mu.Lock()
+	ce.AccessedAt = now
+	ce.mu.Unlock()
 }
 
 func (c *Client) getCached(key string) (interface{}, bool) {
@@ -166,10 +181,7 @@ func (c *Client) getCached(key string) (interface{}, bool) {
 		ce := entry.(*CacheEntry)
 		now := time.Now()
 		if now.Before(ce.ExpiresAt) {
-			// Update access time for LRU tracking
-			ce.mu.Lock()
-			ce.AccessedAt = now
-			ce.mu.Unlock()
+			touchEntry(ce, now)
 			metrics.RecordCacheAccess(true)
 			return ce.Data, true
 		}

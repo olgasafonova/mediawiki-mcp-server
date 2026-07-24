@@ -12,12 +12,29 @@ type pageValueRef struct {
 	value string
 }
 
-// findPagesForTopic returns candidate page titles for topic comparison, drawn
-// from a category if specified, otherwise from a full-text search.
-func (c *Client) findPagesForTopic(ctx context.Context, topic, category string, searchLimit int) ([]string, error) {
+// topicComparer runs a cross-page topic comparison: finding candidate pages,
+// collecting mentions, and gathering near-topic values.
+type topicComparer struct {
+	client   *Client
+	topic    string
+	category string
+	limit    int
+}
+
+// analyzedPage is one candidate page's content under analysis, attributed to
+// the requested title.
+type analyzedPage struct {
+	title    string
+	content  string
+	contexts []string
+}
+
+// findPages returns candidate page titles for topic comparison, drawn from
+// the category if specified, otherwise from a full-text search.
+func (tc topicComparer) findPages(ctx context.Context) ([]string, error) {
 	var pageTitles []string
-	if category != "" {
-		catResult, err := c.GetCategoryMembers(ctx, CategoryMembersArgs{Category: category, Limit: 100})
+	if tc.category != "" {
+		catResult, err := tc.client.GetCategoryMembers(ctx, CategoryMembersArgs{Category: tc.category, Limit: 100})
 		if err != nil {
 			return pageTitles, nil //nolint:nilerr // category lookup failure falls through to "no candidates"
 		}
@@ -26,7 +43,7 @@ func (c *Client) findPagesForTopic(ctx context.Context, topic, category string, 
 		}
 		return pageTitles, nil
 	}
-	searchResult, err := c.Search(ctx, SearchArgs{Query: topic, Limit: searchLimit})
+	searchResult, err := tc.client.Search(ctx, SearchArgs{Query: tc.topic, Limit: tc.limit * 2})
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -36,18 +53,17 @@ func (c *Client) findPagesForTopic(ctx context.Context, topic, category string, 
 	return pageTitles, nil
 }
 
-// extractTopicValues collects values from the page that appear near a context
-// where the topic is mentioned. Caller-supplied contexts are the windows in
-// which co-occurrence is checked.
-func extractTopicValues(content, topic string, contexts []string, page string) map[string][]pageValueRef {
+// valuesOn collects values from the analyzed page that appear near a context
+// where the topic is mentioned.
+func (tc topicComparer) valuesOn(p analyzedPage) map[string][]pageValueRef {
 	out := make(map[string][]pageValueRef)
-	topicLower := strings.ToLower(topic)
-	for _, v := range extractValues(content) {
+	topicLower := strings.ToLower(tc.topic)
+	for _, v := range extractValues(p.content) {
 		valueCtxLower := strings.ToLower(v.Context)
-		for _, ctxStr := range contexts {
+		for _, ctxStr := range p.contexts {
 			if strings.Contains(strings.ToLower(ctxStr), valueCtxLower) ||
 				strings.Contains(valueCtxLower, topicLower) {
-				out[v.Type] = append(out[v.Type], pageValueRef{page: page, value: v.Value})
+				out[v.Type] = append(out[v.Type], pageValueRef{page: p.title, value: v.Value})
 				break
 			}
 		}
@@ -55,28 +71,50 @@ func extractTopicValues(content, topic string, contexts []string, page string) m
 	return out
 }
 
-// analyzeTopicOnPage fetches the page, checks for the topic, and returns the
-// mention summary plus any near-topic values. Returns ok=false when the page
-// either fails to fetch or doesn't mention the topic.
-func (c *Client) analyzeTopicOnPage(ctx context.Context, title, topic string) (TopicMention, map[string][]pageValueRef, bool) {
-	page, err := c.GetPage(ctx, GetPageArgs{Title: title})
+// analyzePage fetches the page, checks for the topic, and returns the mention
+// summary plus any near-topic values. Returns ok=false when the page either
+// fails to fetch or doesn't mention the topic.
+func (tc topicComparer) analyzePage(ctx context.Context, title string) (TopicMention, map[string][]pageValueRef, bool) {
+	page, err := tc.client.GetPage(ctx, GetPageArgs{Title: title})
 	if err != nil {
 		return TopicMention{}, nil, false
 	}
 	contentLower := strings.ToLower(page.Content)
-	topicLower := strings.ToLower(topic)
+	topicLower := strings.ToLower(tc.topic)
 	if !strings.Contains(contentLower, topicLower) {
 		return TopicMention{}, nil, false
 	}
-	contexts := extractContextsForTerm(page.Content, topic, 3)
-	info, _ := c.GetPageInfo(ctx, PageInfoArgs{Title: title})
+	contexts := extractContextsForTerm(page.Content, tc.topic, 3)
+	info, _ := tc.client.GetPageInfo(ctx, PageInfoArgs{Title: title})
 	mention := TopicMention{
 		PageTitle:  title,
 		Mentions:   strings.Count(contentLower, topicLower),
 		Contexts:   contexts,
 		LastEdited: info.Touched,
 	}
-	return mention, extractTopicValues(page.Content, topic, contexts, title), true
+	values := tc.valuesOn(analyzedPage{title: title, content: page.Content, contexts: contexts})
+	return mention, values, true
+}
+
+// collectMentions walks candidate pages, gathering mentions and near-topic
+// values until the mention limit is reached or the context is canceled.
+func (tc topicComparer) collectMentions(ctx context.Context, pageTitles []string) ([]TopicMention, map[string][]pageValueRef) {
+	mentions := make([]TopicMention, 0)
+	allValues := make(map[string][]pageValueRef)
+	for _, title := range pageTitles {
+		if len(mentions) >= tc.limit || ctx.Err() != nil {
+			break
+		}
+		mention, values, ok := tc.analyzePage(ctx, title)
+		if !ok {
+			continue
+		}
+		mentions = append(mentions, mention)
+		for valueType, refs := range values {
+			allValues[valueType] = append(allValues[valueType], refs...)
+		}
+	}
+	return mentions, allValues
 }
 
 // compareValuePair returns an Inconsistency when two page-value refs disagree
@@ -87,7 +125,10 @@ func compareValuePair(valueType string, a, b pageValueRef) (Inconsistency, bool)
 	}
 	v1 := normalizeValue(a.value)
 	v2 := normalizeValue(b.value)
-	if v1 == v2 || v1 == "" || v2 == "" {
+	if v1 == "" || v2 == "" {
+		return Inconsistency{}, false
+	}
+	if v1 == v2 {
 		return Inconsistency{}, false
 	}
 	return Inconsistency{
@@ -135,8 +176,14 @@ func (c *Client) CompareTopic(ctx context.Context, args CompareTopicArgs) (Compa
 		return CompareTopicResult{}, err
 	}
 
-	limit := normalizeLimit(args.Limit, 20, 50)
-	pageTitles, err := c.findPagesForTopic(ctx, args.Topic, args.Category, limit*2)
+	tc := topicComparer{
+		client:   c,
+		topic:    args.Topic,
+		category: args.Category,
+		limit:    normalizeLimit(args.Limit, 20, 50),
+	}
+
+	pageTitles, err := tc.findPages(ctx)
 	if err != nil {
 		return CompareTopicResult{}, err
 	}
@@ -148,21 +195,7 @@ func (c *Client) CompareTopic(ctx context.Context, args CompareTopicArgs) (Compa
 		}, nil
 	}
 
-	mentions := make([]TopicMention, 0)
-	allValues := make(map[string][]pageValueRef)
-	for _, title := range pageTitles {
-		if len(mentions) >= limit || ctx.Err() != nil {
-			break
-		}
-		mention, values, ok := c.analyzeTopicOnPage(ctx, title, args.Topic)
-		if !ok {
-			continue
-		}
-		mentions = append(mentions, mention)
-		for valueType, refs := range values {
-			allValues[valueType] = append(allValues[valueType], refs...)
-		}
-	}
+	mentions, allValues := tc.collectMentions(ctx, pageTitles)
 
 	inconsistencies := detectValueInconsistencies(allValues)
 	summary := fmt.Sprintf("Found %d pages mentioning '%s'", len(mentions), args.Topic)

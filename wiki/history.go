@@ -21,13 +21,9 @@ func (c *Client) GetRecentChanges(ctx context.Context, args RecentChangesArgs) (
 		return RecentChangesResult{}, err
 	}
 
-	query, ok := resp["query"].(map[string]interface{})
-	if !ok {
-		return RecentChangesResult{}, fmt.Errorf("unexpected API response: missing 'query' object")
-	}
-	rcList, ok := query["recentchanges"].([]interface{})
-	if !ok {
-		return RecentChangesResult{}, fmt.Errorf("unexpected API response: missing 'recentchanges' list")
+	rcList, err := recentChangesList(resp)
+	if err != nil {
+		return RecentChangesResult{}, err
 	}
 
 	changes := parseRecentChanges(rcList)
@@ -45,6 +41,19 @@ func (c *Client) GetRecentChanges(ctx context.Context, args RecentChangesArgs) (
 
 	result.Changes = changes
 	return result, nil
+}
+
+// recentChangesList extracts the recentchanges list from the response.
+func recentChangesList(resp map[string]interface{}) ([]interface{}, error) {
+	query := getMap(resp["query"])
+	if query == nil {
+		return nil, fmt.Errorf("unexpected API response: missing 'query' object")
+	}
+	rcList, ok := query["recentchanges"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected API response: missing 'recentchanges' list")
+	}
+	return rcList, nil
 }
 
 // recentChangesContinuation extracts the rccontinue token from the response.
@@ -154,11 +163,20 @@ func (c *Client) GetRevisions(ctx context.Context, args GetRevisionsArgs) (GetRe
 		return result, nil
 	}
 
-	result.Count = len(result.Revisions)
-	if _, ok := resp["continue"]; ok {
-		result.HasMore = true
-	}
+	finishRevisionsResult(resp, &result)
 	return result, nil
+}
+
+// finishRevisionsResult sets the revision count and continuation flag.
+func finishRevisionsResult(resp map[string]interface{}, result *GetRevisionsResult) {
+	result.Count = len(result.Revisions)
+	result.HasMore = hasContinue(resp)
+}
+
+// hasContinue reports whether the API response carries a continuation block.
+func hasContinue(resp map[string]interface{}) bool {
+	_, ok := resp["continue"]
+	return ok
 }
 
 // populateRevisions fills result from the first valid page object in pages. A
@@ -344,9 +362,7 @@ func (c *Client) GetUserContributions(ctx context.Context, args GetUserContribut
 		Contributions: parseUserContributions(contribs),
 	}
 	result.Count = len(result.Contributions)
-	if _, ok := resp["continue"]; ok {
-		result.HasMore = true
-	}
+	result.HasMore = hasContinue(resp)
 	return result, nil
 }
 
@@ -404,21 +420,29 @@ func parseUserContributions(contribs []interface{}) []UserContribution {
 	return out
 }
 
+// aggregationKey selects the grouping key for one change. Returns false for
+// an invalid aggregation type.
+func aggregationKey(change RecentChange, by string) (string, bool) {
+	switch by {
+	case "user":
+		return change.User, true
+	case "page":
+		return change.Title, true
+	case "type":
+		return change.Type, true
+	default:
+		return "", false // Invalid aggregation type
+	}
+}
+
 // aggregateChanges groups recent changes by the specified field
 func aggregateChanges(changes []RecentChange, by string) *AggregatedChanges {
 	counts := make(map[string]int)
 
 	for _, change := range changes {
-		var key string
-		switch by {
-		case "user":
-			key = change.User
-		case "page":
-			key = change.Title
-		case "type":
-			key = change.Type
-		default:
-			return nil // Invalid aggregation type
+		key, ok := aggregationKey(change, by)
+		if !ok {
+			return nil
 		}
 		counts[key]++
 	}

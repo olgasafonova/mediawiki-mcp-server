@@ -224,17 +224,35 @@ func (c *Client) pageURL(ctx context.Context, title string) string {
 
 	pathTitle := strings.ReplaceAll(title, " ", "_")
 
-	if info, err := c.GetWikiInfo(ctx, WikiInfoArgs{}); err == nil && info.Server != "" && info.ArticlePath != "" {
-		if strings.Contains(info.ArticlePath, "$1") {
-			server := ensureServerScheme(info.Server, c.config.BaseURL)
-			// Path-escape the title, then unescape slashes so subpage
-			// slashes survive (e.g. User:Alice/Sandbox stays as
-			// User:Alice/Sandbox, not User:Alice%2FSandbox).
-			escaped := strings.ReplaceAll(url.PathEscape(pathTitle), "%2F", "/")
-			return server + strings.Replace(info.ArticlePath, "$1", escaped, 1)
-		}
+	if pretty, ok := c.prettyPageURL(ctx, pathTitle); ok {
+		return pretty
 	}
+	return c.fallbackPageURL(pathTitle)
+}
 
+// hasArticlePath reports whether siteinfo carries a usable pretty-URL form.
+func hasArticlePath(info WikiInfo) bool {
+	return info.Server != "" && info.ArticlePath != "" && strings.Contains(info.ArticlePath, "$1")
+}
+
+// prettyPageURL builds the article-path URL when siteinfo provides a usable
+// server and article path. ok is false when the caller should fall back.
+func (c *Client) prettyPageURL(ctx context.Context, pathTitle string) (string, bool) {
+	info, err := c.GetWikiInfo(ctx, WikiInfoArgs{})
+	if err != nil || !hasArticlePath(info) {
+		return "", false
+	}
+	server := ensureServerScheme(info.Server, c.config.BaseURL)
+	// Path-escape the title, then unescape slashes so subpage
+	// slashes survive (e.g. User:Alice/Sandbox stays as
+	// User:Alice/Sandbox, not User:Alice%2FSandbox).
+	escaped := strings.ReplaceAll(url.PathEscape(pathTitle), "%2F", "/")
+	return server + strings.Replace(info.ArticlePath, "$1", escaped, 1), true
+}
+
+// fallbackPageURL builds the universal index.php?title= URL form from the
+// configured API endpoint.
+func (c *Client) fallbackPageURL(pathTitle string) string {
 	wikiBaseURL := strings.TrimSuffix(c.config.BaseURL, "api.php")
 	if !strings.HasSuffix(wikiBaseURL, "/") {
 		wikiBaseURL += "/"
