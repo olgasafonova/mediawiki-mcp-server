@@ -413,18 +413,18 @@ func TestBuildAuditEntry(t *testing.T) {
 		},
 	}
 
-	entry := client.buildAuditEntry(
-		AuditOpEdit,
-		"Test Page",
-		"Content here",
-		"Edit summary",
-		true,  // minor
-		false, // bot
-		true,  // success
-		123,   // pageID
-		456,   // revisionID
-		"",    // errMsg
-	)
+	entry := client.buildAuditEntry(auditEntryParams{
+		Operation:  AuditOpEdit,
+		Title:      "Test Page",
+		Content:    "Content here",
+		Summary:    "Edit summary",
+		Minor:      true,
+		Bot:        false,
+		Success:    true,
+		PageID:     123,
+		RevisionID: 456,
+		ErrMsg:     "",
+	})
 
 	if entry.Title != "Test Page" {
 		t.Errorf("Title = %q, want 'Test Page'", entry.Title)
@@ -456,18 +456,18 @@ func TestBuildAuditEntry_WithError(t *testing.T) {
 		},
 	}
 
-	entry := client.buildAuditEntry(
-		AuditOpUpload,
-		"File:Test.png",
-		"",
-		"Upload test",
-		false, // minor
-		true,  // bot
-		false, // success
-		0,     // pageID
-		0,     // revisionID
-		"Upload failed: file too large",
-	)
+	entry := client.buildAuditEntry(auditEntryParams{
+		Operation:  AuditOpUpload,
+		Title:      "File:Test.png",
+		Content:    "",
+		Summary:    "Upload test",
+		Minor:      false,
+		Bot:        true,
+		Success:    false,
+		PageID:     0,
+		RevisionID: 0,
+		ErrMsg:     "Upload failed: file too large",
+	})
 
 	if entry.Operation != AuditOpUpload {
 		t.Errorf("Operation = %q, want %q", entry.Operation, AuditOpUpload)

@@ -136,10 +136,17 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 	if editResult.NewPage {
 		op = AuditOpCreate
 	}
-	c.logAudit(c.buildAuditEntry(
-		op, editResult.Title, args.Content, args.Summary,
-		args.Minor, args.Bot, true, editResult.PageID, editResult.RevisionID, "",
-	))
+	c.logAudit(c.buildAuditEntry(auditEntryParams{
+		Operation:  op,
+		Title:      editResult.Title,
+		Content:    args.Content,
+		Summary:    args.Summary,
+		Minor:      args.Minor,
+		Bot:        args.Bot,
+		Success:    true,
+		PageID:     editResult.PageID,
+		RevisionID: editResult.RevisionID,
+	}))
 	return editResult, nil
 }
 
@@ -157,10 +164,16 @@ func (c *Client) failedEditResult(args EditPageArgs, edit map[string]interface{}
 		captchaQuestion = getString(captcha["question"])
 		msg += fmt.Sprintf(" (CAPTCHA: %s)", captchaType)
 	}
-	c.logAudit(c.buildAuditEntry(
-		AuditOpEdit, args.Title, args.Content, args.Summary,
-		args.Minor, args.Bot, false, 0, 0, msg,
-	))
+	c.logAudit(c.buildAuditEntry(auditEntryParams{
+		Operation: AuditOpEdit,
+		Title:     args.Title,
+		Content:   args.Content,
+		Summary:   args.Summary,
+		Minor:     args.Minor,
+		Bot:       args.Bot,
+		Success:   false,
+		ErrMsg:    msg,
+	}))
 	return EditResult{
 		Success:         false,
 		Title:           args.Title,

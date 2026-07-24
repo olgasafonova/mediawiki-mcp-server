@@ -73,8 +73,14 @@ func runListPages(cmd *cobra.Command, args []string) error {
 		header += fmt.Sprintf(", ~%d estimated total", result.TotalEstimate)
 	}
 
-	printIDTitleTable(header, "No pages found.", "pages",
-		result.Pages, result.HasMore, result.ContinueFrom)
+	printIDTitleTable(idTitleTable{
+		Header:       header,
+		EmptyMsg:     "No pages found.",
+		Noun:         "pages",
+		Items:        result.Pages,
+		HasMore:      result.HasMore,
+		ContinueFrom: result.ContinueFrom,
+	})
 	return nil
 }
 
@@ -181,8 +187,14 @@ func runListMembers(cmd *cobra.Command, args []string) error {
 	}
 
 	emptyMsg := fmt.Sprintf("No members found in category %q.", category)
-	printIDTitleTable(header, emptyMsg, "members",
-		result.Members, result.HasMore, result.ContinueFrom)
+	printIDTitleTable(idTitleTable{
+		Header:       header,
+		EmptyMsg:     emptyMsg,
+		Noun:         "members",
+		Items:        result.Members,
+		HasMore:      result.HasMore,
+		ContinueFrom: result.ContinueFrom,
+	})
 	return nil
 }
 
