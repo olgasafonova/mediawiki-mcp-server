@@ -11,6 +11,8 @@ import (
 	"github.com/olgasafonova/mediawiki-mcp-server/metrics"
 )
 
+// WarmCache pre-loads commonly accessed pages into the cache.
+// Call this after creating the client to improve first-request latency.
 func (c *Client) WarmCache(ctx context.Context, titles []string) error {
 	if len(titles) == 0 {
 		return nil
@@ -64,6 +66,7 @@ func (c *Client) cacheWarmedPage(pageData interface{}) {
 }
 
 // WarmCacheWithDefaults pre-loads common wiki pages like Main_Page and help pages.
+// This is a convenience method that fetches typical high-traffic pages.
 func (c *Client) WarmCacheWithDefaults(ctx context.Context) error {
 	// Pre-warm wiki info cache via GetWikiInfo so the cached value
 	// is a WikiInfo struct, not a raw map[string]interface{}.
@@ -74,6 +77,7 @@ func (c *Client) WarmCacheWithDefaults(ctx context.Context) error {
 	return c.WarmCache(ctx, defaultPages)
 }
 
+// cacheCleanupLoop periodically cleans up expired entries and enforces size limits
 func (c *Client) cacheCleanupLoop() {
 	ticker := time.NewTicker(CacheCleanupInterval)
 	defer ticker.Stop()
@@ -89,6 +93,7 @@ func (c *Client) cacheCleanupLoop() {
 	}
 }
 
+// cleanupCache removes expired entries and evicts LRU entries if over limit
 func (c *Client) cleanupCache() {
 	now := time.Now()
 	var expiredCount int64
@@ -121,6 +126,7 @@ type entryInfo struct {
 	accessedAt time.Time
 }
 
+// evictLRU removes the least recently used entries
 func (c *Client) evictLRU(count int) {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
@@ -176,6 +182,7 @@ func touchEntry(ce *CacheEntry, now time.Time) {
 	ce.mu.Unlock()
 }
 
+// getCached retrieves a cached value if it exists and hasn't expired
 func (c *Client) getCached(key string) (interface{}, bool) {
 	if entry, ok := c.cache.Load(key); ok {
 		ce := entry.(*CacheEntry)
@@ -195,6 +202,7 @@ func (c *Client) getCached(key string) (interface{}, bool) {
 	return nil, false
 }
 
+// setCache stores a value in the cache with the specified TTL
 func (c *Client) setCache(key string, data interface{}, ttlKey string) {
 	ttl := 5 * time.Minute // default
 	if t, ok := c.cacheTTL[ttlKey]; ok {
@@ -225,6 +233,7 @@ func (c *Client) setCache(key string, data interface{}, ttlKey string) {
 	}
 }
 
+// InvalidateCachePrefix removes all cache entries with keys starting with prefix
 func (c *Client) InvalidateCachePrefix(prefix string) {
 	var deletedCount int64
 	c.cache.Range(func(key, value interface{}) bool {

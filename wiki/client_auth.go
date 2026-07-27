@@ -9,14 +9,15 @@ import (
 	"time"
 )
 
+// isLoggedIn returns the current authentication state
 func (c *Client) isLoggedIn() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.loggedIn
 }
 
-// SetAuditLogger configures an audit logger for tracking write operations.
-// Pass nil to disable audit logging. The audit logger records page edits,
+// checkExistingSession verifies if we're already logged in via existing cookies
+// Returns true if already authenticated, false otherwise
 func (c *Client) checkExistingSession(ctx context.Context) bool {
 	params := url.Values{}
 	params.Set("action", "query")
@@ -49,6 +50,7 @@ func (c *Client) checkExistingSession(ctx context.Context) bool {
 	return true
 }
 
+// resetCookies clears all cookies to allow fresh login
 func (c *Client) resetCookies() {
 	jar, _ := cookiejar.New(nil)
 	c.httpClient.Jar = jar
@@ -58,6 +60,7 @@ func (c *Client) resetCookies() {
 	c.logger.Debug("Cookies reset for fresh login")
 }
 
+// login authenticates with the wiki using bot password
 func (c *Client) login(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -123,6 +126,7 @@ func (c *Client) loginAttempt(ctx context.Context) (conflict bool, err error) {
 	return false, nil
 }
 
+// loginFresh performs login with guaranteed fresh cookies (no retry)
 func (c *Client) loginFresh(ctx context.Context) error {
 	loginToken, err := c.fetchLoginToken(ctx)
 	if err != nil {
@@ -220,6 +224,7 @@ func (c *Client) markLoggedIn(logMsg string) {
 	c.logger.Info(logMsg, "username", c.config.Username)
 }
 
+// getCSRFToken gets a CSRF token for editing
 func (c *Client) getCSRFToken(ctx context.Context) (string, error) {
 	c.mu.RLock()
 	if c.csrfToken != "" && time.Now().Before(c.tokenExpiry) {
@@ -266,12 +271,14 @@ func (c *Client) getCSRFToken(ctx context.Context) (string, error) {
 
 // invalidateCSRFToken clears the cached CSRF token so the next write
 // operation fetches a fresh one. MediaWiki can invalidate CSRF tokens
+// after use, so we must not reuse them across edit requests.
 func (c *Client) invalidateCSRFToken() {
 	c.mu.Lock()
 	c.csrfToken = ""
 	c.mu.Unlock()
 }
 
+// EnsureLoggedIn ensures the client is logged in (for wikis requiring auth for read)
 func (c *Client) EnsureLoggedIn(ctx context.Context) error {
 	// Anonymous access: no credentials configured, skip authentication.
 	// Public wikis allow read operations without login.

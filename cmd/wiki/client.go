@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/olgasafonova/mediawiki-mcp-server/wiki"
 	"github.com/spf13/cobra"
@@ -100,4 +102,35 @@ func openTTYForChild() *os.File {
 		return nil
 	}
 	return tty
+}
+
+// readStdin reads all available data from stdin if it's not a terminal.
+// Shared by the commands that accept piped wikitext (`edit`, `parse`,
+// `format`).
+func readStdin() (string, error) {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return "", err
+	}
+
+	// No piped data
+	if info.Mode()&os.ModeCharDevice != 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	scanner := bufio.NewScanner(os.Stdin)
+	// Increase buffer for large pages
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return sb.String(), nil
 }

@@ -8,6 +8,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// truncateContent truncates content if it exceeds the limit
 func truncateContent(content string, limit int) (string, bool) {
 	if len(content) <= limit {
 		return content, false

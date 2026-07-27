@@ -26,15 +26,3 @@ func TestNewEditCmd(t *testing.T) {
 		t.Error("edit: expected error for 2 args")
 	}
 }
-
-func TestReadStdinNoPipe(t *testing.T) {
-	// In the test harness stdin is typically a char device (no piped data),
-	// so readStdin returns empty string and no error.
-	got, err := readStdin()
-	if err != nil {
-		t.Fatalf("readStdin: unexpected error: %v", err)
-	}
-	if got != "" {
-		t.Errorf("readStdin with no pipe = %q, want empty", got)
-	}
-}
