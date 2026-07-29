@@ -293,8 +293,12 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request, allowedOrigins map[s
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id")
+	// The stateless transport has no sessions to terminate, so DELETE and
+	// Mcp-Session-Id are gone. Mcp-Method and Mcp-Name are required on POST
+	// from protocol revision 2026-07-28 (SEP-2243), so browser clients need
+	// them allowed through preflight.
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Method, Mcp-Name")
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
 

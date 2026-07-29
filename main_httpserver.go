@@ -85,9 +85,15 @@ func runHTTPServer(cfg httpServerConfig) {
 // only intentionally-public routes (/health liveness, server-card discovery)
 // are wired separately on the outer mux in buildHTTPMux.
 func newSecuredHandler(cfg httpServerConfig, allowedOrigins []string) *SecurityMiddleware {
+	// Stateless is required to serve protocol revision 2026-07-28: without it
+	// the transport rejects every request at that version with HTTP 400, with
+	// server/discover the only exemption. Safe here because the same
+	// *mcp.Server is returned for every request, so there is no per-session
+	// state to lose. Session IDs are ignored and DELETE returns 405, per the
+	// spec (SEP-2567).
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return cfg.Server
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
 
 	inner := http.NewServeMux()
 	inner.Handle("/metrics", promhttp.Handler())
@@ -118,7 +124,7 @@ func buildHTTPMux(cfg httpServerConfig, securedHandler http.Handler) *http.Serve
 	cfg.Card.Remotes = []servercard.Remote{{
 		Type:                      "streamable-http",
 		URL:                       "/",
-		SupportedProtocolVersions: []string{"2025-06-18"},
+		SupportedProtocolVersions: []string{"2026-07-28", "2025-11-25", "2025-06-18"},
 	}}
 	mux.Handle(servercard.WellKnownPath, servercard.Handler(cfg.Card))
 
