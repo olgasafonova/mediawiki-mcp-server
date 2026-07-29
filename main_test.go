@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -295,4 +296,58 @@ func TestHealthOpenAuxSecuredViaMux(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("/tools via mux without token = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
+}
+
+// TestNewSecuredHandler_ServesProtocol20260728 pins the reason the Streamable
+// HTTP handler is constructed with Stateless: true. Without it the transport
+// rejects every >= 2026-07-28 request with HTTP 400 ("only supported on
+// stateless HTTP servers"), which no build or lint pass can detect. Verified by
+// ablation: both subtests fail when the option is removed.
+//
+// tools/list, not server/discover: a stateful handler exempts server/discover so
+// clients can still read supported versions off DiscoverResult, so probing
+// discover would pass either way and pin nothing.
+func TestNewSecuredHandler_ServesProtocol20260728(t *testing.T) {
+	logger := testLogger()
+	cfg := httpServerConfig{Server: newMCPServer(logger), Logger: logger}
+	secured := newSecuredHandler(cfg, nil)
+
+	t.Run("tools/list is answered at 2026-07-28", func(t *testing.T) {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{` +
+			`"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+			`"io.modelcontextprotocol/clientInfo":{"name":"test","version":"1"},` +
+			`"io.modelcontextprotocol/clientCapabilities":{}}}}`
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.RemoteAddr = "192.168.1.1:12345"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		// SEP-2243: a request carrying io.modelcontextprotocol/protocolVersion in
+		// _meta MUST also send the matching header, or the transport rejects it
+		// with -32020 HeaderMismatch.
+		req.Header.Set("Mcp-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/list")
+
+		w := httptest.NewRecorder()
+		secured.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+		}
+		if got := w.Body.String(); !strings.Contains(got, `"resultType":"complete"`) {
+			t.Errorf("response does not carry resultType complete: %s", got)
+		}
+	})
+
+	t.Run("DELETE is rejected because there are no sessions to terminate", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, "/", nil)
+		req.RemoteAddr = "192.168.1.1:12345"
+
+		w := httptest.NewRecorder()
+		secured.ServeHTTP(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("status = %d, want 405", w.Code)
+		}
+	})
 }
