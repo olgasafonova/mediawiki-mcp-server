@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -350,4 +351,72 @@ func TestNewSecuredHandler_ServesProtocol20260728(t *testing.T) {
 			t.Errorf("status = %d, want 405", w.Code)
 		}
 	})
+}
+
+// TestToolsListAdvertisesCacheTTL pins that newMCPServer attaches the ttlMs
+// stamping middleware. Without it the SDK leaves ttlMs at 0, which the spec
+// reads as "immediately stale", so every client re-fetches the tool list on
+// every turn. Verified by ablation: remove the AddReceivingMiddleware call in
+// newMCPServer and this fails with "ttlMs = 0, want 1800000".
+//
+// Driven through newSecuredHandler rather than an in-memory stdio session on
+// purpose. This server serves both transports from one *mcp.Server, and a
+// stdio-only assertion would pass while the HTTP path went unstamped.
+func TestToolsListAdvertisesCacheTTL(t *testing.T) {
+	logger := testLogger()
+	cfg := httpServerConfig{Server: newMCPServer(logger), Logger: logger}
+	secured := newSecuredHandler(cfg, nil)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{` +
+		`"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+		`"io.modelcontextprotocol/clientInfo":{"name":"test","version":"1"},` +
+		`"io.modelcontextprotocol/clientCapabilities":{}}}}`
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.RemoteAddr = "192.168.1.1:12345"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Protocol-Version", "2026-07-28")
+	req.Header.Set("Mcp-Method", "tools/list")
+
+	w := httptest.NewRecorder()
+	secured.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+
+	const wantTTL = 1800000 // thirty minutes, matching newMCPServer
+	got := extractTTLMs(t, w.Body.String())
+	if got != wantTTL {
+		t.Errorf("ttlMs = %d, want %d", got, wantTTL)
+	}
+}
+
+// extractTTLMs pulls ttlMs off a tools/list response. The handler may answer as
+// plain JSON or as an SSE frame depending on the Accept header, so scan for the
+// data payload rather than assuming one shape.
+func extractTTLMs(t *testing.T, raw string) int {
+	t.Helper()
+
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimPrefix(strings.TrimSpace(line), "data: ")
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var envelope struct {
+			Result struct {
+				TTLMs *int `json:"ttlMs"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+		if envelope.Result.TTLMs != nil {
+			return *envelope.Result.TTLMs
+		}
+	}
+
+	t.Fatalf("no ttlMs field found in response: %s", raw)
+	return 0
 }
