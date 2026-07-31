@@ -7,6 +7,7 @@ toolchain go1.26.2
 require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/olgasafonova/mcp-cache-go v0.1.0
 	github.com/olgasafonova/mcp-servercard-go v0.3.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2

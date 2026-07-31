@@ -44,6 +44,8 @@ github.com/modelcontextprotocol/go-sdk v1.7.0 h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6
 github.com/modelcontextprotocol/go-sdk v1.7.0/go.mod h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
+github.com/olgasafonova/mcp-cache-go v0.1.0 h1:JAyn1obQG4he5WJLqSp3bjblKMF9lXVuOc3lgW2NsLs=
+github.com/olgasafonova/mcp-cache-go v0.1.0/go.mod h1:3eVVOwpy3vE7CV4nCSAmbJlBYYADst1Rf+cc0ByMN/A=
 github.com/olgasafonova/mcp-servercard-go v0.3.0 h1:v2ptLFSSw0434nBZp5yI4Ya1xHajUE8gy2etkKQ531Y=
 github.com/olgasafonova/mcp-servercard-go v0.3.0/go.mod h1:Xdp3NlQ7vH3W2nwJY1IX54lo639PmLBBxbC+Hwvj6Ig=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

@@ -11,8 +11,10 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/olgasafonova/mcp-cache-go/mcpcache"
 	"github.com/olgasafonova/mcp-servercard-go/servercard"
 	"github.com/olgasafonova/mediawiki-mcp-server/converter"
 	"github.com/olgasafonova/mediawiki-mcp-server/tools"
@@ -296,7 +298,7 @@ func resolveAuthToken(flagToken string) string {
 
 // newMCPServer constructs the MCP server with the tool-selection instructions.
 func newMCPServer(logger *slog.Logger) *mcp.Server {
-	return mcp.NewServer(&mcp.Implementation{
+	server := mcp.NewServer(&mcp.Implementation{
 		Name:    ServerName,
 		Version: ServerVersion,
 	}, &mcp.ServerOptions{
@@ -307,6 +309,29 @@ func newMCPServer(logger *slog.Logger) *mcp.Server {
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
 		Instructions: serverInstructions,
 	})
+
+	// SEP-2549 requires ttlMs and cacheScope on every cacheable result, but the
+	// SDK's setDefaultCacheableValues() sets cacheScope only and leaves ttlMs at
+	// 0, which the spec reads as "immediately stale". There is no ServerOptions
+	// knob for it, so a receiving middleware is the only way to advertise a real
+	// TTL. The SDK sets its defaults inside the method handler, so receiving
+	// middleware runs after and this stamp wins.
+	//
+	// Attached here rather than in runStdioServer or newSecuredHandler because
+	// main builds one *mcp.Server and hands it to whichever transport is
+	// selected. Attaching in a transport branch would leave the other unstamped.
+	//
+	// Thirty minutes rather than an hour: this server is under active
+	// development, so its tool set turns over faster than the read-only readers
+	// in the portfolio.
+	server.AddReceivingMiddleware(mcpcache.Middleware(mcpcache.Config{
+		TTLs: map[string]time.Duration{
+			mcpcache.MethodListTools: 30 * time.Minute,
+			mcpcache.MethodDiscover:  30 * time.Minute,
+		},
+	}))
+
+	return server
 }
 
 // registerToolsAndResources registers all wiki tools, the converter tool, and
