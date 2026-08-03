@@ -22,9 +22,8 @@ PARAMETERS:
 - limit: Max pages (default 10)
 
 RETURNS: Violations with page, line, wrong term, and correct term.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_check_translations",
@@ -43,9 +42,8 @@ PARAMETERS:
 - limit: Max pages (default 50)
 
 RETURNS: Missing translations grouped by language.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_audit",
@@ -66,9 +64,8 @@ PARAMETERS:
 - limit: Max items per check (default 20)
 
 RETURNS: Health score (0-100), detailed results per check, and recommendations.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	// ==========================================================================
@@ -92,9 +89,8 @@ PARAMETERS:
 - limit: Max similar pages (default 10)
 
 RETURNS: Similar pages with similarity scores and linking recommendations.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_compare_topic",
@@ -113,9 +109,8 @@ PARAMETERS:
 - limit: Max pages to check (default 20)
 
 RETURNS: Page mentions with context, detected value mismatches, and inconsistencies.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	// ==========================================================================
@@ -137,8 +132,7 @@ PARAMETERS:
 - continue_from: Pagination token
 
 RETURNS: User names, groups, edit counts, and registration dates.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 }

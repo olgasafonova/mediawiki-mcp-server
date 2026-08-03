@@ -21,9 +21,8 @@ PARAMETERS:
 - format: "wikitext" (default) or "html"
 
 RETURNS: Page content in requested format. Large pages truncated at 25KB.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_list_pages",
@@ -43,9 +42,8 @@ PARAMETERS:
 - continue_from: Pagination token from previous response
 
 RETURNS: Page titles and IDs.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_page_info",
@@ -62,9 +60,8 @@ PARAMETERS:
 - title: Page name (required)
 
 RETURNS: Last edit timestamp, page size, protection status, creator.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_sections",
@@ -83,9 +80,8 @@ PARAMETERS:
 - format: "wikitext" (default) or "html" (for section content)
 
 RETURNS: Section headings with indices, or specific section content.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_related",
@@ -104,9 +100,8 @@ PARAMETERS:
 - limit: Max related pages (default 20)
 
 RETURNS: Related page titles with relationship type.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_images",
@@ -122,9 +117,8 @@ PARAMETERS:
 - limit: Max images (default 50)
 
 RETURNS: Image titles, URLs, dimensions, and file sizes.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_parse",
@@ -140,9 +134,8 @@ PARAMETERS:
 - title: Context page title for link resolution (optional)
 
 RETURNS: Rendered HTML output.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_wiki_info",
@@ -156,8 +149,7 @@ USE WHEN: User asks "what wiki is this", "wiki statistics", "MediaWiki version".
 PARAMETERS: None
 
 RETURNS: Wiki name, version, statistics (pages, users, edits).`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 }

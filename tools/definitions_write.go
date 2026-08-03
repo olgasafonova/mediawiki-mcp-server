@@ -146,9 +146,8 @@ PARAMETERS:
 - format: "wikitext" (default) or "html"
 
 RETURNS: Page content for each title, with exists/missing status. Missing pages are reported, not errors.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_batch_get_pages_info",
@@ -165,9 +164,8 @@ PARAMETERS:
 - titles: Array of page titles (required, max 50)
 
 RETURNS: Metadata (size, last edit, categories, protection) per page. Missing pages reported with exists=false.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	// ==========================================================================
@@ -190,9 +188,8 @@ PARAMETERS:
 - format: "wikitext" (default) or "html"
 
 RETURNS: Full content of top result(s) plus remaining search hits as summaries.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_page_summary",
@@ -209,9 +206,8 @@ PARAMETERS:
 - title: Page name (required)
 
 RETURNS: Lead section (intro before first heading), page size, categories, section list, last edit timestamp.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	// ==========================================================================
@@ -292,9 +288,8 @@ PARAMETERS:
 - limit: Max pages to return (default 50, max 200)
 
 RETURNS: Stale pages sorted by last edit (oldest first), with days since edit and last editor.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	{

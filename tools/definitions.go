@@ -50,9 +50,8 @@ PARAMETERS:
 - limit: Max results (default 20)
 
 RETURNS: Page titles, snippets with highlights, and relevance scores.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_search_in_page",
@@ -72,9 +71,8 @@ PARAMETERS:
 - context_lines: Lines of context around matches (default 2)
 
 RETURNS: Matches with line numbers and surrounding context.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_search_in_file",
@@ -94,9 +92,8 @@ PARAMETERS:
 RETURNS: Matches with page numbers (for PDFs) or line numbers.
 
 NOTE: Supports text-based PDFs and text files (TXT, MD, CSV, JSON, XML, HTML). Scanned/image PDFs require OCR and are not supported.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_resolve_title",
@@ -115,8 +112,7 @@ PARAMETERS:
 - max_results: Max suggestions (default 5)
 
 RETURNS: Suggested correct page titles with confidence scores.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 }
