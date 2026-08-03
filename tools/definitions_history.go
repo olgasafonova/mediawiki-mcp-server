@@ -22,9 +22,8 @@ PARAMETERS:
 - continue_from: Pagination token
 
 RETURNS: Category names and page counts.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_category_members",
@@ -44,9 +43,8 @@ PARAMETERS:
 - continue_from: Pagination token
 
 RETURNS: Page titles in the category.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	// ==========================================================================
@@ -71,9 +69,8 @@ PARAMETERS:
 - aggregate_by: Group results - "user", "page", or "type"
 
 RETURNS: Recent changes with timestamps, users, and summaries. Aggregation returns counts.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_revisions",
@@ -93,9 +90,8 @@ PARAMETERS:
 - user: Filter by user
 
 RETURNS: Revision list with timestamps, users, sizes, and edit summaries.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_compare_revisions",
@@ -115,9 +111,8 @@ PARAMETERS:
 - to_title: Target page title
 
 RETURNS: HTML-formatted diff showing additions (green) and deletions (red).`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_user_contributions",
@@ -137,9 +132,8 @@ PARAMETERS:
 - namespace: Filter by namespace
 
 RETURNS: List of pages edited with timestamps and summaries.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 
 	// ==========================================================================
@@ -160,9 +154,8 @@ PARAMETERS:
 - title: Page name (required)
 
 RETURNS: List of external URLs on the page.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_external_links_batch",
@@ -179,9 +172,8 @@ PARAMETERS:
 - titles: Array of page names (required, max 10)
 
 RETURNS: External URLs grouped by source page.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_check_links",
@@ -199,9 +191,8 @@ PARAMETERS:
 - timeout: Request timeout in seconds (default 10)
 
 RETURNS: URL status codes, response times, and broken link identification.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_get_backlinks",
@@ -221,9 +212,8 @@ PARAMETERS:
 - include_redirects: Include redirect pages (default false)
 
 RETURNS: List of pages that link to the target page.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_find_broken_internal_links",
@@ -242,9 +232,8 @@ PARAMETERS:
 - limit: Max pages to scan (default 20)
 
 RETURNS: Broken links with source page, line number, and context.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 	{
 		Name:     "mediawiki_find_orphaned_pages",
@@ -261,8 +250,7 @@ PARAMETERS:
 - limit: Max orphans to return (default 50)
 
 RETURNS: List of orphaned page titles.`,
-		ReadOnly:   true,
-		Idempotent: true,
-		OpenWorld:  true,
+		ReadOnly:  true,
+		OpenWorld: true,
 	},
 }

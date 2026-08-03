@@ -334,11 +334,14 @@ OPTIONS:
 EXAMPLE:
 Input: "# Hello\n**bold** and *italic*\n- item 1\n- item 2"
 Output: "= Hello =\n'''bold''' and ''italic''\n* item 1\n* item 2"`,
+		// No IdempotentHint: the hint is meaningful only for tools that
+		// modify state, and this tool is read-only. Registered inline here
+		// rather than through tools.AllTools, so tools.TestAnnotationCoherence
+		// does not cover it.
 		Annotations: &mcp.ToolAnnotations{
-			Title:          "Convert Markdown to MediaWiki",
-			ReadOnlyHint:   true,
-			IdempotentHint: true,
-			OpenWorldHint:  ptr(false),
+			Title:         "Convert Markdown to MediaWiki",
+			ReadOnlyHint:  true,
+			OpenWorldHint: ptr(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args ConvertMarkdownArgs) (*mcp.CallToolResult, ConvertMarkdownResult, error) {
 		defer recoverPanic(logger, "convert_markdown")
