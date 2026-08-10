@@ -41,7 +41,7 @@ func (s editSession) promptAndRetryCaptcha(cmd *cobra.Command, original wiki.Edi
 		question = fmt.Sprintf("CAPTCHA type: %s", original.CaptchaType)
 	}
 
-	in, out, cleanup := captchaPromptIO()
+	in, out, cleanup := captchaPromptIOFunc()
 	defer cleanup()
 
 	if in != nil {
@@ -66,12 +66,25 @@ func (s editSession) promptAndRetryCaptcha(cmd *cobra.Command, original wiki.Edi
 	return original
 }
 
+// captchaPromptIOFunc indirects captchaPromptIO so tests can script a prompt
+// without a controlling terminal. Production code never reassigns it.
+var captchaPromptIOFunc = captchaPromptIO
+
+// ttyDevice is the controlling terminal CAPTCHA prompts prefer.
+const ttyDevice = "/dev/tty"
+
 // captchaPromptIO resolves where CAPTCHA prompts read from and write to:
 // /dev/tty when available, otherwise os.Stdin if it is a terminal. A nil
 // reader means no interactive prompt is possible. The returned cleanup
 // closes /dev/tty when it was opened.
 func captchaPromptIO() (io.Reader, io.Writer, func()) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	return captchaPromptIOFrom(ttyDevice)
+}
+
+// captchaPromptIOFrom is captchaPromptIO with the terminal device named, so
+// the fallbacks can be exercised on a host that has a controlling terminal.
+func captchaPromptIOFrom(ttyPath string) (io.Reader, io.Writer, func()) {
+	tty, err := os.OpenFile(ttyPath, os.O_RDWR, 0) // #nosec G304 -- fixed device path, parameterized for tests
 	if err == nil {
 		return tty, tty, func() { _ = tty.Close() }
 	}
