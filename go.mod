@@ -2,7 +2,7 @@ module github.com/olgasafonova/mediawiki-mcp-server
 
 go 1.25.0
 
-toolchain go1.26.2
+toolchain go1.26.5
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.62.0
