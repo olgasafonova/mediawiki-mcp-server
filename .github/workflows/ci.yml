@@ -139,3 +139,35 @@ jobs:
             ext=".exe"
           fi
           go build -ldflags="-s -w" -o mediawiki-mcp-server-${{ matrix.goos }}-${{ matrix.goarch }}${ext} .
+
+  # Stable aggregate context. Required-status-check lists name this job and
+  # never a matrix leg: a leg's context embeds its matrix values ("Test (Go
+  # 1.26)", "Build (linux/arm64)"), so changing the Go version or the build
+  # matrix renames the context and branch protection then waits forever for a
+  # name nothing emits. That is not hypothetical - it blocked every PR merge on
+  # miro-mcp-server from 23-12-2025 to 26-08-2026.
+  #
+  # `if: always()` is what makes the assertion below possible. Without it this
+  # job is skipped whenever a dependency fails, is skipped, or is cancelled, and
+  # GitHub counts a skipped required check as satisfied. With it the job always
+  # runs, and the step fails on any dependency result that is not exactly
+  # "success" - failure, skipped and cancelled all fail the aggregate. For a
+  # matrix dependency, needs.<job>.result is the roll-up over every leg.
+  all-checks:
+    name: all-checks
+    if: always()
+    needs: [lint, test, security, go-mod-tidy, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert every dependency succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s\n' "$NEEDS"
+          bad=$(printf '%s' "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success") | "\(.key): \(.value.result)"')
+          if [ -n "$bad" ]; then
+            echo "::error::Aggregate failed; these jobs did not succeed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "All dependencies succeeded."
