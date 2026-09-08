@@ -5,12 +5,12 @@ go 1.25.0
 toolchain go1.26.5
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.68.0
+	github.com/anthropics/anthropic-sdk-go v1.70.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/olgasafonova/mcp-cache-go v0.1.0
 	github.com/olgasafonova/mcp-servercard-go v0.3.0
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.46.0
