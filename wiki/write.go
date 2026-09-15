@@ -204,13 +204,13 @@ func (c *Client) buildEditRevisionInfo(title string, oldRevision, newRevision in
 	undoInstruction := fmt.Sprintf("To undo: use wiki URL or revert to revision %d", oldRevision)
 
 	return &EditRevisionInfo{
-			OldRevision: int64(oldRevision),
-			NewRevision: int64(newRevision),
-			DiffURL:     diffURL,
-		}, &UndoInfo{
-			Instruction: undoInstruction,
-			WikiURL:     undoURL,
-		}
+		OldRevision: int64(oldRevision),
+		NewRevision: int64(newRevision),
+		DiffURL:     diffURL,
+	}, &UndoInfo{
+		Instruction: undoInstruction,
+		WikiURL:     undoURL,
+	}
 }
 
 // pageURL builds the human-readable page URL for the given title.
