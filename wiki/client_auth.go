@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http/cookiejar"
 	"net/url"
@@ -201,10 +202,27 @@ func (c *Client) checkLoginResult(login map[string]interface{}) error {
 	if result == "Success" {
 		return nil
 	}
+	msg := fmt.Sprintf("login failed: %s", result)
 	if reason := login["reason"]; reason != nil {
-		return fmt.Errorf("login failed: %s - %v", result, reason)
+		msg = fmt.Sprintf("login failed: %s - %v", result, reason)
 	}
-	return fmt.Errorf("login failed: %s", result)
+	if hint := botUsernameHint(c.config.Username); hint != "" {
+		msg += ". " + hint
+	}
+	return errors.New(msg)
+}
+
+// botUsernameHint returns advice when the username has no "#botname" suffix.
+// Bot password logins need the bot name in the username; without it the wiki
+// treats the login as the account's main password and returns only a generic
+// "credentials could not be authenticated". Wikis whose usernames are email
+// addresses use "#" as the separator, so a missing "#" is the common mistake.
+func botUsernameHint(username string) string {
+	if strings.Contains(username, "#") {
+		return ""
+	}
+	return "MEDIAWIKI_USERNAME has no bot name: use the full login name shown on Special:BotPasswords, " +
+		"for example Name@example.com#wiki-MCP"
 }
 
 // isBotPasswordSessionConflict reports whether the login result's reason names a
