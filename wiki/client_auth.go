@@ -207,7 +207,7 @@ func (c *Client) checkLoginResult(login map[string]interface{}) error {
 		msg = fmt.Sprintf("login failed: %s - %v", result, reason)
 	}
 	if hint := botUsernameHint(c.config.Username); hint != "" {
-		msg += ". " + hint
+		msg = strings.TrimSuffix(msg, ".") + ". " + hint
 	}
 	return errors.New(msg)
 }

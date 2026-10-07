@@ -1626,3 +1626,14 @@ func TestCheckLoginResult_BotUsernameHint(t *testing.T) {
 		t.Errorf("success must not error: %v", err)
 	}
 }
+
+func TestCheckLoginResult_NoDoublePeriod(t *testing.T) {
+	c := &Client{config: &Config{Username: "Name@example.com"}}
+	err := c.checkLoginResult(map[string]interface{}{
+		"result": "Failed",
+		"reason": "The supplied credentials could not be authenticated.",
+	})
+	if err == nil || strings.Contains(err.Error(), "..") {
+		t.Errorf("want single period before hint, got: %v", err)
+	}
+}
