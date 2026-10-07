@@ -4,8 +4,13 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-10-07
+
 ### Added
 - **Page URL in search results** (#98, thanks @strk). `SearchHit` gains a `url` field built from the wiki's `ArticlePath` via siteinfo, falling back to the universal `index.php?title=` form when siteinfo is unavailable. Siteinfo is cached, so a search costs at most one extra API call. `wiki search` shows a `URL` column, `wiki search-read` prints the URL alongside each other hit, and JSON output carries `url` (omitted when empty).
+
+### Fixed
+- **Clearer error when a bot-password login fails because the username lacks the bot name** (#132). The wiki answers that mistake with a generic "The supplied credentials could not be authenticated."; the error now also says to use the full login name from Special:BotPasswords, `WikiUser@BotName` or `name@example.com#BotName`. Shown only when the username has no `#`. TIETO_SETUP.md and SETUP.md troubleshooting updated, plus a Windows SmartScreen entry.
 
 ## [1.34.0] - 2026-07-22
 

@@ -437,7 +437,7 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 4. Enable: **Basic rights** + **Edit existing pages**
 5. Save the generated password
 
-Your username: `your.email@tietoevry.com#wiki-MCP`
+Your username: the login name shown on the confirmation page, for example `your.email@tietoevry.com#wiki-MCP`. Copy it exactly (the domain may be `tieto.com`); it must end in `#wiki-MCP`.
 
 ### Configuration
 
@@ -483,7 +483,7 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 → Check your config file has the correct path and URL.
 
 **"authentication failed"**
-→ Check username format: `WikiUsername@BotName`
+→ Check username format: `WikiUsername@BotName`, or `name@example.com#BotName` when wiki usernames are email addresses. A username without the bot name is the most common cause.
 → Verify bot password hasn't expired
 → Ensure bot has required permissions
 
