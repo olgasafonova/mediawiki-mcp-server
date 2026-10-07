@@ -215,14 +215,15 @@ func (c *Client) checkLoginResult(login map[string]interface{}) error {
 // botUsernameHint returns advice when the username has no "#botname" suffix.
 // Bot password logins need the bot name in the username; without it the wiki
 // treats the login as the account's main password and returns only a generic
-// "credentials could not be authenticated". Wikis whose usernames are email
-// addresses use "#" as the separator, so a missing "#" is the common mistake.
+// "credentials could not be authenticated". Most wikis separate user and bot
+// with "@"; wikis whose usernames are email addresses use "#", so a missing
+// "#" is the common mistake there. The hint covers both forms.
 func botUsernameHint(username string) string {
 	if strings.Contains(username, "#") {
 		return ""
 	}
-	return "MEDIAWIKI_USERNAME has no bot name: use the full login name shown on Special:BotPasswords, " +
-		"for example Name@example.com#wiki-MCP"
+	return "Check that MEDIAWIKI_USERNAME is the full login name shown on Special:BotPasswords, " +
+		"including the bot name: WikiUser@BotName, or name@example.com#BotName when wiki usernames are email addresses"
 }
 
 // isBotPasswordSessionConflict reports whether the login result's reason names a

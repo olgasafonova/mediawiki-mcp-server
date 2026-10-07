@@ -74,11 +74,11 @@ The Tieto wiki requires authentication for all operations, including reading. Yo
    - ✅ **Basic rights**
    - ✅ **Edit existing pages**
 5. Click **Create**
-6. **IMPORTANT:** Copy the generated password and save it somewhere safe. You won't see it again.
+6. **IMPORTANT:** The confirmation page says *"The new password to log in with **...** is **...**"*. Copy **both** values and save them somewhere safe. You won't see the password again.
 
 Your credentials will be:
-- **Username:** `your.name@tietoevry.com#wiki-MCP`
-- **Password:** the bot password you just saved
+- **Username:** the login name from the confirmation page, for example `your.name@tietoevry.com#wiki-MCP`. Copy it exactly: depending on when your account was created, the domain may be `tieto.com` instead of `tietoevry.com`, and it may end in a digit (`...@tieto.com1`). It must always end in `#wiki-MCP`.
+- **Password:** the bot password you just saved (32 characters)
 
 ---
 
@@ -321,9 +321,10 @@ Here's what happened in simple terms:
 - The config file format is wrong. Copy the example text again carefully.
 - Make sure all quotation marks `"` are straight quotes, not curly quotes
 
-**"authentication failed"**
-- Check that your username is exactly: `your.name@tietoevry.com#wiki-MCP`
-- Make sure you copied the bot password correctly (no extra spaces)
+**"authentication failed" or "The supplied credentials could not be authenticated"**
+- The most common cause is a username without `#wiki-MCP` at the end. Without it, the wiki checks your normal account password instead of the bot password, and rejects it.
+- Copy the username exactly as the Special:BotPasswords confirmation page shows it (see Step 2), including the domain and any digit before `#wiki-MCP`
+- Make sure you copied the bot password correctly: 32 characters, no extra spaces. It must belong to the bot named in your username.
 - The bot password might have expired. Create a new one at [Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
 
 **"page does not exist"**
@@ -333,6 +334,11 @@ Here's what happened in simple terms:
 - Make sure you replaced `YOUR-USERNAME` with your actual computer username
 - On Mac: Run `echo $HOME` in Terminal to find your home directory
 - On Windows: Run `echo %USERPROFILE%` in Command Prompt
+
+**Windows: "Windows protected your PC" when you double-click the `.exe`**
+- You don't need to run the `.exe` yourself. Claude Desktop starts it in the background. Close the warning and set up the config file instead.
+- On managed Tieto laptops the warning may have no "Run anyway" button. That's expected and doesn't stop Claude Desktop from using the server.
+- If the browser won't download the `.exe` at all, ask a colleague to send it to you zipped via OneDrive or Teams.
 
 **Windows: "not recognized as an internal or external command"**
 - Make sure the `.exe` file is in the path you specified
