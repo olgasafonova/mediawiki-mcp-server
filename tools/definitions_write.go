@@ -25,12 +25,13 @@ PARAMETERS:
 - minor: Mark as minor edit (default false)
 - bot: Mark as bot edit (default false)
 - base_timestamp: Revision timestamp from mediawiki_get_page (optional, recommended). When set, the edit fails with 'editconflict' if someone else changed the page since that revision, instead of silently overwriting their edit. On conflict: re-read with mediawiki_get_page and reapply.
+- preview: Preview changes without saving. Omit to preview (default true, for safety): the current revision is fetched, a line diff of what would change is returned, and nothing is written and no token is consumed. Set preview=false to apply the edit.
 
-RETURNS: Includes revision ID, diff URL, and undo instructions.
+RETURNS: Preview (default): per-line diff of the planned content against the current revision ('changes' entries: before=removed line, after=added line, a modified line appears as its removal followed by its addition), plus new_page=true when the edit would create the page. With preview=false: revision ID, diff URL, and undo instructions.
 
-NOTE: Requires authentication (bot password). Anonymous sessions cannot edit.
+NOTE: Requires authentication (bot password) to apply changes. Anonymous sessions cannot edit.
 
-WARNING: This overwrites entire page content unless section is specified.`,
+WARNING: This overwrites entire page content unless section is specified. Preview first (omit preview) before applying.`,
 		ReadOnly:    false,
 		Destructive: true,
 		Idempotent:  false,

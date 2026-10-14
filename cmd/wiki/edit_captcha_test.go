@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -154,7 +155,7 @@ func TestRetryLoopReturnsWithoutPrompting(t *testing.T) {
 			if prompted {
 				t.Error("retryLoop prompted for a CAPTCHA that was never requested")
 			}
-			if got != tc.result {
+			if !reflect.DeepEqual(got, tc.result) {
 				t.Errorf("retryLoop = %+v, want %+v unchanged", got, tc.result)
 			}
 		})

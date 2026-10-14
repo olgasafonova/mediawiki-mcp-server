@@ -202,6 +202,9 @@ func TestIntegration_AuthenticatedOperations(t *testing.T) {
 		Title:   testTitle,
 		Content: updatedContent,
 		Summary: "Integration test: updating test page",
+		// Integration tests exercise the write path; opt out of the
+		// omitted-means-dry-run default explicitly.
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("EditPage failed: %v", err)

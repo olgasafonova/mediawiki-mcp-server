@@ -19,7 +19,15 @@ type EditPageArgs struct {
 	// rejects the edit with an 'editconflict' error if the page changed
 	// after that revision, instead of silently overwriting the newer edit.
 	BaseTimestamp string `json:"base_timestamp,omitempty" jsonschema:"Timestamp of the revision this edit is based on (from get_page). When set, the wiki rejects the edit with an editconflict error if someone else edited the page in the meantime, instead of silently overwriting their change"`
+
+	// Preview follows the write-tool tri-state default: omitted means dry run.
+	Preview *bool `json:"preview,omitempty" jsonschema:"Preview changes without saving. Omitted means preview (the safe default): the edit is not saved, no token is consumed, and a line diff against the current revision is returned. Set false to apply the edit."`
 }
+
+// PreviewEnabled resolves the tri-state preview flag for EditPage. An omitted
+// flag (nil) means preview: like the other write tools, an unset flag must
+// never silently overwrite a whole page.
+func (a EditPageArgs) PreviewEnabled() bool { return previewDefaultTrue(a.Preview) }
 
 // EditResult contains the result of a page edit operation.
 type EditResult struct {
@@ -33,6 +41,18 @@ type EditResult struct {
 	CaptchaType     string `json:"captcha_type,omitempty"`
 	CaptchaID       string `json:"captcha_id,omitempty"`
 	CaptchaQuestion string `json:"captcha_question,omitempty"`
+
+	// Preview is true when the result describes a dry run: nothing was
+	// saved and no revision was created. NewPage then reports a would-be
+	// creation rather than an applied one.
+	Preview bool `json:"preview"`
+
+	// Changes lists what the edit would alter, populated in preview mode
+	// only. It reuses the find/replace TextChange shape: Before alone is a
+	// removed line, After alone is an added line, and a modified line
+	// appears as its removal followed by its addition. Unchanged lines are
+	// omitted.
+	Changes []TextChange `json:"changes,omitempty"`
 }
 
 // EditRevisionInfo contains revision tracking info for edit operations
@@ -214,6 +234,17 @@ func previewDefaultTrue(flag *bool) bool {
 		return *flag
 	}
 	return true
+}
+
+// previewFalse returns the explicit "apply" choice for the tri-state preview
+// flag. Internal save paths that treat Client.EditPage as their write
+// primitive (the find/replace and category commit paths) resolve the preview
+// decision at their own layer, so their final write must opt out of the
+// omitted-means-dry-run default — otherwise the save would silently become a
+// no-op.
+func previewFalse() *bool {
+	off := false
+	return &off
 }
 
 // ManageCategoriesResult contains the result of category management.

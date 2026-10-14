@@ -129,6 +129,7 @@ func TestEditPage_Success(t *testing.T) {
 		Title:   "Test Page",
 		Content: "== Test ==\nContent here",
 		Summary: "Test edit",
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("EditPage failed: %v", err)
@@ -142,6 +143,9 @@ func TestEditPage_Success(t *testing.T) {
 	}
 	if result.RevisionID != 456 {
 		t.Errorf("RevisionID = %d, want 456", result.RevisionID)
+	}
+	if result.Preview {
+		t.Error("Expected Preview to be false for an applied edit")
 	}
 }
 
@@ -172,6 +176,7 @@ func TestEditPage_NewPage(t *testing.T) {
 	result, err := client.EditPage(context.Background(), EditPageArgs{
 		Title:   "New Page",
 		Content: "Brand new content",
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("EditPage failed: %v", err)
@@ -241,6 +246,7 @@ func TestEditPage_EditFailed(t *testing.T) {
 	result, err := client.EditPage(context.Background(), EditPageArgs{
 		Title:   "Test Page",
 		Content: "Content",
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -298,6 +304,7 @@ func TestEditPage_EditFailedDetails(t *testing.T) {
 			result, err := client.EditPage(context.Background(), EditPageArgs{
 				Title:   "Test Page",
 				Content: "Content",
+				Preview: boolPtr(false),
 			})
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
@@ -359,6 +366,7 @@ func TestEditPage_CaptchaArgsPassthrough(t *testing.T) {
 		Content:     "Content",
 		CaptchaID:   "789",
 		CaptchaWord: "test-answer",
+		Preview:     boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("EditPage failed: %v", err)
@@ -406,6 +414,7 @@ func TestEditPage_BadTokenRetry(t *testing.T) {
 	result, err := client.EditPage(context.Background(), EditPageArgs{
 		Title:   "Test Page",
 		Content: "Content",
+		Preview: boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("EditPage failed after retry: %v", err)
@@ -416,6 +425,359 @@ func TestEditPage_BadTokenRetry(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Errorf("Expected 2 edit attempts, got %d", attempts)
+	}
+}
+
+// previewPageResponse builds the mock query response for an existing page
+// with the given content, shared by the EditPage preview tests.
+func previewPageResponse(content string) map[string]interface{} {
+	return map[string]interface{}{
+		"query": map[string]interface{}{
+			"pages": map[string]interface{}{
+				"123": map[string]interface{}{
+					"pageid":    float64(123),
+					"title":     "Test Page",
+					"lastrevid": float64(100),
+					"revisions": []interface{}{
+						map[string]interface{}{
+							"slots": map[string]interface{}{
+								"main": map[string]interface{}{
+									"content": content,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// encodeJSONResponse writes v as a JSON response body.
+func encodeJSONResponse(t *testing.T, w http.ResponseWriter, v map[string]interface{}) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// TestEditPage_OmittedPreviewIsDryRun locks in the safety default: when the
+// caller omits preview (nil pointer), the edit previews rather than writing.
+// The mock fails the test if the write API is reached; the CSRF token cache
+// staying empty proves the token endpoint was never needed either.
+func TestEditPage_OmittedPreviewIsDryRun(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("action") == "query" {
+			encodeJSONResponse(t, w, previewPageResponse("alpha\nbeta\ngamma"))
+			return
+		}
+
+		t.Error("Write API must not be called when preview is omitted (default is a dry run)")
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	// Preview is intentionally left unset: the omitted flag must resolve to a preview.
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "alpha\nBETA\ngamma",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
+	}
+	if !result.Preview {
+		t.Error("omitted preview must resolve to a dry run (result.Preview = true)")
+	}
+	if !result.Success {
+		t.Error("preview result should report success")
+	}
+	if result.RevisionID != 0 {
+		t.Errorf("RevisionID = %d, want 0 (no write should have happened)", result.RevisionID)
+	}
+	if client.csrfToken != "" {
+		t.Error("preview must not consume a CSRF token (token cache is non-empty)")
+	}
+	wantChanges := []TextChange{{Line: 2, Before: "beta"}, {Line: 2, After: "BETA"}}
+	if len(result.Changes) != len(wantChanges) {
+		t.Fatalf("Changes = %+v, want %+v", result.Changes, wantChanges)
+	}
+	for i, want := range wantChanges {
+		if result.Changes[i] != want {
+			t.Errorf("Changes[%d] = %+v, want %+v", i, result.Changes[i], want)
+		}
+	}
+	if !strings.Contains(result.Message, "Preview") {
+		t.Errorf("Message = %q, want it to state this is a preview", result.Message)
+	}
+}
+
+// TestEditPage_ExplicitFalseApplies verifies the escape hatch: an explicit
+// preview=false performs the write and returns a revision.
+func TestEditPage_ExplicitFalseApplies(t *testing.T) {
+	editCalled := false
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.FormValue("action") {
+		case "query":
+			encodeJSONResponse(t, w, previewPageResponse("alpha\nbeta\ngamma"))
+		case "edit":
+			editCalled = true
+			encodeJSONResponse(t, w, map[string]interface{}{
+				"edit": map[string]interface{}{
+					"result":   "Success",
+					"pageid":   float64(123),
+					"title":    "Test Page",
+					"newrevid": float64(101),
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "alpha\nBETA\ngamma",
+		Preview: boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
+	}
+	if !editCalled {
+		t.Error("explicit preview=false must apply the edit (edit action expected)")
+	}
+	if result.Preview {
+		t.Error("result.Preview = true, want false for an applied edit")
+	}
+	if !result.Success {
+		t.Error("expected success on applied edit")
+	}
+	if result.RevisionID != 101 {
+		t.Errorf("RevisionID = %d, want 101", result.RevisionID)
+	}
+}
+
+// TestEditPage_PreviewOfMissingPageIsCreation covers the would-be-creation
+// case: a missing page is not an error in preview mode, and every planned
+// line shows up as an addition.
+func TestEditPage_PreviewOfMissingPageIsCreation(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("action") == "query" {
+			encodeJSONResponse(t, w, map[string]interface{}{
+				"query": map[string]interface{}{
+					"pages": map[string]interface{}{
+						"-1": map[string]interface{}{
+							"title":   "Missing Page",
+							"missing": "",
+						},
+					},
+				},
+			})
+			return
+		}
+
+		t.Error("Write API must not be called in preview mode")
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Missing Page",
+		Content: "== New ==\nbody",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
+	}
+	if !result.Preview {
+		t.Error("omitted preview must resolve to a dry run")
+	}
+	if !result.NewPage {
+		t.Error("preview of a missing page must report NewPage (would-be creation)")
+	}
+	if result.RevisionID != 0 {
+		t.Errorf("RevisionID = %d, want 0 (no write should have happened)", result.RevisionID)
+	}
+	if client.csrfToken != "" {
+		t.Error("preview must not consume a CSRF token (token cache is non-empty)")
+	}
+	wantChanges := []TextChange{{Line: 1, After: "== New =="}, {Line: 2, After: "body"}}
+	if len(result.Changes) != len(wantChanges) {
+		t.Fatalf("Changes = %+v, want %+v", result.Changes, wantChanges)
+	}
+	for i, want := range wantChanges {
+		if result.Changes[i] != want {
+			t.Errorf("Changes[%d] = %+v, want %+v", i, result.Changes[i], want)
+		}
+	}
+	if !strings.Contains(result.Message, "create") {
+		t.Errorf("Message = %q, want it to state the page would be created", result.Message)
+	}
+}
+
+// TestEditPage_PreviewIdenticalContent covers the no-op case: the planned
+// content equals the current revision, so the preview reports zero changes.
+func TestEditPage_PreviewIdenticalContent(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("action") == "query" {
+			encodeJSONResponse(t, w, previewPageResponse("== Test ==\nContent here"))
+			return
+		}
+
+		t.Error("Write API must not be called in preview mode")
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "== Test ==\nContent here",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
+	}
+	if !result.Preview {
+		t.Error("omitted preview must resolve to a dry run")
+	}
+	if len(result.Changes) != 0 {
+		t.Errorf("Changes = %+v, want none for identical content", result.Changes)
+	}
+	if !strings.Contains(result.Message, "identical") {
+		t.Errorf("Message = %q, want it to state the content is identical", result.Message)
+	}
+}
+
+// TestEditPage_PreviewSectionNew covers section='new': every planned line is
+// an addition against the existing page, with nothing replaced.
+func TestEditPage_PreviewSectionNew(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("action") == "query" {
+			encodeJSONResponse(t, w, previewPageResponse("Existing intro"))
+			return
+		}
+
+		t.Error("Write API must not be called in preview mode")
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "== New section ==\nbody",
+		Section: "new",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
+	}
+	if !result.Preview {
+		t.Error("omitted preview must resolve to a dry run")
+	}
+	if result.NewPage {
+		t.Error("existing page must not be reported as a would-be creation")
+	}
+	wantChanges := []TextChange{{Line: 1, After: "== New section =="}, {Line: 2, After: "body"}}
+	if len(result.Changes) != len(wantChanges) {
+		t.Fatalf("Changes = %+v, want %+v", result.Changes, wantChanges)
+	}
+	if !strings.Contains(result.Message, "section") {
+		t.Errorf("Message = %q, want it to name the targeted section", result.Message)
+	}
+}
+
+// TestEditPage_PreviewNumericSection covers a numbered-section edit: the diff
+// is against the current section content (via action=parse), not the whole
+// page, so untouched sections are not flagged as changed.
+func TestEditPage_PreviewNumericSection(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.FormValue("action") {
+		case "query":
+			encodeJSONResponse(t, w, previewPageResponse("Intro\n== S1 ==\nold section body\n== S2 ==\nother"))
+		case "parse":
+			if r.FormValue("section") != "2" {
+				t.Errorf("parse section = %q, want 2", r.FormValue("section"))
+			}
+			encodeJSONResponse(t, w, map[string]interface{}{
+				"parse": map[string]interface{}{
+					"title":  "Test Page",
+					"pageid": float64(123),
+					"wikitext": map[string]interface{}{
+						"*": "old section body",
+					},
+				},
+			})
+		default:
+			t.Error("Write API must not be called in preview mode")
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	result, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "new section body",
+		Section: "2",
+	})
+	if err != nil {
+		t.Fatalf("EditPage failed: %v", err)
+	}
+	if !result.Preview {
+		t.Error("omitted preview must resolve to a dry run")
+	}
+	wantChanges := []TextChange{{Line: 1, Before: "old section body"}, {Line: 1, After: "new section body"}}
+	if len(result.Changes) != len(wantChanges) {
+		t.Fatalf("Changes = %+v, want %+v", result.Changes, wantChanges)
+	}
+	for i, want := range wantChanges {
+		if result.Changes[i] != want {
+			t.Errorf("Changes[%d] = %+v, want %+v", i, result.Changes[i], want)
+		}
+	}
+	if !strings.Contains(result.Message, "section 2") {
+		t.Errorf("Message = %q, want it to name section 2", result.Message)
+	}
+}
+
+// TestEditPage_PreviewInvalidSection rejects a non-numeric, non-'new' section
+// instead of silently diffing against the wrong target.
+func TestEditPage_PreviewInvalidSection(t *testing.T) {
+	server := mockMediaWikiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("action") == "query" {
+			encodeJSONResponse(t, w, previewPageResponse("content"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	defer server.Close()
+
+	client := createMockClient(t, server)
+	defer client.Close()
+
+	_, err := client.EditPage(context.Background(), EditPageArgs{
+		Title:   "Test Page",
+		Content: "content",
+		Section: "intro",
+	})
+	if err == nil {
+		t.Fatal("Expected error for invalid section in preview mode")
+	}
+	if !strings.Contains(err.Error(), "invalid section") {
+		t.Errorf("error = %v, want it to mention the invalid section", err)
 	}
 }
 

@@ -63,6 +63,10 @@ type editRequest struct {
 }
 
 func (r editRequest) toArgs() wiki.EditPageArgs {
+	// The CLI resolves dry runs itself via --dry-run before submission, so an
+	// edit that reaches the client must always apply: pass an explicit
+	// preview=false instead of the client's omitted-means-dry-run default.
+	apply := false
 	return wiki.EditPageArgs{
 		Title:         r.title,
 		Content:       r.content,
@@ -71,6 +75,7 @@ func (r editRequest) toArgs() wiki.EditPageArgs {
 		Bot:           r.bot,
 		Section:       r.section,
 		BaseTimestamp: r.baseTimestamp,
+		Preview:       &apply,
 	}
 }
 

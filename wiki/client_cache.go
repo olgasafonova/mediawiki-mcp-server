@@ -233,6 +233,20 @@ func (c *Client) setCache(key string, data interface{}, ttlKey string) {
 	}
 }
 
+// invalidatePageCaches drops every cached read of a page after a successful
+// write, so a follow-up read — or an edit preview in the same session —
+// reflects the new revision instead of the pre-edit snapshot. Covers all
+// per-title caches: page content, section content, section list, and page
+// info. The prefix match may also drop a longer title that merely starts
+// with this one, which is harmless: it only costs that page one refetch.
+func (c *Client) invalidatePageCaches(titles ...string) {
+	for _, title := range titles {
+		for _, prefix := range []string{"page:", "page_content:", "page_info:", "sections:"} {
+			c.InvalidateCachePrefix(prefix + title)
+		}
+	}
+}
+
 // InvalidateCachePrefix removes all cache entries with keys starting with prefix
 func (c *Client) InvalidateCachePrefix(prefix string) {
 	var deletedCount int64

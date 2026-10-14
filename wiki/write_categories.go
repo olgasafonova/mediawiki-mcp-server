@@ -112,6 +112,7 @@ func (c *Client) ManageCategories(ctx context.Context, args ManageCategoriesArgs
 		Content: newContent,
 		Summary: categoryEditSummary(args, result),
 		Minor:   true,
+		Preview: previewFalse(),
 	}
 	if err := c.commitCategoryChanges(ctx, edit, page.Revision, &result); err != nil {
 		return ManageCategoriesResult{}, err

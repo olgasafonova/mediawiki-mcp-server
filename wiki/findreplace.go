@@ -129,6 +129,7 @@ func (c *Client) saveFindReplaceEdit(ctx context.Context, in findReplaceSaveInpu
 		Content: in.newContent,
 		Summary: summary,
 		Minor:   in.args.Minor,
+		Preview: previewFalse(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to save changes: %w", err)

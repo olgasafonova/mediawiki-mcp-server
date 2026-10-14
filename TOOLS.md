@@ -206,4 +206,5 @@ Output: "= Hello =\n'''bold''' and ''italic''"
 **Workflow for adding Markdown content to wiki:**
 
 1. Convert: `mediawiki_convert_markdown` → get wikitext
-2. Save: `mediawiki_edit_page` → publish to wiki
+2. Preview: `mediawiki_edit_page` (preview omitted) → dry-run diff of what would change
+3. Save: `mediawiki_edit_page` (`preview=false`) → publish to wiki

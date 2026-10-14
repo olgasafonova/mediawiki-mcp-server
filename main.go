@@ -135,7 +135,7 @@ X DON'T guess page titles - they are case-sensitive
    -> If page not found, use mediawiki_resolve_title
 
 X DON'T edit without preview for destructive changes
-   -> Always use preview=true first for find_replace and bulk_replace
+   -> Always use preview first (omit the preview flag) for edit_page, find_replace and bulk_replace
 
 X DON'T fetch entire page just to search within it
    -> Use mediawiki_search_in_page instead

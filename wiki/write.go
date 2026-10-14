@@ -7,10 +7,16 @@ import (
 	"strings"
 )
 
-// EditPage creates or edits a page
+// EditPage creates or edits a page. The tri-state preview flag follows the
+// write-tool default: an omitted flag means a dry run that never contacts the
+// write API; an explicit preview=false is required to actually save.
 func (c *Client) EditPage(ctx context.Context, args EditPageArgs) (EditResult, error) {
 	if err := validateEditArgs(args); err != nil {
 		return EditResult{}, err
+	}
+
+	if args.PreviewEnabled() {
+		return c.previewEdit(ctx, args)
 	}
 
 	editResult, err := c.performEdit(ctx, args)
@@ -132,6 +138,12 @@ func (c *Client) performEdit(ctx context.Context, args EditPageArgs) (EditResult
 	}
 
 	editResult := c.editResultFromAPI(ctx, edit)
+	// The saved revision makes every cached read of this page stale (content,
+	// sections, page info). Drop them so a follow-up read — or an edit
+	// preview in the same session — reflects the new revision instead of
+	// diffing against the pre-edit snapshot. Both spellings are invalidated
+	// because GetPage caches under the requested and the normalized title.
+	c.invalidatePageCaches(normalizePageTitle(args.Title), editResult.Title)
 	op := AuditOpEdit
 	if editResult.NewPage {
 		op = AuditOpCreate

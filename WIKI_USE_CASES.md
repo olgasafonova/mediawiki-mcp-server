@@ -84,7 +84,9 @@ Tool: mediawiki_find_orphaned_pages (namespace=0)
 
 ```
 User: "Create a new page for the v6.8 release notes"
-Tool: mediawiki_edit_page (title="Release Notes v6.8", content="...")
+Tool: mediawiki_edit_page (title="Release Notes v6.8", content="...")  # preview omitted = dry run, shows the planned diff
+User: confirms the diff looks right
+Tool: mediawiki_edit_page (title="Release Notes v6.8", content="...", preview=false)
 ```
 
 ### 10. Feature Documentation Tracking
@@ -214,8 +216,8 @@ Tool: mediawiki_get_category_members (category="Deprecated")
 
 ```python
 # Release script
-1. mediawiki_bulk_replace(find="v6.7", replace="v6.8", category="Version-sensitive")
-2. mediawiki_edit_page(title="Current Version", content="v6.8")
+1. mediawiki_bulk_replace(find="v6.7", replace="v6.8", category="Version-sensitive", preview=false)
+2. mediawiki_edit_page(title="Current Version", content="v6.8", preview=false)
 ```
 
 ### 24. Onboarding Documentation

@@ -382,7 +382,7 @@ func readArgAttrs(attrs []any, args any) ([]any, bool) {
 func writeArgAttrs(attrs []any, args any) ([]any, bool) {
 	switch a := args.(type) {
 	case wiki.EditPageArgs:
-		return append(attrs, "title", a.Title, "content_len", len(a.Content)), true
+		return append(attrs, "title", a.Title, "content_len", len(a.Content), "preview", a.PreviewEnabled()), true
 	case wiki.FindReplaceArgs:
 		return append(attrs, "title", a.Title, "preview", a.PreviewEnabled()), true
 	case wiki.BulkReplaceArgs:
@@ -430,7 +430,9 @@ func readResultAttrs(attrs []any, result any) ([]any, bool) {
 func writeResultAttrs(attrs []any, result any) ([]any, bool) {
 	switch r := result.(type) {
 	case wiki.EditResult:
-		return append(attrs, "success", r.Success, "new_page", r.NewPage), true
+		// preview distinguishes a dry run from an applied write: both report
+		// success=true, which alone would look like a saved edit in the log.
+		return append(attrs, "success", r.Success, "new_page", r.NewPage, "preview", r.Preview), true
 	case wiki.FindReplaceResult:
 		return append(attrs, "matches", r.MatchCount, "replaced", r.ReplaceCount), true
 	case wiki.BulkReplaceResult:
