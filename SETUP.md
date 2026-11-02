@@ -427,11 +427,11 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
 **New to this?** The [Tieto Setup Guide](TIETO_SETUP.md) walks through every step assuming no technical knowledge.
 
 <details>
-<summary><strong>Quick setup for wiki.software-innovation.com</strong></summary>
+<summary><strong>Quick setup for NEW_WIKI_HOST</strong></summary>
 
 ### Get Your Bot Password
 
-1. Go to [Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
+1. Go to [Special:BotPasswords](https://NEW_WIKI_HOST/wiki/Special:BotPasswords)
 2. Log in with your Tieto account
 3. Create a bot named `wiki-MCP`
 4. Enable: **Basic rights** + **Edit existing pages**
@@ -446,7 +446,7 @@ This wiki requires authentication for all operations (including reading).
 **Claude Code CLI:**
 ```bash
 claude mcp add mediawiki /path/to/mediawiki-mcp-server \
-  -e MEDIAWIKI_URL="https://wiki.software-innovation.com/api.php" \
+  -e MEDIAWIKI_URL="https://NEW_WIKI_HOST/api.php" \
   -e MEDIAWIKI_USERNAME="your.email@tietoevry.com#wiki-MCP" \
   -e MEDIAWIKI_PASSWORD="your-bot-password-here"
 ```
@@ -458,7 +458,7 @@ claude mcp add mediawiki /path/to/mediawiki-mcp-server \
     "mediawiki": {
       "command": "/path/to/mediawiki-mcp-server",
       "env": {
-        "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+        "MEDIAWIKI_URL": "https://NEW_WIKI_HOST/api.php",
         "MEDIAWIKI_USERNAME": "your.email@tietoevry.com#wiki-MCP",
         "MEDIAWIKI_PASSWORD": "your-bot-password-here"
       }

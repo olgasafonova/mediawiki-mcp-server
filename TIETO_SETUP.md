@@ -1,6 +1,8 @@
 # Connect your AI assistant to Tieto's Public 360° wiki
 
-This guide helps you connect Claude, Cursor, or VS Code to Tieto's wiki at **wiki.software-innovation.com**. Don't worry if you're new to this — we'll walk through everything step by step!
+This guide helps you connect Claude, Cursor, or VS Code to Tieto's wiki at **NEW_WIKI_HOST**. Don't worry if you're new to this — we'll walk through everything step by step!
+
+> **The wiki moved.** It used to be at `wiki.software-innovation.com`. If you set this up before the move, change `MEDIAWIKI_URL` in your config to `https://NEW_WIKI_HOST/api.php` and restart your assistant. Your bot password keeps working. Reading still works on the old address through a redirect, but editing may not.
 
 ---
 
@@ -67,7 +69,7 @@ Not sure which Mac you have? Click the Apple menu, then "About This Mac". If it 
 
 The Tieto wiki requires authentication for all operations, including reading. You'll need to create a bot password.
 
-1. Open your browser and go to: [Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
+1. Open your browser and go to: [Special:BotPasswords](https://NEW_WIKI_HOST/wiki/Special:BotPasswords)
 2. Log in with your Tietoevry account
 3. Type a bot name: **wiki-MCP**
 4. Check these two boxes:
@@ -119,7 +121,7 @@ Pick the tool you're using:
        "tieto-wiki": {
          "command": "/Users/YOUR-USERNAME/Downloads/mediawiki-mcp-server",
          "env": {
-           "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+           "MEDIAWIKI_URL": "https://NEW_WIKI_HOST/api.php",
            "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
          }
@@ -135,7 +137,7 @@ Pick the tool you're using:
        "tieto-wiki": {
          "command": "C:\\mcp\\mediawiki-mcp-server-windows.exe",
          "env": {
-           "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+           "MEDIAWIKI_URL": "https://NEW_WIKI_HOST/api.php",
            "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
          }
@@ -163,7 +165,7 @@ One command and you're done:
 
 ```bash
 claude mcp add tieto-wiki ~/Downloads/mediawiki-mcp-server \
-  -e MEDIAWIKI_URL="https://wiki.software-innovation.com/api.php" \
+  -e MEDIAWIKI_URL="https://NEW_WIKI_HOST/api.php" \
   -e MEDIAWIKI_USERNAME="your.name@tietoevry.com#wiki-MCP" \
   -e MEDIAWIKI_PASSWORD="paste-your-bot-password-here"
 ```
@@ -200,7 +202,7 @@ Cursor has built-in MCP support. You don't need to install any extension.
        "tieto-wiki": {
          "command": "/Users/YOUR-USERNAME/Downloads/mediawiki-mcp-server",
          "env": {
-           "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+           "MEDIAWIKI_URL": "https://NEW_WIKI_HOST/api.php",
            "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
          }
@@ -216,7 +218,7 @@ Cursor has built-in MCP support. You don't need to install any extension.
        "tieto-wiki": {
          "command": "C:\\mcp\\mediawiki-mcp-server-windows.exe",
          "env": {
-           "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+           "MEDIAWIKI_URL": "https://NEW_WIKI_HOST/api.php",
            "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
            "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
          }
@@ -269,7 +271,7 @@ This creates a `.vscode/mcp.json` file. Open it and add the environment variable
     "tieto-wiki": {
       "command": "/Users/YOUR-USERNAME/Downloads/mediawiki-mcp-server",
       "env": {
-        "MEDIAWIKI_URL": "https://wiki.software-innovation.com/api.php",
+        "MEDIAWIKI_URL": "https://NEW_WIKI_HOST/api.php",
         "MEDIAWIKI_USERNAME": "your.name@tietoevry.com#wiki-MCP",
         "MEDIAWIKI_PASSWORD": "paste-your-bot-password-here"
       }
@@ -325,7 +327,7 @@ Here's what happened in simple terms:
 - The most common cause is a username without `#wiki-MCP` at the end. Without it, the wiki checks your normal account password instead of the bot password, and rejects it.
 - Copy the username exactly as the Special:BotPasswords confirmation page shows it (see Step 2), including the domain and any digit before `#wiki-MCP`
 - Make sure you copied the bot password correctly: 32 characters, no extra spaces. It must belong to the bot named in your username.
-- The bot password might have expired. Create a new one at [Special:BotPasswords](https://wiki.software-innovation.com/wiki/Special:BotPasswords)
+- The bot password might have expired. Create a new one at [Special:BotPasswords](https://NEW_WIKI_HOST/wiki/Special:BotPasswords)
 
 **"page does not exist"**
 - Page titles are case-sensitive. Try: "resolve title [your search term]" to find the correct name.
