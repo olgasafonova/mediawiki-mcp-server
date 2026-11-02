@@ -1,7 +1,7 @@
 package main
 
 // WikiEditingGuidelines contains the Public 360° Wiki editing policies.
-// Source: https://NEW_WIKI_HOST/wiki/Editing_the_wiki_-_Guidelines_and_tips
+// Source: https://wiki.360online.com/wiki/Editing_the_wiki_-_Guidelines_and_tips
 // These are embedded in MCP server instructions to guide AI editing behavior.
 const WikiEditingGuidelines = `
 ## WIKI EDITING GUIDELINES (Public 360° Wiki)
@@ -35,7 +35,7 @@ Article titles must be:
 ### Internal Links
 NEVER use full URLs for internal wiki links!
 - ✅ Correct: [[Page Title]] or [[Page Title|Display Text]]
-- ❌ Wrong: https://NEW_WIKI_HOST/wiki/Page_Title
+- ❌ Wrong: https://wiki.360online.com/wiki/Page_Title
 
 ### Contact Information
 DON'T create names as email links - wiki doesn't support this properly!
