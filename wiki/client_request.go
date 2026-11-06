@@ -129,8 +129,17 @@ func readBoundedBody(resp *http.Response) ([]byte, error) {
 	return body, nil
 }
 
-// apiRequest makes a request to the MediaWiki API with rate limiting and circuit breaker.
+// apiRequest makes a POST request to the MediaWiki API with rate limiting and circuit breaker.
 func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]interface{}, error) {
+	return c.apiRequestWithMethod(ctx, http.MethodPost, params)
+}
+
+// apiGetRequest is apiRequest using GET. Never use it for requests carrying secrets.
+func (c *Client) apiGetRequest(ctx context.Context, params url.Values) (map[string]interface{}, error) {
+	return c.apiRequestWithMethod(ctx, http.MethodGet, params)
+}
+
+func (c *Client) apiRequestWithMethod(ctx context.Context, method string, params url.Values) (map[string]interface{}, error) {
 	action := params.Get("action")
 	start := time.Now()
 
@@ -142,7 +151,7 @@ func (c *Client) apiRequest(ctx context.Context, params url.Values) (map[string]
 
 	params.Set("format", "json")
 
-	call := apiCall{params: params, action: action, start: start}
+	call := apiCall{method: method, params: params, action: action, start: start}
 	var lastErr error
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
 		if err := c.waitRetryBackoff(ctx, action, attempt); err != nil {
@@ -215,20 +224,34 @@ func (c *Client) waitRetryBackoff(ctx context.Context, action string, attempt in
 
 // apiCall carries the per-request state shared across retry attempts.
 type apiCall struct {
+	method string
 	params url.Values
 	action string
 	start  time.Time
 }
 
-// newAPIRequest builds a fresh POST request for one attempt (the body reader
+// newAPIRequest builds a fresh request for one attempt (the body reader
 // is consumed on send, so each retry needs its own request).
 func (c *Client) newAPIRequest(ctx context.Context, call apiCall, attempt int) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.config.BaseURL, strings.NewReader(call.params.Encode()))
+	var req *http.Request
+	var err error
+	if call.method == http.MethodGet {
+		u, perr := url.Parse(c.config.BaseURL)
+		if perr != nil {
+			return nil, fmt.Errorf("failed to create request: %w", perr)
+		}
+		u.RawQuery = call.params.Encode()
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	} else {
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, c.config.BaseURL, strings.NewReader(call.params.Encode()))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if call.method != http.MethodGet {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
 	req.Header.Set("User-Agent", c.config.UserAgent)
 	// Note: Don't set Accept-Encoding manually - Go's http.Transport handles
 	// compression automatically when DisableCompression is false
