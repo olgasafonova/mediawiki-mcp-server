@@ -154,7 +154,8 @@ func (c *Client) fetchLoginToken(ctx context.Context) (string, error) {
 	params.Set("meta", "tokens")
 	params.Set("type", "login")
 
-	resp, err := c.apiRequest(ctx, params)
+	// Some wikis answer a POSTed token query with a token the login then rejects as NeedToken.
+	resp, err := c.apiGetRequest(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("failed to get login token: %w", err)
 	}
@@ -206,20 +207,21 @@ func (c *Client) checkLoginResult(login map[string]interface{}) error {
 	if reason := login["reason"]; reason != nil {
 		msg = fmt.Sprintf("login failed: %s - %v", result, reason)
 	}
-	if hint := botUsernameHint(c.config.Username); hint != "" {
-		msg = strings.TrimSuffix(msg, ".") + ". " + hint
+	if result == "Failed" || result == "WrongPass" || result == "WrongBotPass" {
+		if hint := botUsernameHint(c.config.Username); hint != "" {
+			msg = strings.TrimSuffix(msg, ".") + ". " + hint
+		}
 	}
 	return errors.New(msg)
 }
 
-// botUsernameHint returns advice when the username has no "#botname" suffix.
-// Bot password logins need the bot name in the username; without it the wiki
-// treats the login as the account's main password and returns only a generic
-// "credentials could not be authenticated". Most wikis separate user and bot
-// with "@"; wikis whose usernames are email addresses use "#", so a missing
-// "#" is the common mistake there. The hint covers both forms.
+// botUsernameHint returns advice when the username lacks a bot-name suffix:
+// "User@Bot", or "name@example.com#Bot" when usernames are email addresses.
 func botUsernameHint(username string) string {
 	if strings.Contains(username, "#") {
+		return ""
+	}
+	if at := strings.LastIndex(username, "@"); at > 0 && at < len(username)-1 && !strings.Contains(username[at+1:], ".") {
 		return ""
 	}
 	return "Check that MEDIAWIKI_USERNAME is the full login name shown on Special:BotPasswords, " +
