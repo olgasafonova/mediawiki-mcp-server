@@ -94,7 +94,7 @@ func cwCaptchaSession(t *testing.T, wikiStub *cwCaptchaWiki, req editRequest) ed
 	client := wiki.NewClient(&wiki.Config{
 		BaseURL:    ts.URL,
 		Username:   "TestUser",
-		Password:   "TestPass",
+		Password:   passwordFixture,
 		Timeout:    5 * time.Second,
 		MaxRetries: 1,
 		UserAgent:  "wiki-cli-test/1.0",

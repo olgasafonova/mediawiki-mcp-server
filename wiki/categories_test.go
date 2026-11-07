@@ -76,7 +76,7 @@ func createCategoryTestClient(t *testing.T, server *httptest.Server) *Client {
 	config := &Config{
 		BaseURL:    server.URL,
 		Username:   "TestUser",
-		Password:   "TestPass",
+		Password:   passwordFixture,
 		Timeout:    5 * time.Second,
 		MaxRetries: 1,
 		UserAgent:  "TestClient/1.0",

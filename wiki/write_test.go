@@ -1944,7 +1944,7 @@ func TestDownloadFile_Forbidden_ImgAuthMessage(t *testing.T) {
 	client.allowPrivateDownloadForTest = true
 	// Credentials configured signals "we are an authenticated bot session"
 	client.config.Username = "TestUser@BotName"
-	client.config.Password = "test-pass"
+	client.config.Password = altPasswordFixture
 
 	_, err := client.downloadFile(context.Background(), fileServer.URL+"/img_auth.php/f/fc/Test.png")
 	if err == nil {
@@ -1972,7 +1972,7 @@ func TestDownloadFile_Forbidden_GenericFor403WithoutImgAuth(t *testing.T) {
 	defer client.Close()
 	client.allowPrivateDownloadForTest = true
 	client.config.Username = "TestUser@BotName"
-	client.config.Password = "test-pass"
+	client.config.Password = altPasswordFixture
 
 	_, err := client.downloadFile(context.Background(), fileServer.URL+"/images/some/path.png")
 	if err == nil {
@@ -2090,7 +2090,7 @@ func TestUploadFile_FromURL_Success(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	// HG-3: uploadFromURL now validates the source-URL host against
@@ -2245,7 +2245,7 @@ func TestUploadFile_FromBytes_Success(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	result, err := client.UploadFile(context.Background(), UploadFileArgs{
@@ -2334,7 +2334,7 @@ func TestUploadFile_FromFile_NotSupported(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
