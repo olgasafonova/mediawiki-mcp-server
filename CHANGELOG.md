@@ -4,6 +4,15 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.36.1] - 2026-11-07
+
+### Fixed
+- **Bot-password login no longer fails with `NeedToken` on wikis that reject a POSTed login token** (#145, thanks @kaush). Some MediaWiki installations hand out a login token for a POSTed `meta=tokens` query and then reject that same token at `action=login`, so a correct bot password still failed. The login token is now requested with GET, which is how the MediaWiki API docs fetch it. The `action=login` call that carries the credentials stays a POST with the password in the body, and a test fails if `lgpassword` ever appears in a URL. All other API calls are unchanged. Verified live against the Tieto wiki: login, six read tools, and `edit_page`, `find_replace` and `manage_categories` behave exactly as on 1.36.0.
+- **The bot-username hint only appears on credential failures.** It used to be appended to every login error, including `NeedToken`, which sent users looking for a username problem they didn't have. It now shows only for `Failed`, `WrongPass` and `WrongBotPass`, and no longer flags usernames already in the `User@BotName` form.
+
+### Changed
+- TIETO_SETUP.md points the Tieto setup at `wiki.360online.com` (#144).
+
 ## [1.36.0] - 2026-10-15
 
 ### Fixed
