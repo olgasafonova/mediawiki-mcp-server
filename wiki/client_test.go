@@ -503,7 +503,7 @@ func TestResetCookies(t *testing.T) {
 
 	// Set some state
 	client.loggedIn = true
-	client.csrfToken = "test-token"
+	client.csrfToken = csrfTokenFixture
 	client.tokenExpiry = time.Now().Add(time.Hour)
 
 	// Reset
@@ -526,7 +526,7 @@ func TestInvalidateCSRFToken(t *testing.T) {
 	defer client.Close()
 
 	// Set a cached token
-	client.csrfToken = "cached-token"
+	client.csrfToken = cachedTokenFixture
 	client.tokenExpiry = time.Now().Add(time.Hour)
 
 	// Invalidate
@@ -611,7 +611,7 @@ func TestLoginFresh_Success(t *testing.T) {
 	config := &Config{
 		BaseURL:  server.URL,
 		Username: "TestUser",
-		Password: "TestPass",
+		Password: passwordFixture,
 		Timeout:  30 * time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -670,7 +670,7 @@ func TestLoginFresh_InvalidLoginResult(t *testing.T) {
 	config := &Config{
 		BaseURL:  server.URL,
 		Username: "TestUser",
-		Password: "WrongPass",
+		Password: wrongPasswordFixture,
 		Timeout:  30 * time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -714,7 +714,7 @@ func TestLoginFresh_MissingTokensPath(t *testing.T) {
 	config := &Config{
 		BaseURL:  server.URL,
 		Username: "TestUser",
-		Password: "TestPass",
+		Password: passwordFixture,
 		Timeout:  30 * time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -794,7 +794,7 @@ func TestLogin_Success(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -884,7 +884,7 @@ func TestLogin_Failed(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "WrongPass"
+	client.config.Password = wrongPasswordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -942,7 +942,7 @@ func TestLogin_ExistingSession(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -989,7 +989,7 @@ func TestLogin_UnexpectedResponseFormat(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -1039,7 +1039,7 @@ func TestLogin_NoTokensInResponse(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -1120,7 +1120,7 @@ func TestLogin_BotPasswordSessionProviderRetry(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -1172,7 +1172,7 @@ func TestLogin_SuccessPath(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -1227,7 +1227,7 @@ func TestLogin_WrongPass(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "WrongPassword"
+	client.config.Password = wrongPasswordLongFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -1293,7 +1293,7 @@ func TestLogin_NeedToken(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()
@@ -1440,7 +1440,7 @@ func TestCSRFToken(t *testing.T) {
 
 	client := createMockClient(t, server)
 	client.config.Username = "TestUser"
-	client.config.Password = "TestPass"
+	client.config.Password = passwordFixture
 	defer client.Close()
 
 	ctx := context.Background()

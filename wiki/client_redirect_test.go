@@ -61,11 +61,10 @@ func TestAPIClientRefusesCrossOriginRedirect_307(t *testing.T) {
 
 	// Sensitive payload: an attacker-controllable redirect on the login leg
 	// would re-POST this body (including lgpassword) to the attacker URL.
-	const sentinelPassword = "SECRET_BOT_PASSWORD_DO_NOT_LEAK"
 	params := url.Values{}
 	params.Set("action", "login")
 	params.Set("lgname", "TestBot@MCPLogin")
-	params.Set("lgpassword", sentinelPassword)
+	params.Set("lgpassword", sentinelPasswordFixture)
 	params.Set("lgtoken", "TOKEN")
 
 	_, err := client.apiRequest(context.Background(), params)
@@ -77,7 +76,7 @@ func TestAPIClientRefusesCrossOriginRedirect_307(t *testing.T) {
 	if hits := atomic.LoadInt32(&attackerHits); hits != 0 {
 		t.Errorf("attacker received %d requests; expected 0 (redirect must be refused)", hits)
 	}
-	if strings.Contains(attackerBody, sentinelPassword) {
+	if strings.Contains(attackerBody, sentinelPasswordFixture) {
 		t.Errorf("attacker captured the bot password — credential leak via 307 redirect")
 	}
 
@@ -87,7 +86,7 @@ func TestAPIClientRefusesCrossOriginRedirect_307(t *testing.T) {
 	if !strings.Contains(err.Error(), "redirect 307") {
 		t.Errorf("error should mention refused redirect status; got: %v", err)
 	}
-	if strings.Contains(err.Error(), sentinelPassword) {
+	if strings.Contains(err.Error(), sentinelPasswordFixture) {
 		t.Errorf("error message leaked the bot password: %v", err)
 	}
 }
