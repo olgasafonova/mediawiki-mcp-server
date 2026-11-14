@@ -4,6 +4,14 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+## [1.36.2] - 2026-11-14
+
+### Fixed
+- **Search finds words in page bodies on wikis without CirrusSearch** (#151, thanks @jamespo). The search request did not set `srwhat`, and without it MediaWiki's built-in database search backends fall back to a title-only search. `mediawiki_search`, `mediawiki_search_and_read` and the similarity lookups therefore missed words that appear only in page text, even though `Special:Search` on the same wiki found them. The request now sends `srwhat=text`. CirrusSearch already treats `text` as its default, so wikis that use it see no change.
+
+### Security
+- **The Docker image carries current CA certificates** (#152). The eMudhra intermediate CA keys leaked on 19-10-2026, and Alpine published `ca-certificates` 20261020-r0 the next day. An image keeps the certificates it was built with, and the build cache was reusing the certificate install step across builds. That step now runs on every build, and the runtime base moves from `alpine:3.20`, which is past end of life, to `alpine:3.24`.
+
 ## [1.36.1] - 2026-11-07
 
 ### Fixed
