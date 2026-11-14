@@ -75,6 +75,11 @@ func buildSearchParams(args SearchArgs) url.Values {
 	params.Set("action", "query")
 	params.Set("list", "search")
 	params.Set("srsearch", args.Query)
+	// Request full-text search explicitly. Without srwhat, MediaWiki's
+	// built-in database backends (SearchMySQL, SearchSqlite, ...) default
+	// to title-only search, so words that appear only in page bodies are
+	// never found. CirrusSearch treats "text" as its default anyway.
+	params.Set("srwhat", "text")
 	params.Set("srlimit", strconv.Itoa(limit))
 	params.Set("srprop", "snippet|size|timestamp")
 

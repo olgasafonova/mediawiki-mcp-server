@@ -1138,3 +1138,13 @@ func TestSearch_HitURL(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildSearchParams_RequestsFullTextSearch(t *testing.T) {
+	params := buildSearchParams(SearchArgs{Query: "curl"})
+	if got := params.Get("srwhat"); got != "text" {
+		t.Errorf("srwhat = %q, want %q (database search backends default to title-only)", got, "text")
+	}
+	if got := params.Get("srsearch"); got != "curl" {
+		t.Errorf("srsearch = %q, want %q", got, "curl")
+	}
+}
