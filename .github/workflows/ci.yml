@@ -74,7 +74,7 @@ jobs:
           cache: true
 
       - name: Run Gosec
-        uses: securego/gosec@78c3989436c43b92112a7c8df6fb41691437e0c1 # master
+        uses: securego/gosec@244f1f6f4d1d0d14f89e79a73dab1219eabb5228 # master
         with:
           args: -exclude-generated ./...
 
