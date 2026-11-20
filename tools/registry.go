@@ -24,13 +24,17 @@ type ToolSpec struct {
 	// ReadOnly indicates the tool doesn't modify wiki state
 	ReadOnly bool
 
-	// Destructive indicates the tool can delete or overwrite data
+	// Destructive indicates the tool can delete or overwrite data. It is
+	// emitted as destructiveHint on every non-read-only tool, so false is a
+	// real claim (additive only), not "unset".
 	Destructive bool
 
 	// Idempotent indicates repeated calls have the same effect
 	Idempotent bool
 
-	// OpenWorld indicates the tool accesses external resources
+	// OpenWorld indicates the tool accesses external resources. It is always
+	// emitted as openWorldHint, so false is a real claim (never leaves the
+	// process), not "unset". Every wiki-backed tool must set it to true.
 	OpenWorld bool
 }
 
