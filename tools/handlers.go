@@ -222,17 +222,22 @@ func (h *HandlerRegistry) registerByName(server *mcp.Server, spec ToolSpec) {
 }
 
 // buildTool creates an mcp.Tool from a ToolSpec.
+//
+// destructiveHint and openWorldHint are pointers in the SDK, and an omitted
+// hint means true under the MCP spec. Emitting them only when the spec field
+// was true therefore turned every false into a silent true. Both are now
+// emitted with the spec's real value: openWorldHint on every tool, and
+// destructiveHint on every non-read-only tool (the spec ignores it on
+// read-only tools, so it stays omitted there).
 func (h *HandlerRegistry) buildTool(spec ToolSpec) *mcp.Tool {
 	annotations := &mcp.ToolAnnotations{
 		Title:          spec.Title,
 		ReadOnlyHint:   spec.ReadOnly,
 		IdempotentHint: spec.Idempotent,
+		OpenWorldHint:  ptr(spec.OpenWorld),
 	}
-	if spec.Destructive {
-		annotations.DestructiveHint = ptr(true)
-	}
-	if spec.OpenWorld {
-		annotations.OpenWorldHint = ptr(true)
+	if !spec.ReadOnly {
+		annotations.DestructiveHint = ptr(spec.Destructive)
 	}
 
 	return &mcp.Tool{

@@ -62,9 +62,12 @@ func TestPtrDistinctAddresses(t *testing.T) {
 	}
 }
 
-// TestToolSpecZeroValue documents the zero value of ToolSpec: an unset spec is
-// read-only=false and non-destructive=false, the conservative defaults the
-// registry assigns before a category sets explicit annotations.
+// TestToolSpecZeroValue documents the zero value of ToolSpec: every hint field
+// is false. These are Go zero values, not MCP spec defaults, and they are not
+// conservative: buildTool emits them as real values, so a zero-value write
+// spec would advertise destructiveHint=false and openWorldHint=false. Every
+// spec in AllTools must therefore set Destructive and OpenWorld deliberately;
+// TestAllToolsEmittedAnnotations enforces that for the current table.
 func TestToolSpecZeroValue(t *testing.T) {
 	var spec ToolSpec
 	if spec.Name != "" || spec.Method != "" {

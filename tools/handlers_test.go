@@ -125,6 +125,137 @@ func TestBuildTool(t *testing.T) {
 	}
 }
 
+// boolPtrString renders an optional hint for test messages: "omitted" for
+// nil, otherwise the value.
+func boolPtrString(p *bool) string {
+	if p == nil {
+		return "omitted"
+	}
+	if *p {
+		return "true"
+	}
+	return "false"
+}
+
+// TestBuildToolEmitsFalseHints verifies buildTool emits the spec's real value
+// for destructiveHint and openWorldHint instead of omitting false. An omitted
+// hint means true under the MCP spec, so omission would advertise an additive
+// tool as destructive and a local tool as open-world.
+func TestBuildToolEmitsFalseHints(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	client := wiki.NewClient(&wiki.Config{BaseURL: "https://test.wiki.com/api.php"}, logger)
+	defer client.Close()
+	registry := NewHandlerRegistry(client, logger)
+
+	tests := []struct {
+		name      string
+		spec      ToolSpec
+		wantDestr string // "omitted", "true" or "false"
+		wantOpen  string
+	}{
+		{
+			name:      "additive local write tool emits both hints false",
+			spec:      ToolSpec{Name: "t_additive", ReadOnly: false, Destructive: false, OpenWorld: false},
+			wantDestr: "false",
+			wantOpen:  "false",
+		},
+		{
+			name:      "destructive open-world write tool emits both hints true",
+			spec:      ToolSpec{Name: "t_destructive", ReadOnly: false, Destructive: true, OpenWorld: true},
+			wantDestr: "true",
+			wantOpen:  "true",
+		},
+		{
+			name:      "read-only local tool omits destructive, emits openWorld false",
+			spec:      ToolSpec{Name: "t_readonly_local", ReadOnly: true, OpenWorld: false},
+			wantDestr: "omitted",
+			wantOpen:  "false",
+		},
+		{
+			name:      "read-only open-world tool omits destructive, emits openWorld true",
+			spec:      ToolSpec{Name: "t_readonly_open", ReadOnly: true, OpenWorld: true},
+			wantDestr: "omitted",
+			wantOpen:  "true",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ann := registry.buildTool(tt.spec).Annotations
+			if ann == nil {
+				t.Fatal("Expected annotations")
+			}
+			if got := boolPtrString(ann.DestructiveHint); got != tt.wantDestr {
+				t.Errorf("DestructiveHint = %s, want %s", got, tt.wantDestr)
+			}
+			if got := boolPtrString(ann.OpenWorldHint); got != tt.wantOpen {
+				t.Errorf("OpenWorldHint = %s, want %s", got, tt.wantOpen)
+			}
+		})
+	}
+}
+
+// TestAllToolsEmittedAnnotations checks the annotations every real spec in
+// AllTools emits after buildTool. All tools talk to a wiki, so openWorldHint
+// must be true everywhere. Every current write tool edits, moves or replaces
+// content, so destructiveHint must be true on each; a new write tool has to be
+// added to writeTools here, which forces a deliberate Destructive decision
+// instead of inheriting the Go zero value (false).
+func TestAllToolsEmittedAnnotations(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	client := wiki.NewClient(&wiki.Config{BaseURL: "https://test.wiki.com/api.php"}, logger)
+	defer client.Close()
+	registry := NewHandlerRegistry(client, logger)
+
+	writeTools := map[string]struct{ destructive, idempotent bool }{
+		"mediawiki_edit_page":         {destructive: true},
+		"mediawiki_find_replace":      {destructive: true},
+		"mediawiki_apply_formatting":  {destructive: true},
+		"mediawiki_bulk_replace":      {destructive: true},
+		"mediawiki_move_page":         {destructive: true},
+		"mediawiki_manage_categories": {destructive: true, idempotent: true},
+		"mediawiki_upload_file":       {destructive: true},
+	}
+
+	seenWrites := 0
+	for _, spec := range AllTools {
+		ann := registry.buildTool(spec).Annotations
+		if ann == nil {
+			t.Errorf("%s: nil annotations", spec.Name)
+			continue
+		}
+		if ann.Title == "" {
+			t.Errorf("%s: empty title", spec.Name)
+		}
+		if got := boolPtrString(ann.OpenWorldHint); got != "true" {
+			t.Errorf("%s: openWorldHint = %s, want true", spec.Name, got)
+		}
+		if ann.ReadOnlyHint {
+			if ann.DestructiveHint != nil {
+				t.Errorf("%s: read-only tool emits destructiveHint = %s, want omitted", spec.Name, boolPtrString(ann.DestructiveHint))
+			}
+			if _, listed := writeTools[spec.Name]; listed {
+				t.Errorf("%s: listed as a write tool but spec is ReadOnly", spec.Name)
+			}
+			continue
+		}
+		want, ok := writeTools[spec.Name]
+		if !ok {
+			t.Errorf("%s: write tool not listed in writeTools; decide its Destructive/Idempotent values and add it", spec.Name)
+			continue
+		}
+		seenWrites++
+		if got, w := boolPtrString(ann.DestructiveHint), boolPtrString(&want.destructive); got != w {
+			t.Errorf("%s: destructiveHint = %s, want %s", spec.Name, got, w)
+		}
+		if ann.IdempotentHint != want.idempotent {
+			t.Errorf("%s: idempotentHint = %v, want %v", spec.Name, ann.IdempotentHint, want.idempotent)
+		}
+	}
+	if seenWrites != len(writeTools) {
+		t.Errorf("saw %d write tools in AllTools, writeTools lists %d", seenWrites, len(writeTools))
+	}
+}
+
 func TestRecoverPanic(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	config := &wiki.Config{BaseURL: "https://test.wiki.com/api.php"}

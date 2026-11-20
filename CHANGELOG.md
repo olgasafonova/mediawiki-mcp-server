@@ -4,6 +4,10 @@ All notable changes to MediaWiki MCP Server are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Tool annotations state `false` instead of omitting it.** `destructiveHint` and `openWorldHint` were sent only when true, and an omitted hint means true under the MCP spec, so a false value could never reach a client. Every tool now sends `openWorldHint`, and every write tool sends `destructiveHint`, with the real value. The advertised values are unchanged today (every tool is open-world and every write tool is destructive); the fix stops a future additive or local tool from being mislabelled.
+- **`mediawiki_manage_categories` is marked idempotent.** Categories are a set: repeating a call finds nothing to add or remove and makes no edit.
+
 ## [1.36.2] - 2026-11-14
 
 ### Fixed

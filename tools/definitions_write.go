@@ -264,7 +264,7 @@ RETURNS: Which categories were added, removed, already present, or not found. In
 NOTE: Requires authentication (bot password) to apply changes. Anonymous sessions cannot edit.`,
 		ReadOnly:    false,
 		Destructive: true, // HG-3: edits page content (changes category set via EditPage)
-		Idempotent:  false,
+		Idempotent:  true, // set semantics: a repeat call finds nothing to add or remove and makes no edit (wiki/write_categories.go)
 		OpenWorld:   true,
 	},
 
